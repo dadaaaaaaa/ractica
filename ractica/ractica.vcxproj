@@ -135,6 +135,18 @@
   <ItemGroup>
     <ClCompile Include="ractica.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\includes\GLEW\eglew.h" />
+    <ClInclude Include="..\includes\GLEW\glew.h" />
+    <ClInclude Include="..\includes\GLEW\glxew.h" />
+    <ClInclude Include="..\includes\GLEW\wglew.h" />
+    <ClInclude Include="..\includes\GLFW\glfw3.h" />
+    <ClInclude Include="..\includes\GLFW\glfw3native.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="..\Libs\glew32s.lib" />
+    <Library Include="..\Libs\glfw3.lib" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

@@ -19,4 +19,32 @@
       <Filter>Исходные файлы</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\includes\GLEW\eglew.h">
+      <Filter>Исходные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="..\includes\GLEW\glew.h">
+      <Filter>Исходные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="..\includes\GLEW\glxew.h">
+      <Filter>Исходные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="..\includes\GLEW\wglew.h">
+      <Filter>Исходные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="..\includes\GLFW\glfw3.h">
+      <Filter>Исходные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="..\includes\GLFW\glfw3native.h">
+      <Filter>Исходные файлы</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="..\Libs\glew32s.lib">
+      <Filter>Исходные файлы</Filter>
+    </Library>
+    <Library Include="..\Libs\glfw3.lib">
+      <Filter>Исходные файлы</Filter>
+    </Library>
+  </ItemGroup>
 </Project>
