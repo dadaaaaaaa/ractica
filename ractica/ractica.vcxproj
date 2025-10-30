@@ -137,7 +137,34 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="ractica.cpp" />
+    <ClCompile Include="Game\Game.cpp" />
+    <ClCompile Include="Graphics\Camera.cpp" />
+    <ClCompile Include="Graphics\Model.cpp" />
+    <ClCompile Include="Graphics\ShaderManager.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="Objects\Bird.cpp" />
+    <ClCompile Include="Objects\Obstacle.cpp" />
+    <ClCompile Include="Objects\Sprite.cpp" />
+    <ClCompile Include="pch.cpp" />
+    <ClCompile Include="UI\MenuButton.cpp" />
+    <ClCompile Include="Utils\MathUtils.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="struct.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Core\Constants.h" />
+    <ClInclude Include="Core\Types.h" />
+    <ClInclude Include="Game\Game.h" />
+    <ClInclude Include="Graphics\Camera.h" />
+    <ClInclude Include="Graphics\Model.h" />
+    <ClInclude Include="Graphics\ShaderManager.h" />
+    <ClInclude Include="Objects\Bird.h" />
+    <ClInclude Include="Objects\Obstacle.h" />
+    <ClInclude Include="Objects\Sprite.h" />
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="UI\MenuButton.h" />
+    <ClInclude Include="Utils\MathUtils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

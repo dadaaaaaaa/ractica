@@ -1,0 +1,52 @@
+﻿3D_Snake_Game/
+├── src/
+│   ├── main.cpp
+│   ├── Game/
+│   │   ├── Game.h
+│   │   ├── Game.cpp
+│   │   ├── GameState.h
+│   │   └── Constants.h
+│   ├── Graphics/
+│   │   ├── Renderer.h
+│   │   ├── Renderer.cpp
+│   │   ├── Shader.h
+│   │   ├── Shader.cpp
+│   │   ├── Camera.h
+│   │   ├── Camera.cpp
+│   │   ├── Models/
+│   │   │   ├── Model.h
+│   │   │   ├── Model.cpp
+│   │   │   ├── ModelFactory.h
+│   │   │   └── ModelFactory.cpp
+│   │   └── UI/
+│   │       ├── UI.h
+│   │       ├── UI.cpp
+│   │       ├── Menu.h
+│   │       └── Menu.cpp
+│   ├── Objects/
+│   │   ├── Snake.h
+│   │   ├── Snake.cpp
+│   │   ├── Food.h
+│   │   ├── Food.cpp
+│   │   ├── Obstacle.h
+│   │   ├── Obstacle.cpp
+│   │   ├── Sprite.h
+│   │   ├── Sprite.cpp
+│   │   ├── Bird.h
+│   │   └── Bird.cpp
+│   ├── Utils/
+│   │   ├── HighScoreManager.h
+│   │   ├── HighScoreManager.cpp
+│   │   ├── InputHandler.h
+│   │   ├── InputHandler.cpp
+│   │   └── MathUtils.h
+│   └── Shaders/
+│       ├── vertex.glsl
+│       ├── fragment.glsl
+│       ├── ui_vertex.glsl
+│       └── ui_fragment.glsl
+├── lib/
+│   ├── glew/
+│   └── glfw/
+├── include/
+└── CMakeLists.txt (или Visual Studio проект)
