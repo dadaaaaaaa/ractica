@@ -70,6 +70,10 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\Libs;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -110,7 +114,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>C:\Users\Влад\source\repos\ractica\Libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>glfw3.lib;glew32s.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>glfw3.lib;glew32s.lib;opengl32.lib;glut.lib;glut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -134,18 +138,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ractica.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\includes\GLEW\eglew.h" />
-    <ClInclude Include="..\includes\GLEW\glew.h" />
-    <ClInclude Include="..\includes\GLEW\glxew.h" />
-    <ClInclude Include="..\includes\GLEW\wglew.h" />
-    <ClInclude Include="..\includes\GLFW\glfw3.h" />
-    <ClInclude Include="..\includes\GLFW\glfw3native.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <Library Include="..\Libs\glew32s.lib" />
-    <Library Include="..\Libs\glfw3.lib" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
