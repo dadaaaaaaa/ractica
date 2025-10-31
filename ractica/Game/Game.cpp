@@ -13,10 +13,22 @@ Game::Game() {
 void Game::initialize() {
     std::cout << "=== GAME INITIALIZATION START ===" << std::endl;
 
-    // Правильный порядок инициализации
-    ui.initUI();
+    // ПРАВИЛЬНЫЙ ПОРЯДОК (без двойной инициализации):
+
+    // 1. Сначала рендерер (шейдеры)
+    std::cout << "Initializing renderer..." << std::endl;
     renderer.initialize();
+
+    // 2. Потом UI (ОДИН РАЗ!)
+    std::cout << "Initializing UI..." << std::endl;
+        ui.initUI();
+    
+
+    // 3. Игровые объекты
+    std::cout << "Loading high scores..." << std::endl;
     objects.loadHighScores();
+
+    std::cout << "Initializing game..." << std::endl;
     objects.initGame();
 
     std::cout << "=== GAME INITIALIZATION COMPLETE ===" << std::endl;
@@ -31,6 +43,7 @@ void Game::update() {
 void Game::render() {
     switch (objects.getGameState()) {
     case MAIN_MENU:
+
         objects.initGame();
         ui.drawMainMenu();
         break;
@@ -50,7 +63,10 @@ void Game::render() {
         ui.drawGameOver(objects.getScore());
         break;
     case SETTINGS:
-        ui.drawSettingsMenu(objects.getGameSpeed(), objects.getPlayerName());
+        ui.drawSettingsMenu(objects.getGameSpeed(),
+            objects.getPlayerName(),
+            objects.getSpeedMultiplier(),
+            objects.getSpeedDisplayText());
         break;
     case HIGH_SCORES:
         ui.drawHighScoresMenu(objects.getHighScores());
@@ -77,6 +93,15 @@ void Game::handleKeyPress(int key) {
 }
 
 void Game::handleMouseClick() {
+    if (objects.getGameState() == SETTINGS) {
+        // Проверяем клики на кнопки скорости
+        if (ui.isSpeedIncreaseButtonClicked(ui.getMouseX(), ui.getMouseY())) {
+            objects.increaseSpeed();
+        }
+        else if (ui.isSpeedDecreaseButtonClicked(ui.getMouseX(), ui.getMouseY())) {
+            objects.decreaseSpeed();
+        }
+    }
     ui.handleMouseClick(objects);
 }
 

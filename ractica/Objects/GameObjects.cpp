@@ -16,8 +16,60 @@ GameObjects::GameObjects()
     previousState(MAIN_MENU),
     gameSpeed(0.12f),
     playerName("Player") {
+
+    // Правильный порядок множителей от медленного к быстрому
+    speedMultipliers = { 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f };
+    currentSpeedIndex = 3; // Начинаем с 1.0x (нормальная скорость)
+    updateGameSpeedFromMultiplier();
 }
 
+void GameObjects::updateGameSpeedFromMultiplier() {
+    float baseSpeed = 0.12f; // Базовая скорость (для 1.0x)
+    gameSpeed = baseSpeed / speedMultipliers[currentSpeedIndex];
+}
+
+float GameObjects::getSpeedMultiplier() const {
+    return speedMultipliers[currentSpeedIndex];
+}
+
+std::string GameObjects::getSpeedDisplayText() const {
+    float multiplier = speedMultipliers[currentSpeedIndex];
+    if (multiplier >= 1.0f) {
+        return "x" + std::to_string((int)multiplier);
+    }
+    else {
+        return "x" + std::to_string(multiplier).substr(0, 4);
+    }
+}
+
+void GameObjects::increaseSpeed() {
+    if (currentSpeedIndex < speedMultipliers.size() - 1) {
+        currentSpeedIndex++;
+        updateGameSpeedFromMultiplier();
+        std::cout << "Speed increased to: " << getSpeedDisplayText() << std::endl;
+    }
+}
+
+void GameObjects::decreaseSpeed() {
+    if (currentSpeedIndex > 0) {
+        currentSpeedIndex--;
+        updateGameSpeedFromMultiplier();
+        std::cout << "Speed decreased to: " << getSpeedDisplayText() << std::endl;
+    }
+}
+
+void GameObjects::handleSettingsKeyPress(int key) {
+    switch (key) {
+    case GLFW_KEY_EQUAL: // + 
+    case GLFW_KEY_RIGHT: // Стрелка вправо
+        increaseSpeed();
+        break;
+    case GLFW_KEY_MINUS: // -
+    case GLFW_KEY_LEFT:  // Стрелка влево
+        decreaseSpeed();
+        break;
+    }
+}
 void GameObjects::update() {
     if (gameOver || gameState != PLAYING) return;
 
@@ -486,16 +538,6 @@ void GameObjects::handleGameKeyPress(int key) {
     }
 }
 
-void GameObjects::handleSettingsKeyPress(int key) {
-    switch (key) {
-    case GLFW_KEY_EQUAL: // +
-        gameSpeed = max(0.05f, gameSpeed - 0.02f);
-        break;
-    case GLFW_KEY_MINUS: // -
-        gameSpeed = min(0.3f, gameSpeed + 0.02f);
-        break;
-    }
-}
 
 void GameObjects::handleMenuKeyPress(int key) {
     switch (gameState) {
@@ -524,14 +566,17 @@ void GameObjects::handleMenuKeyPress(int key) {
         case GLFW_KEY_ESCAPE:
             gameState = PLAYING;
             break;
-        case GLFW_KEY_Q:
+        case GLFW_KEY_Q: // Настройки из паузы
             previousState = PAUSED;
             gameState = SETTINGS;
             break;
-        case GLFW_KEY_M:
+        case GLFW_KEY_M: // В главное меню
             gameState = MAIN_MENU;
             break;
-        case GLFW_KEY_P:
+        case GLFW_KEY_P: // Продолжить
+            gameState = PLAYING;
+            break;
+        case GLFW_KEY_B: // Назад (альтернативная кнопка)
             gameState = PLAYING;
             break;
         }
@@ -541,20 +586,24 @@ void GameObjects::handleMenuKeyPress(int key) {
         switch (key) {
         case GLFW_KEY_ESCAPE:
         case GLFW_KEY_B:
+        case GLFW_KEY_BACKSPACE: // Добавляем Backspace как альтернативу
             gameState = previousState;
+            std::cout << "Returning to previous state from settings" << std::endl;
             break;
         }
         break;
 
     case HIGH_SCORES:
-        if (key == GLFW_KEY_B || key == GLFW_KEY_ESCAPE) {
+        if (key == GLFW_KEY_B || key == GLFW_KEY_ESCAPE || key == GLFW_KEY_BACKSPACE) {
             gameState = previousState;
+            std::cout << "Returning to previous state from high scores" << std::endl;
         }
         break;
 
     case CONTROLS:
-        if (key == GLFW_KEY_B) {
+        if (key == GLFW_KEY_B || key == GLFW_KEY_ESCAPE || key == GLFW_KEY_BACKSPACE) {
             gameState = MAIN_MENU;
+            std::cout << "Returning to main menu from controls" << std::endl;
         }
         break;
 
@@ -565,6 +614,9 @@ void GameObjects::handleMenuKeyPress(int key) {
             gameState = PLAYING;
             break;
         case GLFW_KEY_M:
+            gameState = MAIN_MENU;
+            break;
+        case GLFW_KEY_B: // Назад в главное меню
             gameState = MAIN_MENU;
             break;
         }

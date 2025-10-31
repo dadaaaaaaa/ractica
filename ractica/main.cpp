@@ -9,7 +9,7 @@ ShaderManager g_shaderManager;
 Camera g_camera;
 Game g_game;
 GLuint uiVAO = 0, uiVBO = 0;
-
+bool g_shouldExitGame = false;
 // Колбэки GLFW
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (action == GLFW_PRESS) {
@@ -142,7 +142,7 @@ int main() {
     double lastUpdateTime = glfwGetTime();
     double lastSpriteUpdateTime = glfwGetTime();
 
-    while (!glfwWindowShouldClose(window)) {
+    while (!glfwWindowShouldClose(window) && !g_shouldExitGame) {
         double currentTime = glfwGetTime();
 
         // Обновление заголовка окна

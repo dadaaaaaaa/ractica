@@ -27,7 +27,8 @@ private:
     std::vector<MenuButton> pauseMenuButtons;
     std::vector<MenuButton> settingsButtons;
     std::vector<MenuButton> gameOverButtons;
-
+    std::vector<MenuButton> controlsButtons;
+    std::vector<MenuButton> highScoresButtons;
     // FreeType רנטפע
     std::map<GLchar, TextCharacter> characters;
     GLuint textVAO, textVBO, textShader;
@@ -52,9 +53,15 @@ private:
 public:
     GameUI();
     ~GameUI();
-    
+    void drawSettingsMenu(float gameSpeed, const std::string& playerName, float speedMultiplier, const std::string& speedDisplayText);
+    bool isSpeedIncreaseButtonClicked(double mouseX, double mouseY);
+    bool isSpeedDecreaseButtonClicked(double mouseX, double mouseY);
+    void drawRect(float x, float y, float width, float height, const glm::vec4& color);
     void debugTextRendering();
-
+    const float SPEED_BUTTON_WIDTH = 40.0f;
+    const float SPEED_BUTTON_HEIGHT = 40.0f;
+    const float SPEED_DISPLAY_X = 400.0f;
+    const float SPEED_DISPLAY_Y = 350.0f;
     // ֳועעונû
     int getWindowWidth() const { return windowWidth; }
     int getWindowHeight() const { return windowHeight; }
@@ -76,7 +83,6 @@ public:
     void drawTextTest();
     void drawMainMenu();
     void drawPauseMenu();
-    void drawSettingsMenu(float gameSpeed, const std::string& playerName);
     void drawHighScoresMenu(const std::vector<HighScore>& highScores);
     void drawControlsMenu();
     void drawGameOver(int score);

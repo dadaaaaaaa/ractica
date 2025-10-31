@@ -9,7 +9,7 @@
 // Глобальные экземпляры
 extern ShaderManager g_shaderManager;
 extern GLuint uiVAO, uiVBO;
-
+extern bool g_shouldExitGame;
 GameUI::GameUI()
     : windowWidth(1200),
     windowHeight(800),
@@ -17,11 +17,14 @@ GameUI::GameUI()
     mouseY(0),
     mousePressed(false),
     uiInitialized(false),
-    textVAO(0), textVBO(0), textShader(0),
-    ft(nullptr), face(nullptr),
-    fontInitialized(false) {
-}
+    fontInitialized(false),
+    ft(nullptr),
+    face(nullptr),
+    textVAO(0),
+    textVBO(0),
+    textShader(0) {
 
+}
 GameUI::~GameUI() {
     cleanup();
 }
@@ -115,6 +118,14 @@ void GameUI::initUI() {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
+    // ПРИНУДИТЕЛЬНАЯ ИНИЦИАЛИЗАЦИЯ ШРИФТА
+    std::cout << "Initializing font in initUI..." << std::endl;
+    initWindowsFont();
+
+    if (!fontInitialized) {
+        std::cerr << "WARNING: Font initialization failed in initUI()" << std::endl;
+    }
+
     // Создаем кнопки
     int centerX = windowWidth / 2 - 100;
     mainMenuButtons.clear();
@@ -130,16 +141,36 @@ void GameUI::initUI() {
     pauseMenuButtons.push_back(MenuButton("MAIN MENU", centerX, 290, 200, 50));
 
     gameOverButtons.clear();
-    gameOverButtons.push_back(MenuButton("RESTART", centerX, 450, 150, 50));
-    gameOverButtons.push_back(MenuButton("MAIN MENU", centerX, 370, 150, 50));
+    gameOverButtons.push_back(MenuButton("RESTART", centerX, 450, 200, 50));
+    gameOverButtons.push_back(MenuButton("MAIN MENU", centerX, 370, 200, 50));
 
     settingsButtons.clear();
     settingsButtons.push_back(MenuButton("BACK", centerX, 150, 200, 50));
+    controlsButtons.clear(); // Добавьте этот вектор
+    controlsButtons.push_back(MenuButton("BACK", centerX, 150, 200, 50));
 
-    initWindowsFont();
+    highScoresButtons.clear(); // Добавьте этот вектор  
+    highScoresButtons.push_back(MenuButton("BACK", centerX, 150, 200, 50));
+    if (fontInitialized) {
+        std::cout << "Pre-rendering text for shader warm-up..." << std::endl;
 
+        // Активируем шейдер
+        glUseProgram(textShader);
+
+        // Устанавливаем проекционную матрицу
+        glm::mat4 projection = glm::ortho(0.0f, (float)windowWidth, 0.0f, (float)windowHeight);
+        glUniformMatrix4fv(glGetUniformLocation(textShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
+        // Рисуем тестовый текст (невидимый)
+        drawText(-1000, -1000, "WARMUP", 1.0f, 1.0f, 1.0f);
+
+        // Сбрасываем шейдер
+        glUseProgram(0);
+
+        std::cout << "Text pre-rendering complete" << std::endl;
+    }
     uiInitialized = true;
-    std::cout << "UI initialized successfully" << std::endl;
+    std::cout << "UI initialized successfully. Font initialized: " << fontInitialized << std::endl;
 }
 
 void GameUI::initWindowsFont() {
@@ -291,7 +322,20 @@ void GameUI::compileTextShaders() {
         glGetProgramInfoLog(textShader, 512, NULL, infoLog);
         std::cerr << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
     }
+    if (success) {
+        glUseProgram(textShader);
 
+        // Проверяем uniform переменные
+        GLint projLoc = glGetUniformLocation(textShader, "projection");
+        GLint colorLoc = glGetUniformLocation(textShader, "textColor");
+        GLint texLoc = glGetUniformLocation(textShader, "text");
+
+        std::cout << "Text shader uniforms - projection: " << projLoc
+            << ", color: " << colorLoc
+            << ", texture: " << texLoc << std::endl;
+
+        glUseProgram(0);
+    }
     // Удаление шейдеров
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
@@ -390,15 +434,45 @@ bool GameUI::ensureFontInitialized() {
 
 // Остальные методы остаются без изменений...
 void GameUI::drawMainMenu() {
+    // СБРОС СОСТОЯНИЯ OPENGL ПЕРЕД ОТРИСОВКОЙ UI
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Явно активируем шейдер текста
+    if (fontInitialized && textShader != 0) {
+        glUseProgram(textShader);
+        // Принудительно устанавливаем проекционную матрицу
+        glm::mat4 projection = glm::ortho(0.0f, (float)windowWidth, 0.0f, (float)windowHeight);
+        glUniformMatrix4fv(0, 1, GL_FALSE, glm::value_ptr(projection));
+    }
+
+    // ОЧИСТКА БУФЕРОВ
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
 
+    // ОТРИСОВКА КНОПОК (фон)
+    for (auto& button : mainMenuButtons) {
+        button.hovered = button.contains(mouseX, mouseY);
+        glm::vec3 bgColor = button.hovered ? glm::vec3(0.2f, 0.6f, 0.2f) : glm::vec3(0.1f, 0.3f, 0.1f);
+        drawQuad(button.x, button.y, button.width, button.height, bgColor, 1.0f);
+    }
+
+    // ОТРИСОВКА ТЕКСТА
     drawCenteredText(550, "3D SNAKE GAME", 1.0f, 1.0f, 1.0f);
 
     for (auto& button : mainMenuButtons) {
-        button.hovered = button.contains(mouseX, mouseY);
-        drawButtonWithText(button);
+        if (fontInitialized && !characters.empty()) {
+            float textWidth = getTextWidth(button.text);
+            float textX = button.x + (button.width - textWidth) / 2;
+            float textY = button.y + (button.height / 2) + 8;
+            drawText(textX, textY, button.text, 1.0f, 1.0f, 1.0f);
+        }
     }
+
+    // СБРАСЫВАЕМ ШЕЙДЕР
+    glUseProgram(0);
 }
 
 void GameUI::drawPauseMenu() {
@@ -418,26 +492,84 @@ void GameUI::drawPauseMenu() {
 
     glDisable(GL_BLEND);
 }
-
-void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName) {
+void GameUI::drawRect(float x, float y, float width, float height, const glm::vec4& color) {
+    // Используем существующий метод drawQuad с альфа-каналом
+    drawQuad(x, y, width, height, glm::vec3(color.r, color.g, color.b), color.a);
+}
+void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName, float speedMultiplier, const std::string& speedDisplayText) {
+    // ОЧИСТКА БУФЕРОВ
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.1f, 0.1f, 0.2f, 1.0f);
+    glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
 
-    drawCenteredText(550, "SETTINGS", 1.0f, 1.0f, 1.0f);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
 
-    // Настройки
-    std::string speedText = "Game Speed: " + std::to_string(gameSpeed).substr(0, 4);
-    drawCenteredText(400, speedText, 1.0f, 1.0f, 0.0f);
-    drawCenteredText(350, "Press + to increase, - to decrease", 0.8f, 0.8f, 0.8f);
+    float centerX = windowWidth / 2.0f;
 
-    std::string nameText = "Player Name: " + playerName;
-    drawCenteredText(250, nameText, 0.0f, 1.0f, 1.0f);
+    // === ЗАГОЛОВОК ===
+    drawCenteredText(windowHeight - 100, "SETTINGS", 1.0f, 1.0f, 1.0f);
 
+    // === НАДПИСЬ SPEED СВЕРХУ ===
+    drawCenteredText(windowHeight - 180, "SPEED", 1.0f, 1.0f, 1.0f);
+
+    // === МНОЖИТЕЛЬ СКОРОСТИ (крупно по центру) ===
+    float multiplierY = windowHeight - 280;
+    drawCenteredText(multiplierY, speedDisplayText, 1.0f, 1.0f, 1.0f);
+
+    // === КНОПКИ + И - ПО БОКАМ ===
+    float buttonsY = multiplierY;
+
+    // Левая кнопка [-] - слева от множителя
+    float minusButtonX = centerX - 120.0f;
+    bool minusHover = isSpeedDecreaseButtonClicked(mouseX, mouseY);
+    drawText(minusButtonX, buttonsY, "-",
+        minusHover ? 1.0f : 0.7f,
+        minusHover ? 0.5f : 0.3f,
+        0.0f);
+
+    // Правая кнопка [+] - справа от множителя
+    float plusButtonX = centerX + 100.0f;
+    bool plusHover = isSpeedIncreaseButtonClicked(mouseX, mouseY);
+    drawText(plusButtonX, buttonsY, "+",
+        plusHover ? 0.0f : 0.0f,
+        plusHover ? 1.0f : 0.7f,
+        0.0f);
+
+    // === ПОДСКАЗКИ ===
+    float hintsY = multiplierY - 80;
+    drawCenteredText(hintsY, "Click +/- buttons or use keyboard +/-", 0.7f, 0.7f, 0.7f);
+    drawCenteredText(hintsY - 25, "Arrow keys also work", 0.7f, 0.7f, 0.7f);
+
+    // === КНОПКА BACK ===
     for (auto& button : settingsButtons) {
         button.hovered = button.contains(mouseX, mouseY);
         drawButtonWithText(button);
     }
+
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
 }
+
+bool GameUI::isSpeedIncreaseButtonClicked(double mouseX, double mouseY) {
+    float centerX = windowWidth / 2.0f;
+    float buttonX = centerX + 100.0f; // Справа от центра
+    float buttonY = windowHeight - 280.0f; // На уровне множителя
+
+    // Область клика вокруг текста "+"
+    return (mouseX >= buttonX - 20.0f && mouseX <= buttonX + 20.0f &&
+        mouseY >= buttonY - 20.0f && mouseY <= buttonY + 20.0f);
+}
+
+bool GameUI::isSpeedDecreaseButtonClicked(double mouseX, double mouseY) {
+    float centerX = windowWidth / 2.0f;
+    float buttonX = centerX - 120.0f; // Слева от центра
+    float buttonY = windowHeight - 280.0f; // На уровне множителя
+
+    // Область клика вокруг текста "-"
+    return (mouseX >= buttonX - 20.0f && mouseX <= buttonX + 20.0f &&
+        mouseY >= buttonY - 20.0f && mouseY <= buttonY + 20.0f);
+}
+
 
 void GameUI::drawGameOver(int score) {
     glEnable(GL_BLEND);
@@ -445,11 +577,13 @@ void GameUI::drawGameOver(int score) {
 
     drawQuad(0, 0, windowWidth, windowHeight, glm::vec3(0.0f, 0.0f, 0.0f), 0.7f);
 
-    drawCenteredText(450, "GAME OVER", 1.0f, 0.0f, 0.0f);
+    // Текст в верхней части экрана
+    drawCenteredText(windowHeight - 150, "GAME OVER", 1.0f, 0.0f, 0.0f);
 
     std::string scoreText = "Final Score: " + std::to_string(score);
-    drawCenteredText(350, scoreText, 1.0f, 1.0f, 1.0f);
+    drawCenteredText(windowHeight - 250, scoreText, 1.0f, 1.0f, 1.0f);
 
+    // Кнопки посередине экрана
     for (auto& button : gameOverButtons) {
         button.hovered = button.contains(mouseX, mouseY);
         drawButtonWithText(button);
@@ -460,7 +594,7 @@ void GameUI::drawGameOver(int score) {
 
 void GameUI::drawHighScoresMenu(const std::vector<HighScore>& highScores) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.2f, 0.1f, 0.1f, 1.0f);
+    glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
 
     drawCenteredText(550, "HIGH SCORES", 1.0f, 1.0f, 1.0f);
 
@@ -473,12 +607,16 @@ void GameUI::drawHighScoresMenu(const std::vector<HighScore>& highScores) {
         yPos -= 40;
     }
 
-    drawCenteredText(100, "Press B to go back", 1.0f, 1.0f, 1.0f);
+    // КНОПКА BACK вместо текстовой подсказки
+    for (auto& button : highScoresButtons) {
+        button.hovered = button.contains(mouseX, mouseY);
+        drawButtonWithText(button);
+    }
 }
 
 void GameUI::drawControlsMenu() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.1f, 0.2f, 0.1f, 1.0f);
+    glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
 
     drawCenteredText(550, "CONTROLS", 1.0f, 1.0f, 1.0f);
 
@@ -491,7 +629,11 @@ void GameUI::drawControlsMenu() {
     drawCenteredText(yPos, "R - Restart game", 0.0f, 1.0f, 0.0f); yPos -= 40;
     drawCenteredText(yPos, "D - Debug info", 0.0f, 1.0f, 0.0f); yPos -= 40;
 
-    drawCenteredText(100, "Press B to go back", 1.0f, 1.0f, 1.0f);
+    // КНОПКА BACK
+    for (auto& button : controlsButtons) {
+        button.hovered = button.contains(mouseX, mouseY);
+        drawButtonWithText(button);
+    }
 }
 
 void GameUI::drawQuad(float x, float y, float width, float height, const glm::vec3& color, float alpha) {
@@ -580,13 +722,59 @@ void GameUI::handleMouseClick(GameObjects& objects) {
                 case 3:
                     objects.setGameState(CONTROLS);
                     break;
-                case 4: /* Exit handled in main */ break;
+                case 4: // EXIT - выход из игры
+                    std::cout << "Exit game requested" << std::endl;
+                    g_shouldExitGame = true;
+                    break;
+                }
+                return;
+            }
+        }
+        break;
+    case SETTINGS:
+        for (size_t i = 0; i < settingsButtons.size(); i++) {
+            if (settingsButtons[i].contains(mouseX, mouseY)) {
+                std::cout << "Settings menu button clicked: " << i << " - " << settingsButtons[i].text << std::endl;
+                switch (i) {
+                case 0: // BACK
+                    objects.setGameState(objects.getPreviousState());
+                    std::cout << "Returning to previous state: " << objects.getPreviousState() << std::endl;
+                    break;
                 }
                 return;
             }
         }
         break;
 
+    case HIGH_SCORES:
+        for (size_t i = 0; i < highScoresButtons.size(); i++) {
+            if (highScoresButtons[i].contains(mouseX, mouseY)) {
+                std::cout << "High scores menu button clicked: " << i << " - " << highScoresButtons[i].text << std::endl;
+                switch (i) {
+                case 0: // BACK
+                    objects.setGameState(objects.getPreviousState());
+                    std::cout << "Returning to previous state: " << objects.getPreviousState() << std::endl;
+                    break;
+                }
+                return;
+            }
+        }
+        break;
+
+    case CONTROLS:
+        for (size_t i = 0; i < controlsButtons.size(); i++) {
+            if (controlsButtons[i].contains(mouseX, mouseY)) {
+                std::cout << "Controls menu button clicked: " << i << " - " << controlsButtons[i].text << std::endl;
+                switch (i) {
+                case 0: // BACK
+                    objects.setGameState(objects.getPreviousState());
+                    std::cout << "Returning to previous state: " << objects.getPreviousState() << std::endl;
+                    break;
+                }
+                return;
+            }
+        }
+        break;
     case PAUSED:
         for (size_t i = 0; i < pauseMenuButtons.size(); i++) {
             if (pauseMenuButtons[i].contains(mouseX, mouseY)) {
@@ -608,20 +796,7 @@ void GameUI::handleMouseClick(GameObjects& objects) {
         }
         break;
 
-    case SETTINGS:
-        for (size_t i = 0; i < settingsButtons.size(); i++) {
-            if (settingsButtons[i].contains(mouseX, mouseY)) {
-                std::cout << "Settings menu button clicked: " << i << " - " << settingsButtons[i].text << std::endl;
-                switch (i) {
-                case 0: // BACK
-                    objects.setGameState(objects.getPreviousState());
-                    std::cout << "Returning to previous state: " << objects.getPreviousState() << std::endl;
-                    break;
-                }
-                return;
-            }
-        }
-        break;
+
 
     case GAME_OVER:
         std::cout << "Checking game over buttons..." << std::endl;

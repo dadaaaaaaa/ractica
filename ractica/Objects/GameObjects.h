@@ -31,10 +31,15 @@ private:
     // Рекорды
     std::vector<HighScore> highScores;
     std::string playerName;
-
+    std::vector<float> speedMultipliers;
+    int currentSpeedIndex;
 public:
+    void updateGameSpeedFromMultiplier();
     GameObjects();
-
+    float getSpeedMultiplier() const;
+    std::string getSpeedDisplayText() const;
+    void increaseSpeed();
+    void decreaseSpeed();
     // Геттеры
     const std::vector<Point>& getSnake() const { return snake; }
     const std::vector<Point>& getFood() const { return food; }
