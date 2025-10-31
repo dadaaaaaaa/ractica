@@ -2,8 +2,8 @@
 #include "GameObjects.h"
 #include "../Graphics/ShaderManager.h"
 #include "../Graphics/Camera.h"
-#include "../Core/Constants.h" 
-// Глобальные экземпляры
+#include "../Core/Constants.h"
+
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 
@@ -17,14 +17,13 @@ GameObjects::GameObjects()
     gameSpeed(0.12f),
     playerName("Player") {
 
-    // Правильный порядок множителей от медленного к быстрому
     speedMultipliers = { 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f };
-    currentSpeedIndex = 3; // Начинаем с 1.0x (нормальная скорость)
+    currentSpeedIndex = 3;
     updateGameSpeedFromMultiplier();
 }
 
 void GameObjects::updateGameSpeedFromMultiplier() {
-    float baseSpeed = 0.12f; // Базовая скорость (для 1.0x)
+    float baseSpeed = 0.12f;
     gameSpeed = baseSpeed / speedMultipliers[currentSpeedIndex];
 }
 
@@ -46,7 +45,6 @@ void GameObjects::increaseSpeed() {
     if (currentSpeedIndex < speedMultipliers.size() - 1) {
         currentSpeedIndex++;
         updateGameSpeedFromMultiplier();
-        std::cout << "Speed increased to: " << getSpeedDisplayText() << std::endl;
     }
 }
 
@@ -54,22 +52,22 @@ void GameObjects::decreaseSpeed() {
     if (currentSpeedIndex > 0) {
         currentSpeedIndex--;
         updateGameSpeedFromMultiplier();
-        std::cout << "Speed decreased to: " << getSpeedDisplayText() << std::endl;
     }
 }
 
 void GameObjects::handleSettingsKeyPress(int key) {
     switch (key) {
-    case GLFW_KEY_EQUAL: // + 
-    case GLFW_KEY_RIGHT: // Стрелка вправо
+    case GLFW_KEY_EQUAL:
+    case GLFW_KEY_RIGHT:
         increaseSpeed();
         break;
-    case GLFW_KEY_MINUS: // -
-    case GLFW_KEY_LEFT:  // Стрелка влево
+    case GLFW_KEY_MINUS:
+    case GLFW_KEY_LEFT:
         decreaseSpeed();
         break;
     }
 }
+
 void GameObjects::update() {
     if (gameOver || gameState != PLAYING) return;
 
@@ -83,9 +81,7 @@ void GameObjects::update() {
     }
 
     newHead.y = 0;
-    debugSnakeInfo();
 
-    // Проверка столкновений
     if (newHead.x < 0 || newHead.x >= GRID_WIDTH ||
         newHead.z < 0 || newHead.z >= GRID_DEPTH) {
         gameOver = true;
@@ -112,10 +108,8 @@ void GameObjects::update() {
         }
     }
 
-    // Добавление новой головы
     snake.insert(snake.begin(), newHead);
 
-    // Проверка поедания пищи
     auto foodIt = std::find(food.begin(), food.end(), newHead);
     if (foodIt != food.end()) {
         score++;
@@ -146,11 +140,6 @@ void GameObjects::initGame() {
     gameOver = false;
 
     g_camera.setTargetDistance(5.0f);
-}
-
-void GameObjects::debugSnakeInfo() {
-    if (snake.empty()) return;
-    std::cout << "Snake head: (" << snake[0].x << ", " << snake[0].y << ", " << snake[0].z << ")" << std::endl;
 }
 
 void GameObjects::saveHighScore() {
@@ -382,10 +371,7 @@ void GameObjects::generateObstacles() {
             }
 
             attempts++;
-            if (attempts > 100) {
-                std::cout << "Warning: Could not find valid obstacle position after 100 attempts" << std::endl;
-                break;
-            }
+            if (attempts > 100) break;
 
         } while (!validPosition);
 
@@ -436,10 +422,7 @@ void GameObjects::generateSingleFood() {
         }
 
         attempts++;
-        if (attempts > 50) {
-            std::cout << "Warning: Could not find valid food position after 50 attempts" << std::endl;
-            break;
-        }
+        if (attempts > 50) break;
 
     } while (!validPosition);
 
@@ -532,12 +515,8 @@ void GameObjects::handleGameKeyPress(int key) {
         initGame();
         gameState = PLAYING;
         break;
-    case GLFW_KEY_D:
-        debugSnakeInfo();
-        break;
     }
 }
-
 
 void GameObjects::handleMenuKeyPress(int key) {
     switch (gameState) {
@@ -566,44 +545,34 @@ void GameObjects::handleMenuKeyPress(int key) {
         case GLFW_KEY_ESCAPE:
             gameState = PLAYING;
             break;
-        case GLFW_KEY_Q: // Настройки из паузы
+        case GLFW_KEY_Q:
             previousState = PAUSED;
             gameState = SETTINGS;
             break;
-        case GLFW_KEY_M: // В главное меню
+        case GLFW_KEY_M:
             gameState = MAIN_MENU;
             break;
-        case GLFW_KEY_P: // Продолжить
-            gameState = PLAYING;
-            break;
-        case GLFW_KEY_B: // Назад (альтернативная кнопка)
+        case GLFW_KEY_P:
             gameState = PLAYING;
             break;
         }
         break;
 
     case SETTINGS:
-        switch (key) {
-        case GLFW_KEY_ESCAPE:
-        case GLFW_KEY_B:
-        case GLFW_KEY_BACKSPACE: // Добавляем Backspace как альтернативу
+        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_B || key == GLFW_KEY_BACKSPACE) {
             gameState = previousState;
-            std::cout << "Returning to previous state from settings" << std::endl;
-            break;
         }
         break;
 
     case HIGH_SCORES:
         if (key == GLFW_KEY_B || key == GLFW_KEY_ESCAPE || key == GLFW_KEY_BACKSPACE) {
             gameState = previousState;
-            std::cout << "Returning to previous state from high scores" << std::endl;
         }
         break;
 
     case CONTROLS:
         if (key == GLFW_KEY_B || key == GLFW_KEY_ESCAPE || key == GLFW_KEY_BACKSPACE) {
             gameState = MAIN_MENU;
-            std::cout << "Returning to main menu from controls" << std::endl;
         }
         break;
 
@@ -614,9 +583,6 @@ void GameObjects::handleMenuKeyPress(int key) {
             gameState = PLAYING;
             break;
         case GLFW_KEY_M:
-            gameState = MAIN_MENU;
-            break;
-        case GLFW_KEY_B: // Назад в главное меню
             gameState = MAIN_MENU;
             break;
         }

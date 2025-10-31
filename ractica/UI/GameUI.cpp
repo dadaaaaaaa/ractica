@@ -6,25 +6,17 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-// Глобальные экземпляры
 extern ShaderManager g_shaderManager;
 extern GLuint uiVAO, uiVBO;
 extern bool g_shouldExitGame;
-GameUI::GameUI()
-    : windowWidth(1200),
-    windowHeight(800),
-    mouseX(0),
-    mouseY(0),
-    mousePressed(false),
-    uiInitialized(false),
-    fontInitialized(false),
-    ft(nullptr),
-    face(nullptr),
-    textVAO(0),
-    textVBO(0),
-    textShader(0) {
 
+GameUI::GameUI()
+    : windowWidth(1200), windowHeight(800),
+    mouseX(0), mouseY(0), mousePressed(false),
+    uiInitialized(false), fontInitialized(false),
+    ft(nullptr), face(nullptr), textVAO(0), textVBO(0), textShader(0) {
 }
+
 GameUI::~GameUI() {
     cleanup();
 }
@@ -34,24 +26,19 @@ void GameUI::cleanup() {
 }
 
 void GameUI::cleanupFreeType() {
-    // Очистка FreeType
     if (face) FT_Done_Face(face);
     if (ft) FT_Done_FreeType(ft);
 
-    // Очистка текстур
     for (auto& character : characters) {
         glDeleteTextures(1, &character.second.textureID);
     }
     characters.clear();
 
-    // Очистка буферов
     if (textVAO) glDeleteVertexArrays(1, &textVAO);
     if (textVBO) glDeleteBuffers(1, &textVBO);
     if (textShader) glDeleteProgram(textShader);
 
-    textVAO = 0;
-    textVBO = 0;
-    textShader = 0;
+    textVAO = textVBO = textShader = 0;
     ft = nullptr;
     face = nullptr;
     fontInitialized = false;
@@ -61,48 +48,62 @@ void GameUI::setWindowSize(int width, int height) {
     windowWidth = width;
     windowHeight = height;
 
-    // Пересоздаем кнопки с новыми размерами
+    std::cout << "Window size changed to: " << width << "x" << height << std::endl;
+
     if (uiInitialized) {
-        int centerX = windowWidth / 2 - 100;
-        int buttonYStart = windowHeight / 2 + 100; // Начинаем от центра экрана
+        recreateButtons();
 
-        mainMenuButtons.clear();
-        mainMenuButtons.push_back(MenuButton("PLAY", centerX, buttonYStart, 200, 50));
-        mainMenuButtons.push_back(MenuButton("SETTINGS", centerX, buttonYStart - 80, 200, 50));
-        mainMenuButtons.push_back(MenuButton("HIGH SCORES", centerX, buttonYStart - 160, 200, 50));
-        mainMenuButtons.push_back(MenuButton("CONTROLS", centerX, buttonYStart - 240, 200, 50));
-        mainMenuButtons.push_back(MenuButton("EXIT", centerX, buttonYStart - 320, 200, 50));
-
-        pauseMenuButtons.clear();
-        pauseMenuButtons.push_back(MenuButton("RESUME", centerX, buttonYStart, 200, 50));
-        pauseMenuButtons.push_back(MenuButton("SETTINGS", centerX, buttonYStart - 80, 200, 50));
-        pauseMenuButtons.push_back(MenuButton("MAIN MENU", centerX, buttonYStart - 160, 200, 50));
-
-        gameOverButtons.clear();
-        gameOverButtons.push_back(MenuButton("RESTART", centerX, buttonYStart, 150, 50));
-        gameOverButtons.push_back(MenuButton("MAIN MENU", centerX, buttonYStart - 80, 150, 50));
-
-        settingsButtons.clear();
-        settingsButtons.push_back(MenuButton("BACK", centerX, 150, 200, 50));
+        if (fontInitialized) {
+            std::cout << "Reinitializing font for new window size..." << std::endl;
+            cleanupFreeType();
+            initWindowsFont();
+        }
     }
+}
+
+void GameUI::recreateButtons() {
+    int centerX = getScaledX(600 - 100);
+    int buttonYStart = getScaledY(400 + 100);
+    int backButtonX = windowWidth - getScaledX(220);
+    int backButtonY = getScaledY(50);
+
+    mainMenuButtons.clear();
+    mainMenuButtons.push_back(MenuButton("PLAY", centerX, buttonYStart, getScaledWidth(200), getScaledHeight(50)));
+    mainMenuButtons.push_back(MenuButton("SETTINGS", centerX, buttonYStart - getScaledY(80), getScaledWidth(200), getScaledHeight(50)));
+    mainMenuButtons.push_back(MenuButton("HIGH SCORES", centerX, buttonYStart - getScaledY(160), getScaledWidth(200), getScaledHeight(50)));
+    mainMenuButtons.push_back(MenuButton("CONTROLS", centerX, buttonYStart - getScaledY(240), getScaledWidth(200), getScaledHeight(50)));
+    mainMenuButtons.push_back(MenuButton("EXIT", centerX, buttonYStart - getScaledY(320), getScaledWidth(200), getScaledHeight(50)));
+
+    pauseMenuButtons.clear();
+    pauseMenuButtons.push_back(MenuButton("RESUME", centerX, buttonYStart, getScaledWidth(200), getScaledHeight(50)));
+    pauseMenuButtons.push_back(MenuButton("SETTINGS", centerX, buttonYStart - getScaledY(80), getScaledWidth(200), getScaledHeight(50)));
+    pauseMenuButtons.push_back(MenuButton("MAIN MENU", centerX, buttonYStart - getScaledY(160), getScaledWidth(200), getScaledHeight(50)));
+
+    gameOverButtons.clear();
+    gameOverButtons.push_back(MenuButton("RESTART", centerX, buttonYStart, getScaledWidth(200), getScaledHeight(50)));
+    gameOverButtons.push_back(MenuButton("MAIN MENU", centerX, buttonYStart - getScaledY(80), getScaledWidth(200), getScaledHeight(50)));
+
+    settingsButtons.clear();
+    settingsButtons.push_back(MenuButton("BACK", backButtonX, backButtonY, getScaledWidth(200), getScaledHeight(50)));
+
+    controlsButtons.clear();
+    controlsButtons.push_back(MenuButton("BACK", backButtonX, backButtonY, getScaledWidth(200), getScaledHeight(50)));
+
+    highScoresButtons.clear();
+    highScoresButtons.push_back(MenuButton("BACK", backButtonX, backButtonY, getScaledWidth(200), getScaledHeight(50)));
 }
 
 void GameUI::setMousePosition(double x, double y) {
     mouseX = x;
-    mouseY = windowHeight - y; // Инвертируем Y для координат OpenGL
+    mouseY = windowHeight - y;
 }
 
 void GameUI::initUI() {
     std::cout << "Initializing UI..." << std::endl;
 
-    // Создаем VAO и VBO для 2D прямоугольников
     float vertices[] = {
-        0.0f, 0.0f,
-        1.0f, 0.0f,
-        1.0f, 1.0f,
-        1.0f, 1.0f,
-        0.0f, 1.0f,
-        0.0f, 0.0f
+        0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+        1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f
     };
 
     glGenVertexArrays(1, &uiVAO);
@@ -111,88 +112,39 @@ void GameUI::initUI() {
     glBindVertexArray(uiVAO);
     glBindBuffer(GL_ARRAY_BUFFER, uiVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-    // ПРИНУДИТЕЛЬНАЯ ИНИЦИАЛИЗАЦИЯ ШРИФТА
-    std::cout << "Initializing font in initUI..." << std::endl;
     initWindowsFont();
+    recreateButtons();
 
-    if (!fontInitialized) {
-        std::cerr << "WARNING: Font initialization failed in initUI()" << std::endl;
-    }
-
-    // Создаем кнопки
-    int centerX = windowWidth / 2 - 100;
-    mainMenuButtons.clear();
-    mainMenuButtons.push_back(MenuButton("PLAY", centerX, 450, 200, 50));
-    mainMenuButtons.push_back(MenuButton("SETTINGS", centerX, 370, 200, 50));
-    mainMenuButtons.push_back(MenuButton("HIGH SCORES", centerX, 290, 200, 50));
-    mainMenuButtons.push_back(MenuButton("CONTROLS", centerX, 210, 200, 50));
-    mainMenuButtons.push_back(MenuButton("EXIT", centerX, 130, 200, 50));
-
-    pauseMenuButtons.clear();
-    pauseMenuButtons.push_back(MenuButton("RESUME", centerX, 450, 200, 50));
-    pauseMenuButtons.push_back(MenuButton("SETTINGS", centerX, 370, 200, 50));
-    pauseMenuButtons.push_back(MenuButton("MAIN MENU", centerX, 290, 200, 50));
-
-    gameOverButtons.clear();
-    gameOverButtons.push_back(MenuButton("RESTART", centerX, 450, 200, 50));
-    gameOverButtons.push_back(MenuButton("MAIN MENU", centerX, 370, 200, 50));
-
-    settingsButtons.clear();
-    settingsButtons.push_back(MenuButton("BACK", centerX, 150, 200, 50));
-    controlsButtons.clear(); // Добавьте этот вектор
-    controlsButtons.push_back(MenuButton("BACK", centerX, 150, 200, 50));
-
-    highScoresButtons.clear(); // Добавьте этот вектор  
-    highScoresButtons.push_back(MenuButton("BACK", centerX, 150, 200, 50));
-    if (fontInitialized) {
-        std::cout << "Pre-rendering text for shader warm-up..." << std::endl;
-
-        // Активируем шейдер
-        glUseProgram(textShader);
-
-        // Устанавливаем проекционную матрицу
-        glm::mat4 projection = glm::ortho(0.0f, (float)windowWidth, 0.0f, (float)windowHeight);
-        glUniformMatrix4fv(glGetUniformLocation(textShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
-
-        // Рисуем тестовый текст (невидимый)
-        drawText(-1000, -1000, "WARMUP", 1.0f, 1.0f, 1.0f);
-
-        // Сбрасываем шейдер
-        glUseProgram(0);
-
-        std::cout << "Text pre-rendering complete" << std::endl;
-    }
     uiInitialized = true;
-    std::cout << "UI initialized successfully. Font initialized: " << fontInitialized << std::endl;
+    std::cout << "UI initialized successfully" << std::endl;
 }
 
 void GameUI::initWindowsFont() {
     std::cout << "Initializing FreeType font..." << std::endl;
 
-    // Инициализация FreeType
     if (FT_Init_FreeType(&ft)) {
         std::cerr << "ERROR: Could not init FreeType Library" << std::endl;
         return;
     }
 
-    // Загрузка шрифта Arial
-    if (!loadFreeTypeFont("C:/Windows/Fonts/arial.ttf", 24)) {
+    // Размер шрифта масштабируется в зависимости от разрешения
+    unsigned int fontSize = getScaledFontSize();
+    std::cout << "Loading font with scaled size: " << fontSize << " (base: 24)" << std::endl;
+
+    if (!loadFreeTypeFont("C:/Windows/Fonts/arial.ttf", fontSize)) {
         std::cerr << "Failed to load font with FreeType" << std::endl;
         return;
     }
 
     setupTextBuffers();
     compileTextShaders();
-
     fontInitialized = true;
-    std::cout << "FreeType font initialized successfully" << std::endl;
+    std::cout << "FreeType font initialized successfully with size: " << fontSize << std::endl;
 }
 
 bool GameUI::loadFreeTypeFont(const std::string& fontPath, unsigned int fontSize) {
@@ -202,30 +154,17 @@ bool GameUI::loadFreeTypeFont(const std::string& fontPath, unsigned int fontSize
     }
 
     FT_Set_Pixel_Sizes(face, 0, fontSize);
-
-    // Загрузка первых 128 символов ASCII
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
     for (GLubyte c = 0; c < 128; c++) {
-        if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
-            std::cerr << "ERROR: Failed to load Glyph: " << c << std::endl;
-            continue;
-        }
+        if (FT_Load_Char(face, c, FT_LOAD_RENDER)) continue;
 
         GLuint texture;
         glGenTextures(1, &texture);
         glBindTexture(GL_TEXTURE_2D, texture);
-        glTexImage2D(
-            GL_TEXTURE_2D,
-            0,
-            GL_RED,
-            face->glyph->bitmap.width,
-            face->glyph->bitmap.rows,
-            0,
-            GL_RED,
-            GL_UNSIGNED_BYTE,
-            face->glyph->bitmap.buffer
-        );
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RED,
+            face->glyph->bitmap.width, face->glyph->bitmap.rows,
+            0, GL_RED, GL_UNSIGNED_BYTE, face->glyph->bitmap.buffer);
 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -252,10 +191,8 @@ void GameUI::setupTextBuffers() {
     glBindVertexArray(textVAO);
     glBindBuffer(GL_ARRAY_BUFFER, textVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * 6 * 4, NULL, GL_DYNAMIC_DRAW);
-
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), 0);
-
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 }
@@ -284,85 +221,44 @@ void GameUI::compileTextShaders() {
         }
     )";
 
-    // Компиляция вершинного шейдера
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
     glCompileShader(vertexShader);
 
-    // Проверка ошибок вершинного шейдера
-    GLint success;
-    GLchar infoLog[512];
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-        std::cerr << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n" << infoLog << std::endl;
-    }
-
-    // Компиляция фрагментного шейдера
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
     glCompileShader(fragmentShader);
 
-    // Проверка ошибок фрагментного шейдера
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-        std::cerr << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n" << infoLog << std::endl;
-    }
-
-    // Создание шейдерной программы
     textShader = glCreateProgram();
     glAttachShader(textShader, vertexShader);
     glAttachShader(textShader, fragmentShader);
     glLinkProgram(textShader);
 
-    // Проверка ошибок линковки
-    glGetProgramiv(textShader, GL_LINK_STATUS, &success);
-    if (!success) {
-        glGetProgramInfoLog(textShader, 512, NULL, infoLog);
-        std::cerr << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
-    }
-    if (success) {
-        glUseProgram(textShader);
-
-        // Проверяем uniform переменные
-        GLint projLoc = glGetUniformLocation(textShader, "projection");
-        GLint colorLoc = glGetUniformLocation(textShader, "textColor");
-        GLint texLoc = glGetUniformLocation(textShader, "text");
-
-        std::cout << "Text shader uniforms - projection: " << projLoc
-            << ", color: " << colorLoc
-            << ", texture: " << texLoc << std::endl;
-
-        glUseProgram(0);
-    }
-    // Удаление шейдеров
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 }
 
 float GameUI::getTextWidth(const std::string& text) {
     if (!fontInitialized || characters.empty()) {
-        return text.length() * 10.0f; // Fallback width
+        return text.length() * getScaledWidth(10);
     }
 
     float width = 0.0f;
     for (const char& c : text) {
         auto it = characters.find(c);
         if (it != characters.end()) {
-            TextCharacter ch = it->second;
-            width += (ch.advance >> 6); // bitshift by 6 to get value in pixels
+            width += (it->second.advance >> 6);
         }
     }
     return width;
 }
 
 void GameUI::drawText(float x, float y, const std::string& text, float r, float g, float b) {
-    if (!fontInitialized || characters.empty()) {
-        return;
-    }
+    if (!fontInitialized || characters.empty()) return;
 
-    // Активируем соответствующий render state
+    float scaledX = x;
+    float scaledY = y; 
+
     glUseProgram(textShader);
     glm::mat4 projection = glm::ortho(0.0f, (float)windowWidth, 0.0f, (float)windowHeight);
     glUniformMatrix4fv(glGetUniformLocation(textShader, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
@@ -370,59 +266,43 @@ void GameUI::drawText(float x, float y, const std::string& text, float r, float 
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(textVAO);
 
-    // Включаем blending для текста
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Итерация по всем символам
-    float startX = x;
+    float startX = scaledX;
     for (const char& c : text) {
         auto it = characters.find(c);
         if (it == characters.end()) continue;
 
         TextCharacter ch = it->second;
-
         float xpos = startX + ch.bearing.x;
-        float ypos = y - (ch.size.y - ch.bearing.y);
+        float ypos = scaledY - (ch.size.y - ch.bearing.y);
+        float w = ch.size.x, h = ch.size.y;
 
-        float w = ch.size.x;
-        float h = ch.size.y;
-
-        // Обновляем VBO для каждого символа
         float vertices[6][4] = {
             { xpos,     ypos + h,   0.0f, 0.0f },
             { xpos,     ypos,       0.0f, 1.0f },
             { xpos + w, ypos,       1.0f, 1.0f },
-
             { xpos,     ypos + h,   0.0f, 0.0f },
             { xpos + w, ypos,       1.0f, 1.0f },
             { xpos + w, ypos + h,   1.0f, 0.0f }
         };
 
-        // Рендерим текстуру глифа на quadrilateral
         glBindTexture(GL_TEXTURE_2D, ch.textureID);
-
-        // Обновляем содержимое VBO памяти
         glBindBuffer(GL_ARRAY_BUFFER, textVBO);
         glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-        // Рендерим quadrilateral
         glDrawArrays(GL_TRIANGLES, 0, 6);
-
-        // Теперь смещаем позицию для следующего глифа
-        startX += (ch.advance >> 6); // bitshift by 6 to get value in pixels (2^6 = 64)
+        startX += (ch.advance >> 6);
     }
 
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_BLEND);
 }
-
 void GameUI::drawCenteredText(float y, const std::string& text, float r, float g, float b) {
     float textWidth = getTextWidth(text);
     float x = (windowWidth - textWidth) / 2;
-    drawText(x, y, text, r, g, b);
+    drawText(x, getScaledY(static_cast<int>(y)), text, r, g, b);
 }
 
 bool GameUI::ensureFontInitialized() {
@@ -432,58 +312,27 @@ bool GameUI::ensureFontInitialized() {
     return fontInitialized;
 }
 
-// Остальные методы остаются без изменений...
 void GameUI::drawMainMenu() {
-    // СБРОС СОСТОЯНИЯ OPENGL ПЕРЕД ОТРИСОВКОЙ UI
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Явно активируем шейдер текста
-    if (fontInitialized && textShader != 0) {
-        glUseProgram(textShader);
-        // Принудительно устанавливаем проекционную матрицу
-        glm::mat4 projection = glm::ortho(0.0f, (float)windowWidth, 0.0f, (float)windowHeight);
-        glUniformMatrix4fv(0, 1, GL_FALSE, glm::value_ptr(projection));
-    }
-
-    // ОЧИСТКА БУФЕРОВ
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
-
-    // ОТРИСОВКА КНОПОК (фон)
+    drawCenteredText(600, "3D SNAKE GAME", 1.0f, 1.0f, 1.0f);
     for (auto& button : mainMenuButtons) {
         button.hovered = button.contains(mouseX, mouseY);
-        glm::vec3 bgColor = button.hovered ? glm::vec3(0.2f, 0.6f, 0.2f) : glm::vec3(0.1f, 0.3f, 0.1f);
-        drawQuad(button.x, button.y, button.width, button.height, bgColor, 1.0f);
+        drawButtonWithText(button);
     }
-
-    // ОТРИСОВКА ТЕКСТА
-    drawCenteredText(550, "3D SNAKE GAME", 1.0f, 1.0f, 1.0f);
-
-    for (auto& button : mainMenuButtons) {
-        if (fontInitialized && !characters.empty()) {
-            float textWidth = getTextWidth(button.text);
-            float textX = button.x + (button.width - textWidth) / 2;
-            float textY = button.y + (button.height / 2) + 8;
-            drawText(textX, textY, button.text, 1.0f, 1.0f, 1.0f);
-        }
-    }
-
-    // СБРАСЫВАЕМ ШЕЙДЕР
-    glUseProgram(0);
 }
 
 void GameUI::drawPauseMenu() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Полупрозрачный фон
     drawQuad(0, 0, windowWidth, windowHeight, glm::vec3(0.0f, 0.0f, 0.0f), 0.7f);
-
-    // Заголовок
-    drawCenteredText(500, "PAUSED", 1.0f, 1.0f, 1.0f);
+    drawCenteredText(700, "PAUSED", 1.0f, 1.0f, 1.0f);
 
     for (auto& button : pauseMenuButtons) {
         button.hovered = button.contains(mouseX, mouseY);
@@ -492,55 +341,30 @@ void GameUI::drawPauseMenu() {
 
     glDisable(GL_BLEND);
 }
-void GameUI::drawRect(float x, float y, float width, float height, const glm::vec4& color) {
-    // Используем существующий метод drawQuad с альфа-каналом
-    drawQuad(x, y, width, height, glm::vec3(color.r, color.g, color.b), color.a);
-}
-void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName, float speedMultiplier, const std::string& speedDisplayText) {
-    // ОЧИСТКА БУФЕРОВ
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
 
+void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName, float speedMultiplier, const std::string& speedDisplayText) {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClearColor(0.1f, 0.3f, 0.2f, 1.0f);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
+    drawCenteredText(550, "SETTINGS", 1.0f, 1.0f, 1.0f);
+    drawCenteredText(450, "SPEED", 1.0f, 1.0f, 1.0f);
+
+    float multiplierY = getScaledY(350);
+    drawCenteredText(350, speedDisplayText, 1.0f, 1.0f, 1.0f);
+
     float centerX = windowWidth / 2.0f;
-
-    // === ЗАГОЛОВОК ===
-    drawCenteredText(windowHeight - 100, "SETTINGS", 1.0f, 1.0f, 1.0f);
-
-    // === НАДПИСЬ SPEED СВЕРХУ ===
-    drawCenteredText(windowHeight - 180, "SPEED", 1.0f, 1.0f, 1.0f);
-
-    // === МНОЖИТЕЛЬ СКОРОСТИ (крупно по центру) ===
-    float multiplierY = windowHeight - 280;
-    drawCenteredText(multiplierY, speedDisplayText, 1.0f, 1.0f, 1.0f);
-
-    // === КНОПКИ + И - ПО БОКАМ ===
-    float buttonsY = multiplierY;
-
-    // Левая кнопка [-] - слева от множителя
-    float minusButtonX = centerX - 120.0f;
     bool minusHover = isSpeedDecreaseButtonClicked(mouseX, mouseY);
-    drawText(minusButtonX, buttonsY, "-",
-        minusHover ? 1.0f : 0.7f,
-        minusHover ? 0.5f : 0.3f,
-        0.0f);
-
-    // Правая кнопка [+] - справа от множителя
-    float plusButtonX = centerX + 100.0f;
     bool plusHover = isSpeedIncreaseButtonClicked(mouseX, mouseY);
-    drawText(plusButtonX, buttonsY, "+",
-        plusHover ? 0.0f : 0.0f,
-        plusHover ? 1.0f : 0.7f,
-        0.0f);
 
-    // === ПОДСКАЗКИ ===
-    float hintsY = multiplierY - 80;
-    drawCenteredText(hintsY, "Click +/- buttons or use keyboard +/-", 0.7f, 0.7f, 0.7f);
-    drawCenteredText(hintsY - 25, "Arrow keys also work", 0.7f, 0.7f, 0.7f);
+    drawText(centerX - getScaledX(120), multiplierY, "-",
+        minusHover ? 1.0f : 0.7f, 0.3f, 0.0f);
+    drawText(centerX + getScaledX(100), multiplierY, "+",
+        0.0f, plusHover ? 1.0f : 0.7f, 0.0f);
 
-    // === КНОПКА BACK ===
+    drawCenteredText(250, "Use +/- buttons or keyboard", 0.7f, 0.7f, 0.7f);
+
     for (auto& button : settingsButtons) {
         button.hovered = button.contains(mouseX, mouseY);
         drawButtonWithText(button);
@@ -552,38 +376,30 @@ void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName, fl
 
 bool GameUI::isSpeedIncreaseButtonClicked(double mouseX, double mouseY) {
     float centerX = windowWidth / 2.0f;
-    float buttonX = centerX + 100.0f; // Справа от центра
-    float buttonY = windowHeight - 280.0f; // На уровне множителя
-
-    // Область клика вокруг текста "+"
-    return (mouseX >= buttonX - 20.0f && mouseX <= buttonX + 20.0f &&
-        mouseY >= buttonY - 20.0f && mouseY <= buttonY + 20.0f);
+    float buttonX = centerX + getScaledX(100);
+    float buttonY = getScaledY(350);
+    return (mouseX >= buttonX - getScaledX(20) && mouseX <= buttonX + getScaledX(20) &&
+        mouseY >= buttonY - getScaledY(20) && mouseY <= buttonY + getScaledY(20));
 }
 
 bool GameUI::isSpeedDecreaseButtonClicked(double mouseX, double mouseY) {
     float centerX = windowWidth / 2.0f;
-    float buttonX = centerX - 120.0f; // Слева от центра
-    float buttonY = windowHeight - 280.0f; // На уровне множителя
-
-    // Область клика вокруг текста "-"
-    return (mouseX >= buttonX - 20.0f && mouseX <= buttonX + 20.0f &&
-        mouseY >= buttonY - 20.0f && mouseY <= buttonY + 20.0f);
+    float buttonX = centerX - getScaledX(120);
+    float buttonY = getScaledY(350);
+    return (mouseX >= buttonX - getScaledX(20) && mouseX <= buttonX + getScaledX(20) &&
+        mouseY >= buttonY - getScaledY(20) && mouseY <= buttonY + getScaledY(20));
 }
-
 
 void GameUI::drawGameOver(int score) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     drawQuad(0, 0, windowWidth, windowHeight, glm::vec3(0.0f, 0.0f, 0.0f), 0.7f);
-
-    // Текст в верхней части экрана
-    drawCenteredText(windowHeight - 150, "GAME OVER", 1.0f, 0.0f, 0.0f);
+    drawCenteredText(700, "GAME OVER", 1.0f, 0.0f, 0.0f);
 
     std::string scoreText = "Final Score: " + std::to_string(score);
-    drawCenteredText(windowHeight - 250, scoreText, 1.0f, 1.0f, 1.0f);
+    drawCenteredText(600, scoreText, 1.0f, 1.0f, 1.0f);
 
-    // Кнопки посередине экрана
     for (auto& button : gameOverButtons) {
         button.hovered = button.contains(mouseX, mouseY);
         drawButtonWithText(button);
@@ -594,20 +410,18 @@ void GameUI::drawGameOver(int score) {
 
 void GameUI::drawHighScoresMenu(const std::vector<HighScore>& highScores) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
+    glClearColor(0.2f, 0.1f, 0.1f, 1.0f);
 
     drawCenteredText(550, "HIGH SCORES", 1.0f, 1.0f, 1.0f);
 
-    int yPos = 450;
+    int yPos = getScaledY(450);
     for (size_t i = 0; i < highScores.size() && i < 10; i++) {
         std::string scoreText = std::to_string(i + 1) + ". " + highScores[i].playerName +
-            " - " + std::to_string(highScores[i].score) +
-            " (" + highScores[i].date + ")";
+            " - " + std::to_string(highScores[i].score) + " (" + highScores[i].date + ")";
         drawCenteredText(yPos, scoreText, 1.0f, 1.0f, 0.0f);
-        yPos -= 40;
+        yPos -= getScaledY(40);
     }
 
-    // КНОПКА BACK вместо текстовой подсказки
     for (auto& button : highScoresButtons) {
         button.hovered = button.contains(mouseX, mouseY);
         drawButtonWithText(button);
@@ -616,20 +430,19 @@ void GameUI::drawHighScoresMenu(const std::vector<HighScore>& highScores) {
 
 void GameUI::drawControlsMenu() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
+    glClearColor(0.1f, 0.2f, 0.1f, 1.0f);
 
     drawCenteredText(550, "CONTROLS", 1.0f, 1.0f, 1.0f);
 
-    int yPos = 450;
-    drawCenteredText(yPos, "LEFT/RIGHT - Turn snake", 0.0f, 1.0f, 0.0f); yPos -= 40;
-    drawCenteredText(yPos, "Q/E - Rotate camera", 0.0f, 1.0f, 0.0f); yPos -= 40;
-    drawCenteredText(yPos, "Mouse Wheel - Zoom", 0.0f, 1.0f, 0.0f); yPos -= 40;
-    drawCenteredText(yPos, "ESC - Pause/Menu", 0.0f, 1.0f, 0.0f); yPos -= 40;
-    drawCenteredText(yPos, "P - Toggle pause", 0.0f, 1.0f, 0.0f); yPos -= 40;
-    drawCenteredText(yPos, "R - Restart game", 0.0f, 1.0f, 0.0f); yPos -= 40;
-    drawCenteredText(yPos, "D - Debug info", 0.0f, 1.0f, 0.0f); yPos -= 40;
+    int yPos = getScaledY(450);
+    drawCenteredText(yPos, "LEFT/RIGHT - Turn snake", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
+    drawCenteredText(yPos, "Q/E - Rotate camera", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
+    drawCenteredText(yPos, "Mouse Wheel - Zoom", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
+    drawCenteredText(yPos, "ESC - Pause/Menu", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
+    drawCenteredText(yPos, "P - Toggle pause", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
+    drawCenteredText(yPos, "R - Restart game", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
+    drawCenteredText(yPos, "D - Debug info", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
 
-    // КНОПКА BACK
     for (auto& button : controlsButtons) {
         button.hovered = button.contains(mouseX, mouseY);
         drawButtonWithText(button);
@@ -638,7 +451,6 @@ void GameUI::drawControlsMenu() {
 
 void GameUI::drawQuad(float x, float y, float width, float height, const glm::vec3& color, float alpha) {
     g_shaderManager.useUIShader();
-
     glm::mat4 projection = glm::ortho(0.0f, (float)windowWidth, 0.0f, (float)windowHeight);
     g_shaderManager.setUIProjection(projection);
 
@@ -655,210 +467,95 @@ void GameUI::drawQuad(float x, float y, float width, float height, const glm::ve
     glBindVertexArray(0);
 }
 
-void GameUI::drawButton(const MenuButton& button) {
-    // Яркие контрастные цвета для отладки
-    glm::vec3 bgColor;
-    if (button.hovered) {
-        bgColor = glm::vec3(1.0f, 0.0f, 0.0f); // Красный при наведении
-    }
-    else {
-        bgColor = glm::vec3(0.0f, 0.0f, 1.0f); // Синий обычный
-    }
-
-    // Рисуем ОСНОВНУЮ кнопку - большой прямоугольник
-    drawQuad(button.x, button.y, button.width, button.height, bgColor, 1.0f);
-
-    // Белая рамка для видимости границ
-    drawQuad(button.x - 2, button.y - 2, button.width + 4, 2, glm::vec3(1.0f, 1.0f, 1.0f), 1.0f); // верх
-    drawQuad(button.x - 2, button.y + button.height, button.width + 4, 2, glm::vec3(1.0f, 1.0f, 1.0f), 1.0f); // низ
-    drawQuad(button.x - 2, button.y, 2, button.height, glm::vec3(1.0f, 1.0f, 1.0f), 1.0f); // лево
-    drawQuad(button.x + button.width, button.y, 2, button.height, glm::vec3(1.0f, 1.0f, 1.0f), 1.0f); // право
-}
-
 void GameUI::drawButtonWithText(const MenuButton& button) {
-    // Рисуем фон кнопки
     glm::vec3 bgColor = button.hovered ? glm::vec3(0.2f, 0.6f, 0.2f) : glm::vec3(0.1f, 0.3f, 0.1f);
     drawQuad(button.x, button.y, button.width, button.height, bgColor, 1.0f);
 
-    // Вычисляем позицию для текста (по центру кнопки)
-    float textWidth = getTextWidth(button.text);
-    float textX = button.x + (button.width - textWidth) / 2;
-    float textY = button.y + (button.height / 2) + 8; // Центрируем по вертикали
+    if (fontInitialized && !characters.empty()) {
+        float textWidth = getTextWidth(button.text);
 
-    // Рисуем текст на кнопке белым цветом для контраста
-    drawText(textX, textY, button.text, 1.0f, 1.0f, 1.0f);
+        // Позиционируем текст по центру кнопки
+        // Координаты кнопки уже масштабированы, поэтому используем их как есть
+        float textX = button.x + (button.width - textWidth) / 2;
 
-    // Отладочная информация
-    static int debugCount = 0;
-    if (debugCount < 10) {
-        std::cout << "Button: " << button.text << " at (" << textX << ", " << textY << ")" << std::endl;
-        debugCount++;
+        // Y-координата: центр кнопки + небольшой отступ для визуального центрирования
+        // Отступ также масштабируем
+        float textY = button.y + (button.height / 4) + getScaledY(8);
+
+        // Рисуем текст с масштабированными координатами
+        drawText(textX, textY, button.text, 1.0f, 1.0f, 1.0f);
     }
 }
 
 void GameUI::handleMouseClick(GameObjects& objects) {
     mousePressed = true;
-    std::cout << "Mouse clicked at: (" << mouseX << ", " << mouseY << ")" << std::endl;
-    std::cout << "Game state: " << objects.getGameState() << std::endl;
 
     switch (objects.getGameState()) {
     case MAIN_MENU:
         for (size_t i = 0; i < mainMenuButtons.size(); i++) {
             if (mainMenuButtons[i].contains(mouseX, mouseY)) {
-                std::cout << "Main menu button clicked: " << i << " - " << mainMenuButtons[i].text << std::endl;
                 switch (i) {
-                case 0:
-                    objects.setGameState(PLAYING);
-                    objects.initGame();
-                    break;
-                case 1:
-                    objects.setPreviousState(MAIN_MENU);
-                    objects.setGameState(SETTINGS);
-                    break;
-                case 2:
-                    objects.setPreviousState(MAIN_MENU);
-                    objects.setGameState(HIGH_SCORES);
-                    break;
-                case 3:
-                    objects.setGameState(CONTROLS);
-                    break;
-                case 4: // EXIT - выход из игры
-                    std::cout << "Exit game requested" << std::endl;
-                    g_shouldExitGame = true;
-                    break;
+                case 0: objects.setGameState(PLAYING); objects.initGame(); break;
+                case 1: objects.setPreviousState(MAIN_MENU); objects.setGameState(SETTINGS); break;
+                case 2: objects.setPreviousState(MAIN_MENU); objects.setGameState(HIGH_SCORES); break;
+                case 3: objects.setPreviousState(MAIN_MENU); objects.setGameState(CONTROLS); break;
+                case 4: g_shouldExitGame = true; break;
                 }
                 return;
             }
         }
         break;
+
     case SETTINGS:
-        for (size_t i = 0; i < settingsButtons.size(); i++) {
-            if (settingsButtons[i].contains(mouseX, mouseY)) {
-                std::cout << "Settings menu button clicked: " << i << " - " << settingsButtons[i].text << std::endl;
-                switch (i) {
-                case 0: // BACK
-                    objects.setGameState(objects.getPreviousState());
-                    std::cout << "Returning to previous state: " << objects.getPreviousState() << std::endl;
-                    break;
-                }
+        for (auto& button : settingsButtons) {
+            if (button.contains(mouseX, mouseY)) {
+                objects.setGameState(objects.getPreviousState());
                 return;
             }
         }
         break;
 
     case HIGH_SCORES:
-        for (size_t i = 0; i < highScoresButtons.size(); i++) {
-            if (highScoresButtons[i].contains(mouseX, mouseY)) {
-                std::cout << "High scores menu button clicked: " << i << " - " << highScoresButtons[i].text << std::endl;
-                switch (i) {
-                case 0: // BACK
-                    objects.setGameState(objects.getPreviousState());
-                    std::cout << "Returning to previous state: " << objects.getPreviousState() << std::endl;
-                    break;
-                }
+        for (auto& button : highScoresButtons) {
+            if (button.contains(mouseX, mouseY)) {
+                objects.setGameState(objects.getPreviousState());
                 return;
             }
         }
         break;
 
     case CONTROLS:
-        for (size_t i = 0; i < controlsButtons.size(); i++) {
-            if (controlsButtons[i].contains(mouseX, mouseY)) {
-                std::cout << "Controls menu button clicked: " << i << " - " << controlsButtons[i].text << std::endl;
-                switch (i) {
-                case 0: // BACK
-                    objects.setGameState(objects.getPreviousState());
-                    std::cout << "Returning to previous state: " << objects.getPreviousState() << std::endl;
-                    break;
-                }
+        for (auto& button : controlsButtons) {
+            if (button.contains(mouseX, mouseY)) {
+                objects.setGameState(objects.getPreviousState());
                 return;
             }
         }
         break;
+
     case PAUSED:
         for (size_t i = 0; i < pauseMenuButtons.size(); i++) {
             if (pauseMenuButtons[i].contains(mouseX, mouseY)) {
-                std::cout << "Pause menu button clicked: " << i << " - " << pauseMenuButtons[i].text << std::endl;
                 switch (i) {
-                case 0: // RESUME
-                    objects.setGameState(PLAYING);
-                    break;
-                case 1: // SETTINGS
-                    objects.setPreviousState(PAUSED);
-                    objects.setGameState(SETTINGS);
-                    break;
-                case 2: // MAIN MENU
-                    objects.setGameState(MAIN_MENU);
-                    break;
+                case 0: objects.setGameState(PLAYING); break;
+                case 1: objects.setPreviousState(PAUSED); objects.setGameState(SETTINGS); break;
+                case 2: objects.setGameState(MAIN_MENU); break;
                 }
                 return;
             }
         }
         break;
-
-
 
     case GAME_OVER:
-        std::cout << "Checking game over buttons..." << std::endl;
         for (size_t i = 0; i < gameOverButtons.size(); i++) {
-            std::cout << "Game over button " << i << ": " << gameOverButtons[i].text
-                << " at (" << gameOverButtons[i].x << ", " << gameOverButtons[i].y << ")"
-                << " size (" << gameOverButtons[i].width << "x" << gameOverButtons[i].height << ")" << std::endl;
             if (gameOverButtons[i].contains(mouseX, mouseY)) {
-                std::cout << "Game over button clicked: " << i << " - " << gameOverButtons[i].text << std::endl;
                 switch (i) {
-                case 0: // RESTART
-                    objects.initGame();
-                    objects.setGameState(PLAYING);
-                    std::cout << "Restarting game..." << std::endl;
-                    break;
-                case 1: // MAIN MENU
-                    objects.setGameState(MAIN_MENU);
-                    std::cout << "Returning to main menu..." << std::endl;
-                    break;
+                case 0: objects.initGame(); objects.setGameState(PLAYING); break;
+                case 1: objects.setGameState(MAIN_MENU); break;
                 }
                 return;
             }
         }
-        std::cout << "No game over button clicked" << std::endl;
         break;
     }
-}
-
-void GameUI::drawTestQuad(float x, float y, float width, float height, const glm::vec3& color) {
-    std::cout << "TEST QUAD: (" << x << "," << y << ") size (" << width << "x" << height << ")" << std::endl;
-
-    g_shaderManager.useUIShader();
-
-    // Проекция с Y вниз (как в UI)
-    glm::mat4 projection = glm::ortho(0.0f, (float)windowWidth, (float)windowHeight, 0.0f);
-    g_shaderManager.setUIProjection(projection);
-
-    glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(x, y, 0.0f));
-    model = glm::scale(model, glm::vec3(width, height, 1.0f));
-    g_shaderManager.setUIModel(model);
-
-    g_shaderManager.setUIColor(color);
-
-    glBindVertexArray(uiVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
-}
-
-void GameUI::drawTextTest() {
-    std::cout << "=== TEXT RENDERING TEST ===" << std::endl;
-
-    // Тест в разных местах экрана
-    drawText(100, 100, "TOP LEFT TEST", 1.0f, 0.0f, 0.0f);
-    drawText(windowWidth - 300, 100, "TOP RIGHT TEST", 0.0f, 1.0f, 0.0f);
-    drawText(100, windowHeight - 50, "BOTTOM LEFT TEST", 0.0f, 0.0f, 1.0f);
-    drawText(windowWidth / 2 - 100, windowHeight / 2, "CENTER TEST", 1.0f, 1.0f, 0.0f);
-
-    std::cout << "=== END TEXT TEST ===" << std::endl;
-}
-
-void GameUI::debugTextRendering() {
-    // Метод для отладки
-    drawTextTest();
 }

@@ -8,18 +8,15 @@
 
 class GameObjects {
 private:
-    // Основные игровые объекты
     std::vector<Point> snake;
     std::vector<Point> food;
     std::vector<Obstacle> obstacles;
     std::vector<Point> fenceBlocks;
 
-    // Спрайты окружения
     std::vector<Sprite> cloudSprites;
     std::vector<Bird> birds;
     std::vector<Sprite> flowerSprites;
 
-    // Состояние игры
     Direction currentDirection;
     int verticalDirection;
     int score;
@@ -28,19 +25,20 @@ private:
     float gameSpeed;
     GameState previousState;
 
-    // Рекорды
     std::vector<HighScore> highScores;
     std::string playerName;
     std::vector<float> speedMultipliers;
     int currentSpeedIndex;
+
 public:
-    void updateGameSpeedFromMultiplier();
     GameObjects();
+
+    void updateGameSpeedFromMultiplier();
     float getSpeedMultiplier() const;
     std::string getSpeedDisplayText() const;
     void increaseSpeed();
     void decreaseSpeed();
-    // Геттеры
+
     const std::vector<Point>& getSnake() const { return snake; }
     const std::vector<Point>& getFood() const { return food; }
     const std::vector<Obstacle>& getObstacles() const { return obstacles; }
@@ -59,8 +57,6 @@ public:
     const std::vector<HighScore>& getHighScores() const { return highScores; }
     const std::string& getPlayerName() const { return playerName; }
 
-    // Сеттеры
-    void setSnake(const std::vector<Point>& newSnake) { snake = newSnake; }
     void setCurrentDirection(Direction direction) { currentDirection = direction; }
     void setVerticalDirection(int direction) { verticalDirection = direction; }
     void setScore(int newScore) { score = newScore; }
@@ -70,7 +66,6 @@ public:
     void setPreviousState(GameState state) { previousState = state; }
     void setPlayerName(const std::string& name) { playerName = name; }
 
-    // Генерация объектов
     void generateFence();
     void generateClouds();
     void generateBirds();
@@ -79,27 +74,16 @@ public:
     void generateSingleFood();
     void generateInitialFood();
 
-    // Обновление объектов
     void update();
     void updateClouds();
     void updateBirds();
 
-    // Управление состоянием
     void initGame();
     void debugSnakeInfo();
     void loadHighScores();
     void saveHighScore();
 
-    // Обработка ввода
     void handleGameKeyPress(int key);
     void handleSettingsKeyPress(int key);
     void handleMenuKeyPress(int key);
-
-    // Модификация объектов
-    void addSnakeSegment(const Point& segment);
-    void removeSnakeSegment();
-    void addFood(const Point& foodPoint);
-    void clearFood();
-    void addObstacle(const Obstacle& obstacle);
-    void clearObstacles();
 };
