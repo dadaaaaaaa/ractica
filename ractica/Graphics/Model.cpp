@@ -4,6 +4,7 @@
 Model::Model() : VAO(0), VBO(0), hasTexture(false) {}
 
 void Model::setupBuffers() {
+    
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
 

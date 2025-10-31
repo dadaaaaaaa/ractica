@@ -1,63 +1,16 @@
 #pragma once
 #include "../Core/Constants.h"
 #include "../Core/Types.h"
-#include "../Objects/Obstacle.h"
-#include "../Graphics/Model.h"
-#include "../Objects/Sprite.h"
-#include "../Objects/Bird.h"
-#include "../UI/MenuButton.h"
-#include <vector>
+#include "../Objects/GameObjects.h"
+#include "../Graphics/GameRenderer.h"
+#include "../UI/GameUI.h"
 
 class Game {
 private:
-    // Игровые объекты
-    std::vector<Point> snake;
-    std::vector<Point> food;
-    std::vector<Obstacle> obstacles;
-    std::vector<Point> fenceBlocks;
-
-    // Спрайты
-    std::vector<Sprite> cloudSprites;
-    std::vector<Bird> birds;
-    std::vector<Sprite> flowerSprites;
-
-    // Модели
-    Model snakeModel;
-    Model foodModel;
-    Model obstacleModel;
-    Model floorModel;
-    Model fenceModel;
-    Model cloudModel;
-    Model birdModel;
-    Model flowerModel;
-    Model treeModel;
-    Model appleModel;
-    GLuint fontBase;
-
-    // UI
-    std::vector<MenuButton> mainMenuButtons;
-    std::vector<MenuButton> pauseMenuButtons;
-    std::vector<MenuButton> settingsButtons;
-    std::vector<MenuButton> gameOverButtons;
-    GameState previousState;
-    // Рекорды
-    std::vector<HighScore> highScores;
-
-    // Переменные состояния
-    Direction currentDirection;
-    int verticalDirection;
-    int score;
-    bool gameOver;
-    GameState gameState;
-    float gameSpeed;
-    private:
-    bool uiInitialized = false;
-    // Интерфейс
-    int windowWidth;
-    int windowHeight;
-    double mouseX, mouseY;
-    bool mousePressed;
-    std::string playerName;
+    // Компоненты игры
+    GameObjects objects;
+    GameRenderer renderer;
+    GameUI ui;
 
 public:
     Game();
@@ -69,23 +22,23 @@ public:
     void initUI();
 
     // Геттеры
-    GameState getGameState() const { return gameState; }
-    int getScore() const { return score; }
-    int getWindowWidth() const { return windowWidth; }
-    int getWindowHeight() const { return windowHeight; }
-    double getMouseX() const { return mouseX; }
-    double getMouseY() const { return mouseY; }
-    const std::vector<Point>& getSnake() const { return snake; }
-    float getGameSpeed() const { return gameSpeed; }
+    GameState getGameState() const { return objects.getGameState(); }
+    int getScore() const { return objects.getScore(); }
+    int getWindowWidth() const { return ui.getWindowWidth(); }
+    int getWindowHeight() const { return ui.getWindowHeight(); }
+    double getMouseX() const { return ui.getMouseX(); }
+    double getMouseY() const { return ui.getMouseY(); }
+    const std::vector<Point>& getSnake() const { return objects.getSnake(); }
+    float getGameSpeed() const { return objects.getGameSpeed(); }
 
     // Сеттеры
-    void setGameState(GameState state) { gameState = state; }
-    void setMousePosition(double x, double y) { mouseX = x; mouseY = windowHeight - y; }
-    void setMousePressed(bool pressed) { mousePressed = pressed; }
-    void setCurrentDirection(Direction direction) { currentDirection = direction; }
-    void setGameSpeed(float speed) { gameSpeed = speed; }
-    void setPlayerName(const std::string& name) { playerName = name; }
-    void setWindowSize(int width, int height) { windowWidth = width; windowHeight = height; }
+    void setGameState(GameState state) { objects.setGameState(state); }
+    void setMousePosition(double x, double y) { ui.setMousePosition(x, y); }
+    void setMousePressed(bool pressed) { ui.setMousePressed(pressed); }
+    void setCurrentDirection(Direction direction) { objects.setCurrentDirection(direction); }
+    void setGameSpeed(float speed) { objects.setGameSpeed(speed); }
+    void setPlayerName(const std::string& name) { objects.setPlayerName(name); }
+    void setWindowSize(int width, int height) { ui.setWindowSize(width, height); }
 
     // Обработка ввода
     void handleKeyPress(int key);
@@ -93,72 +46,7 @@ public:
     void handleMouseScroll(double yoffset);
 
     // Вспомогательные методы
-    void initGame();
-    void debugSnakeInfo();
-    void saveHighScore();
-
-    // Методы для обновления спрайтов
-    void updateClouds();
-    void updateBirds();
-
-private:
-    // Внутренние методы
-    void generateFence();
-    void generateClouds();
-    void generateBirds();
-    void generateGroundSprites();
-    void generateObstacles();
-    void generateSingleFood();
-    void generateInitialFood();
-    void loadHighScores();
-
-    // Методы отрисовки
-    void drawModel(const Model& model, float x, float y, float z, float scale, const glm::vec3& color);
-    void drawFloor();
-    void drawSnake();
-    void drawFood();
-    void drawObstaclesAsTrees();
-    void drawFence();
-    void drawClouds();
-    void drawBird(const Bird& bird);
-    void drawBirds();
-    void drawGroundSprites();
-    void drawButton(const MenuButton& button);
-    void drawTestQuad(float x, float y, float width, float height, const glm::vec3& color);
-    void drawQuad(float x, float y, float width, float height, const glm::vec3& color, float alpha = 1.0f);
-    void drawText(const std::string& text, float x, float y, float scale, const glm::vec3& color);
-    void drawButtonWithText(const MenuButton& button);
-    void initFont();
-    void drawText(float x, float y, const std::string& text, float r = 1.0f, float g = 1.0f, float b = 1.0f);
-    void drawCenteredText(float y, const std::string& text, float r = 1.0f, float g = 1.0f, float b = 1.0f);
-    float getTextWidth(const std::string& text);
-    // Методы меню
-    void drawMainMenu();
-    void drawPauseMenu();
-    void drawSettingsMenu();
-    void drawHighScoresMenu();
-    void drawControlsMenu();
-    void drawGameOver();
-    void renderGame();
-        struct CharQuad {
-            float x, y, width, height;
-        };
-        std::map<char, CharQuad> fontChars;
-        void initSimpleFont();
-        void drawSimpleText(float x, float y, const std::string& text, float r, float g, float b);
-    // Создание моделей
-    void loadAllModels();
-    void createCircle(std::vector<Vertex>& vertices, float cx, float cy, float radius, int segments, const glm::vec3& normal = glm::vec3(0.0f, 0.0f, 1.0f));
-    void createCylinder(std::vector<Vertex>& vertices, float x, float y, float z, float radius, float height, int segments, const glm::vec3& color);
-    void createSpherePart(std::vector<Vertex>& vertices, float cx, float cy, float cz, float radius, int segments, int rings, const glm::vec3& color);
-    void createCloudPart(std::vector<Vertex>& vertices, float x, float y, float z, float radius);
-    void createCloudModel(Model& model);
-    void createAnimatedBirdModel(Model& model);
-    void createFlowerModel(Model& model);
-    void createTreeModel(Model& model);
-    void createDetailedAppleModel(Model& model);
-    void createTexturedCubeModel(Model& model);
-    void createTexturedSphereModel(Model& model);
-    void createTexturedFloorModel(Model& model);
-    void createFenceModel(Model& model);
+    void initGame() { objects.initGame(); }
+    void debugSnakeInfo() { objects.debugSnakeInfo(); }
+    void saveHighScore() { objects.saveHighScore(); }
 };

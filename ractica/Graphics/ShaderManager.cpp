@@ -88,14 +88,15 @@ const char* fragmentShaderSource = R"(
 // Шейдеры для 2D интерфейса - ИСПРАВЬТЕ ИМЕНА UNIFORM ПЕРЕМЕННЫХ
 const char* uiVertexShaderSource = R"(
     #version 330 core
-    layout (location = 0) in vec2 aPos;
-    
-    uniform mat4 projection;  // ИМЯ ДОЛЖНО СОВПАДАТЬ С ТЕМ, ЧТО ИСПОЛЬЗУЕТСЯ В glGetUniformLocation
-    uniform mat4 model;
-    
-    void main() {
-        gl_Position = projection * model * vec4(aPos, 0.0, 1.0);
-    }
+layout (location = 0) in vec2 aPos;
+
+uniform mat4 projection;
+uniform mat4 model;
+
+void main() {
+    // Для 2D используем только projection * model
+    gl_Position = projection * model * vec4(aPos, 0.0, 1.0);
+}
 )";
 
 const char* uiFragmentShaderSource = R"(
@@ -215,12 +216,29 @@ bool ShaderManager::createUIShaderProgram() {
     GLuint uiVertexShader = compileShader(GL_VERTEX_SHADER, uiVertexShaderSource);
     GLuint uiFragmentShader = compileShader(GL_FRAGMENT_SHADER, uiFragmentShaderSource);
 
+    // Проверка компиляции шейдеров
+    GLint success;
+    glGetShaderiv(uiVertexShader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(uiVertexShader, 512, NULL, infoLog);
+        std::cerr << "UI Vertex Shader compilation error:\n" << infoLog << std::endl;
+        return false;
+    }
+
+    glGetShaderiv(uiFragmentShader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(uiFragmentShader, 512, NULL, infoLog);
+        std::cerr << "UI Fragment Shader compilation error:\n" << infoLog << std::endl;
+        return false;
+    }
+
     uiShaderProgram = glCreateProgram();
     glAttachShader(uiShaderProgram, uiVertexShader);
     glAttachShader(uiShaderProgram, uiFragmentShader);
     glLinkProgram(uiShaderProgram);
 
-    GLint success;
     glGetProgramiv(uiShaderProgram, GL_LINK_STATUS, &success);
     if (!success) {
         char infoLog[512];
@@ -232,14 +250,21 @@ bool ShaderManager::createUIShaderProgram() {
     glDeleteShader(uiVertexShader);
     glDeleteShader(uiFragmentShader);
 
-    // ИСПРАВЬТЕ: используйте правильные имена uniform переменных
-    uiProjectionLoc = glGetUniformLocation(uiShaderProgram, "projection");  // "projection" а не "uiProjection"
-    uiModelLoc = glGetUniformLocation(uiShaderProgram, "model");            // "model" а не "uiModel"
-    uiColorLoc = glGetUniformLocation(uiShaderProgram, "color");            // "color" а не "uiColor"
-    uiAlphaLoc = glGetUniformLocation(uiShaderProgram, "alpha");            // "alpha"
+    // Получаем uniform locations с проверкой
+    uiProjectionLoc = glGetUniformLocation(uiShaderProgram, "projection");
+    uiModelLoc = glGetUniformLocation(uiShaderProgram, "model");
+    uiColorLoc = glGetUniformLocation(uiShaderProgram, "color");
+    uiAlphaLoc = glGetUniformLocation(uiShaderProgram, "alpha");
 
-    // Проверка uniform locations
-    std::cout << "UI Shader Uniform Locations:" << std::endl;
+    // Проверяем что все uniform найдены
+    if (uiProjectionLoc == -1 || uiModelLoc == -1 || uiColorLoc == -1 || uiAlphaLoc == -1) {
+        std::cerr << "Error: Failed to find some UI shader uniforms!" << std::endl;
+        std::cerr << "Projection: " << uiProjectionLoc << ", Model: " << uiModelLoc
+            << ", Color: " << uiColorLoc << ", Alpha: " << uiAlphaLoc << std::endl;
+        return false;
+    }
+
+    std::cout << "UI Shader Uniform Locations (all found):" << std::endl;
     std::cout << "projection: " << uiProjectionLoc << std::endl;
     std::cout << "model: " << uiModelLoc << std::endl;
     std::cout << "color: " << uiColorLoc << std::endl;

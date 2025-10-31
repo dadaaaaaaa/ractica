@@ -66,6 +66,15 @@
     <ClCompile Include="Objects\Sprite.cpp">
       <Filter>Исходные файлы\Objects</Filter>
     </ClCompile>
+    <ClCompile Include="UI\GameUI.cpp">
+      <Filter>Исходные файлы\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Objects\GameObjects.cpp">
+      <Filter>Исходные файлы\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\GameRenderer.cpp">
+      <Filter>Исходные файлы\Graphics</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="struct.txt" />
@@ -106,6 +115,21 @@
     </ClInclude>
     <ClInclude Include="pch.h">
       <Filter>Исходные файлы</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\GameUI.h">
+      <Filter>Исходные файлы\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Objects\GameObjects.h">
+      <Filter>Исходные файлы\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\GameRenderer.h">
+      <Filter>Исходные файлы\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\GameConfig.h">
+      <Filter>Исходные файлы\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\MathUtils.h">
+      <Filter>Исходные файлы\Core</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

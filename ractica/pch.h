@@ -12,7 +12,7 @@
 #include <fstream>
 #include <sstream>
 #include <map>
-
+#include <ft2build.h>
 // OpenGL и графические библиотеки
 #include <GLEW/glew.h>
 #include <GLFW/glfw3.h>

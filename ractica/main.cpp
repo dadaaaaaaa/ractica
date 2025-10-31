@@ -2,6 +2,7 @@
 #include "Game/Game.h"
 #include "Graphics/ShaderManager.h"
 #include "Graphics/Camera.h"
+#include "Core/Constants.h"
 
 // Глобальные экземпляры
 ShaderManager g_shaderManager;
@@ -56,6 +57,14 @@ void windowSizeCallback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
 
+// Функция для проверки ошибок OpenGL
+void checkGLError(const char* functionName) {
+    GLenum error;
+    while ((error = glGetError()) != GL_NO_ERROR) {
+        std::cout << "OpenGL error " << error << " in " << functionName << std::endl;
+    }
+}
+
 int main() {
     if (!glfwInit()) return -1;
 
@@ -71,16 +80,35 @@ int main() {
 
     glfwMakeContextCurrent(window);
 
-    // Инициализируем GLEW
-    glewExperimental = GL_TRUE;
+    // Инициализируем GLEW ПРАВИЛЬНО
+    glewExperimental = GL_TRUE; // Это важно для core profile
     GLenum glewError = glewInit();
     if (glewError != GLEW_OK) {
         std::cout << "Failed to initialize GLEW: " << glewGetErrorString(glewError) << std::endl;
+        glfwTerminate();
         return -1;
     }
 
+    // Игнорируем первую ошибку (если есть) из-за glewExperimental
+    glGetError();
+
     std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
     std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+    std::cout << "GLEW version: " << glewGetString(GLEW_VERSION) << std::endl;
+
+    // Проверяем поддержку необходимых функций
+    if (!GLEW_VERSION_3_3) {
+        std::cout << "OpenGL 3.3 not supported!" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+
+    // Проверяем, что функции загружены
+    if (!glGenVertexArrays) {
+        std::cout << "glGenVertexArrays not loaded!" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
 
     // Устанавливаем колбэки
     glfwSetKeyCallback(window, keyCallback);
@@ -90,13 +118,15 @@ int main() {
     glfwSetWindowSizeCallback(window, windowSizeCallback);
 
     glEnable(GL_DEPTH_TEST);
+    checkGLError("glEnable");
 
     srand(static_cast<unsigned int>(time(0)));
 
-    // Инициализируем системы
+    // Теперь инициализируем системы ПОСЛЕ проверки GLEW
     std::cout << "Initializing shaders..." << std::endl;
     if (!g_shaderManager.initialize()) {
         std::cerr << "Failed to initialize shaders!" << std::endl;
+        glfwTerminate();
         return -1;
     }
 
@@ -137,8 +167,6 @@ int main() {
 
         // Обновление спрайтов
         if (currentTime - lastSpriteUpdateTime > 0.05) {
-            g_game.updateClouds();
-            g_game.updateBirds();
             lastSpriteUpdateTime = currentTime;
         }
 
@@ -157,8 +185,7 @@ int main() {
 
         // Рендеринг
         g_game.render();
-        // В главном цикле после g_game.render();
-        std::cout << "Game state: " << static_cast<int>(g_game.getGameState()) << std::endl;
+
         glfwSwapBuffers(window);
         glfwPollEvents();
     }

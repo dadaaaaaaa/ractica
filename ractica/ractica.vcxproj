@@ -108,13 +108,13 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>GLEW_STATIC_DEBUG;_CONSOLE;%(PreprocessorDefinitions);GLEW_STATIC</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\Влад\source\repos\ractica\includes\GLEW;C:\Users\Влад\source\repos\ractica\includes\GLFW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Влад\source\repos\ractica\includes\GLEW;C:\Users\Влад\source\repos\ractica\includes\GLFW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\Влад\source\repos\ractica\Libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>glfw3.lib;glew32s.lib;opengl32.lib;glut.lib;glut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\release static\vs2015-2022\win64;C:\Users\Влад\source\repos\ractica\Libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>freetype.lib;glfw3.lib;glew32s.lib;opengl32.lib;glut.lib;glut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -139,13 +139,16 @@
   <ItemGroup>
     <ClCompile Include="Game\Game.cpp" />
     <ClCompile Include="Graphics\Camera.cpp" />
+    <ClCompile Include="Graphics\GameRenderer.cpp" />
     <ClCompile Include="Graphics\Model.cpp" />
     <ClCompile Include="Graphics\ShaderManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Objects\Bird.cpp" />
+    <ClCompile Include="Objects\GameObjects.cpp" />
     <ClCompile Include="Objects\Obstacle.cpp" />
     <ClCompile Include="Objects\Sprite.cpp" />
     <ClCompile Include="pch.cpp" />
+    <ClCompile Include="UI\GameUI.cpp" />
     <ClCompile Include="UI\MenuButton.cpp" />
     <ClCompile Include="Utils\MathUtils.cpp" />
   </ItemGroup>
@@ -154,15 +157,20 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Core\Constants.h" />
+    <ClInclude Include="Core\GameConfig.h" />
+    <ClInclude Include="Core\MathUtils.h" />
     <ClInclude Include="Core\Types.h" />
     <ClInclude Include="Game\Game.h" />
     <ClInclude Include="Graphics\Camera.h" />
+    <ClInclude Include="Graphics\GameRenderer.h" />
     <ClInclude Include="Graphics\Model.h" />
     <ClInclude Include="Graphics\ShaderManager.h" />
     <ClInclude Include="Objects\Bird.h" />
+    <ClInclude Include="Objects\GameObjects.h" />
     <ClInclude Include="Objects\Obstacle.h" />
     <ClInclude Include="Objects\Sprite.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="UI\GameUI.h" />
     <ClInclude Include="UI\MenuButton.h" />
     <ClInclude Include="Utils\MathUtils.h" />
   </ItemGroup>
