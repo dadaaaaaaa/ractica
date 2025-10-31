@@ -14,6 +14,7 @@ Game::Game()
     score(0),
     gameOver(false),
     gameState(MAIN_MENU),
+    previousState(MAIN_MENU), // Инициализируем предыдущее состояние
     gameSpeed(0.12f),
     windowWidth(1200),
     windowHeight(800),
@@ -24,10 +25,28 @@ Game::Game()
 }
 
 void Game::initialize() {
-    loadHighScores();
-    loadAllModels();
+    std::cout << "=== GAME INITIALIZATION START ===" << std::endl;
+
+    // 1. СНАЧАЛА шрифт (самое первое!)
+    std::cout << "Step 1: Initializing font..." << std::endl;
+    initFont();
+
+    // 2. Потом UI
+    std::cout << "Step 2: Initializing UI..." << std::endl;
     initUI();
+
+    // 3. Потом всё остальное
+    std::cout << "Step 3: Loading models..." << std::endl;
+    loadAllModels();
+
+    std::cout << "Step 4: Loading high scores..." << std::endl;
+    loadHighScores();
+
+    std::cout << "Step 5: Initializing game..." << std::endl;
     initGame();
+
+    std::cout << "=== GAME INITIALIZATION COMPLETE ===" << std::endl;
+    std::cout << "Font base: " << fontBase << std::endl;
 }
 
 void Game::update() {
@@ -93,14 +112,28 @@ void Game::update() {
 void Game::render() {
     switch (gameState) {
     case MAIN_MENU:
+    initGame();
         drawMainMenu();
         break;
     case PLAYING:
+        // Для игры включаем обратно
         renderGame();
         break;
     case PAUSED:
+        // Сначала игра
         renderGame();
+        // Затем меню паузы
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
         drawPauseMenu();
+        break;
+    case GAME_OVER:
+        // Сначала игра
+        renderGame();
+        // Затем экран смерти
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        drawGameOver();
         break;
     case SETTINGS:
         drawSettingsMenu();
@@ -111,10 +144,6 @@ void Game::render() {
     case CONTROLS:
         drawControlsMenu();
         break;
-    case GAME_OVER:
-        renderGame();
-        drawGameOver();
-        break;
     }
 }
 
@@ -122,33 +151,113 @@ void Game::render() {
 
 void Game::handleMouseClick() {
     mousePressed = true;
+    std::cout << "Mouse clicked at: (" << mouseX << ", " << mouseY << ")" << std::endl;
+    std::cout << "Game state: " << gameState << std::endl;
 
     switch (gameState) {
     case MAIN_MENU:
         for (size_t i = 0; i < mainMenuButtons.size(); i++) {
             if (mainMenuButtons[i].contains(mouseX, mouseY)) {
+                std::cout << "Main menu button clicked: " << i << " - " << mainMenuButtons[i].text << std::endl;
                 switch (i) {
-                case 0: // PLAY
-                    gameState = PLAYING;
-                    initGame();
-                    break;
-                case 1: // SETTINGS
+                case 0: gameState = PLAYING; initGame(); break;
+                case 1:
+                    previousState = MAIN_MENU; // Сохраняем откуда пришли
                     gameState = SETTINGS;
                     break;
-                case 2: // HIGH SCORES
+                case 2:
+                    previousState = MAIN_MENU; // Сохраняем откуда пришли
                     gameState = HIGH_SCORES;
                     break;
-                case 3: // CONTROLS
-                    gameState = CONTROLS;
-                    break;
-                case 4: // EXIT
-                    // Обработка выхода будет в main
-                    break;
+                case 3: gameState = CONTROLS; break;
+                case 4: /* Exit handled in main */ break;
                 }
+                return;
             }
         }
         break;
-        // Аналогично для других состояний...
+
+    case PLAYING:
+        // В игре может быть клик по каким-то объектам, если нужно
+        std::cout << "Mouse click in PLAYING state (no button handling)" << std::endl;
+        break;
+
+    case PAUSED:
+        for (size_t i = 0; i < pauseMenuButtons.size(); i++) {
+            if (pauseMenuButtons[i].contains(mouseX, mouseY)) {
+                std::cout << "Pause menu button clicked: " << i << " - " << pauseMenuButtons[i].text << std::endl;
+                switch (i) {
+                case 0: // RESUME
+                    gameState = PLAYING;
+                    break;
+                case 1: // SETTINGS
+                    previousState = PAUSED; // Сохраняем откуда пришли
+                    gameState = SETTINGS;
+                    break;
+                case 2: // MAIN MENU
+                    gameState = MAIN_MENU;
+                    break;
+                }
+                return;
+            }
+        }
+        break;
+
+    case SETTINGS:
+        for (size_t i = 0; i < settingsButtons.size(); i++) {
+            if (settingsButtons[i].contains(mouseX, mouseY)) {
+                std::cout << "Settings menu button clicked: " << i << " - " << settingsButtons[i].text << std::endl;
+                switch (i) {
+                case 0: // BACK
+                    gameState = previousState; // Возвращаемся туда откуда пришли
+                    std::cout << "Returning to previous state: " << previousState << std::endl;
+                    break;
+                }
+                return;
+            }
+        }
+        break;
+
+    case HIGH_SCORES:
+        // Для HIGH_SCORES может быть кнопка BACK или другие
+        std::cout << "Mouse click in HIGH_SCORES state" << std::endl;
+        // Можно добавить обработку кнопок если они есть
+        break;
+
+    case CONTROLS:
+        // Для CONTROLS может быть кнопка BACK  
+        std::cout << "Mouse click in CONTROLS state" << std::endl;
+        // Можно добавить обработку кнопок если они есть
+        break;
+
+    case GAME_OVER:
+        std::cout << "Checking game over buttons..." << std::endl;
+        for (size_t i = 0; i < gameOverButtons.size(); i++) {
+            std::cout << "Game over button " << i << ": " << gameOverButtons[i].text
+                << " at (" << gameOverButtons[i].x << ", " << gameOverButtons[i].y << ")"
+                << " size (" << gameOverButtons[i].width << "x" << gameOverButtons[i].height << ")" << std::endl;
+            if (gameOverButtons[i].contains(mouseX, mouseY)) {
+                std::cout << "Game over button clicked: " << i << " - " << gameOverButtons[i].text << std::endl;
+                switch (i) {
+                case 0: // RESTART
+                    initGame();
+                    gameState = PLAYING;
+                    std::cout << "Restarting game..." << std::endl;
+                    break;
+                case 1: // MAIN MENU
+                    gameState = MAIN_MENU;
+                    std::cout << "Returning to main menu..." << std::endl;
+                    break;
+                }
+                return;
+            }
+        }
+        std::cout << "No game over button clicked" << std::endl;
+        break;
+
+    default:
+        std::cout << "Mouse click in unknown game state: " << gameState << std::endl;
+        break;
     }
 }
 
@@ -777,25 +886,60 @@ void Game::drawQuad(float x, float y, float width, float height, const glm::vec3
     std::cout << "=== DRAW_QUAD FINISHED ===" << std::endl;
 }
 
-void Game::drawText(const std::string& text, float x, float y, float scale, const glm::vec3& color) {
-    float startX = x;
-    float charWidth = 12 * scale;
-    float charHeight = 18 * scale;
-
-    for (char c : text) {
-        if (c != ' ') {
-            drawQuad(startX, y, charWidth * 0.6f, charHeight, color);
-        }
-        startX += charWidth;
+void Game::drawText(float x, float y, const std::string& text, float r, float g, float b) {
+    // Проверяем, инициализирован ли шрифт
+    if (fontBase == 0) {
+        std::cout << "WARNING: Font not initialized!" << std::endl;
+        return;
     }
+
+    GLint vp[4];
+    glGetIntegerv(GL_VIEWPORT, vp);
+    int windowWidth = vp[2];
+    int windowHeight = vp[3];
+
+    // Сохраняем текущие матрицы
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, windowWidth, windowHeight, 0, -1, 1);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    // Устанавливаем цвет
+    glColor3f(r, g, b);
+
+    // Позиция для текста
+    glRasterPos2f(x, y);
+
+    // Отладочная информация
+    std::cout << "Drawing text: '" << text << "' at (" << x << ", " << y << ")" << std::endl;
+
+    // Рисуем текст
+    glPushAttrib(GL_LIST_BIT);
+    glListBase(fontBase - 32);  // Начинаем с пробела (ASCII 32)
+
+    // Преобразуем строку в массив GLubyte
+    std::vector<GLubyte> textData(text.begin(), text.end());
+    glCallLists((GLsizei)textData.size(), GL_UNSIGNED_BYTE, textData.data());
+
+    glPopAttrib();
+
+    // Восстанавливаем матрицы
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
 }
 
 void Game::drawButton(const MenuButton& button) {
-    std::cout << "DRAWING BUTTON: " << button.text
+    std::cout << "DRAW_BUTTON: " << button.text
         << " at (" << button.x << ", " << button.y << ")"
         << " size (" << button.width << "x" << button.height << ")" << std::endl;
 
-    // ВРЕМЕННО: используем яркие контрастные цвета
+    // Яркие контрастные цвета для отладки
     glm::vec3 bgColor;
     if (button.hovered) {
         bgColor = glm::vec3(1.0f, 0.0f, 0.0f); // Красный при наведении
@@ -804,31 +948,18 @@ void Game::drawButton(const MenuButton& button) {
         bgColor = glm::vec3(0.0f, 0.0f, 1.0f); // Синий обычный
     }
 
-    // Рисуем основную кнопку БОЛЬШОГО размера
+    // Рисуем ОСНОВНУЮ кнопку - большой прямоугольник
     drawQuad(button.x, button.y, button.width, button.height, bgColor, 1.0f);
 
-    // ВРЕМЕННО: рисуем белую рамку для видимости
+    // Белая рамка для видимости границ
     drawQuad(button.x - 2, button.y - 2, button.width + 4, 2, glm::vec3(1.0f, 1.0f, 1.0f), 1.0f); // верх
     drawQuad(button.x - 2, button.y + button.height, button.width + 4, 2, glm::vec3(1.0f, 1.0f, 1.0f), 1.0f); // низ
     drawQuad(button.x - 2, button.y, 2, button.height, glm::vec3(1.0f, 1.0f, 1.0f), 1.0f); // лево
     drawQuad(button.x + button.width, button.y, 2, button.height, glm::vec3(1.0f, 1.0f, 1.0f), 1.0f); // право
 
-    std::cout << "BUTTON " << button.text << " DRAWN" << std::endl;
+    std::cout << "BUTTON " << button.text << " DRAWN SUCCESSFULLY" << std::endl;
 }
-void Game::drawMainMenu() {
-    std::cout << "=== DRAWING MAIN MENU (BUTTONS ONLY) ===" << std::endl;
 
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
-
-    // ТЕСТ: только кнопки, без текста
-    for (auto& button : mainMenuButtons) {
-        button.hovered = button.contains(mouseX, mouseY);
-        drawButton(button);
-    }
-
-    std::cout << "=== MAIN MENU BUTTONS DRAWN ===" << std::endl;
-}
 
 void Game::drawTestQuad(float x, float y, float width, float height, const glm::vec3& color) {
     std::cout << "TEST QUAD: (" << x << "," << y << ") size (" << width << "x" << height << ")" << std::endl;
@@ -850,104 +981,120 @@ void Game::drawTestQuad(float x, float y, float width, float height, const glm::
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 }
-void Game::drawPauseMenu() {
-    std::cout << "=== DRAWING PAUSE MENU (BUTTONS ONLY) ===" << std::endl;
 
+void Game::drawMainMenu() {
+    // Если шрифт не инициализирован, пробуем снова
+ 
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
+
+    // Заголовок
+    drawCenteredText(550, "3D SNAKE GAME", 1.0f, 1.0f, 1.0f);
+
+    for (auto& button : mainMenuButtons) {
+        button.hovered = button.contains(mouseX, mouseY);
+        drawButtonWithText(button);
+    }
+}
+
+void Game::drawPauseMenu() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Полупрозрачный черный фон
+    // Полупрозрачный фон
     drawQuad(0, 0, windowWidth, windowHeight, glm::vec3(0.0f, 0.0f, 0.0f), 0.7f);
 
-    // Только кнопки, без текста
+    // Заголовок
+    drawCenteredText(500, "PAUSED", 1.0f, 1.0f, 1.0f);
+
     for (auto& button : pauseMenuButtons) {
         button.hovered = button.contains(mouseX, mouseY);
-        drawButton(button);
+        drawButtonWithText(button);
     }
 
     glDisable(GL_BLEND);
-    std::cout << "=== PAUSE MENU BUTTONS DRAWN ===" << std::endl;
 }
-
-void Game::drawGameOver() {
-    std::cout << "=== DRAWING GAME OVER (BUTTONS ONLY) ===" << std::endl;
-
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    // Полупрозрачный черный фон
-    drawQuad(0, 0, windowWidth, windowHeight, glm::vec3(0.0f, 0.0f, 0.0f), 0.7f);
-
-    // Только кнопки, без текста
-    for (auto& button : gameOverButtons) {
-        button.hovered = button.contains(mouseX, mouseY);
-        drawButton(button);
-    }
-
-    glDisable(GL_BLEND);
-    std::cout << "=== GAME OVER BUTTONS DRAWN ===" << std::endl;
-}
-
-
 
 void Game::drawSettingsMenu() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.1f, 0.1f, 0.2f, 1.0f);
 
-    drawText("SETTINGS", 520, 550, 2.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+    drawCenteredText(550, "SETTINGS", 1.0f, 1.0f, 1.0f);
 
+    // Настройки
     std::string speedText = "Game Speed: " + std::to_string(gameSpeed).substr(0, 4);
-    drawText(speedText, 450, 400, 1.5f, glm::vec3(1.0f, 1.0f, 0.0f));
-    drawText("Press + to increase, - to decrease", 400, 350, 1.2f, glm::vec3(0.8f, 0.8f, 0.8f));
+    drawCenteredText(400, speedText, 1.0f, 1.0f, 0.0f);
+    drawCenteredText(350, "Press + to increase, - to decrease", 0.8f, 0.8f, 0.8f);
 
     std::string nameText = "Player Name: " + playerName;
-    drawText(nameText, 450, 250, 1.5f, glm::vec3(0.0f, 1.0f, 1.0f));
+    drawCenteredText(250, nameText, 0.0f, 1.0f, 1.0f);
 
     for (auto& button : settingsButtons) {
         button.hovered = button.contains(mouseX, mouseY);
-        drawButton(button);
+        drawButtonWithText(button);
     }
+}
+
+void Game::drawGameOver() {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    drawQuad(0, 0, windowWidth, windowHeight, glm::vec3(0.0f, 0.0f, 0.0f), 0.7f);
+
+    drawCenteredText(450, "GAME OVER", 1.0f, 0.0f, 0.0f);
+
+    std::string scoreText = "Final Score: " + std::to_string(score);
+    drawCenteredText(350, scoreText, 1.0f, 1.0f, 1.0f);
+
+    for (auto& button : gameOverButtons) {
+        button.hovered = button.contains(mouseX, mouseY);
+        drawButtonWithText(button);
+    }
+
+    glDisable(GL_BLEND);
 }
 
 void Game::drawHighScoresMenu() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.2f, 0.1f, 0.1f, 1.0f);
 
-    drawText("HIGH SCORES", 480, 550, 2.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+    drawText(480, 550, "HIGH SCORES", 1.0f, 1.0f, 1.0f);
 
     int yPos = 450;
     for (size_t i = 0; i < highScores.size() && i < 10; i++) {
         std::string scoreText = std::to_string(i + 1) + ". " + highScores[i].playerName +
             " - " + std::to_string(highScores[i].score) +
             " (" + highScores[i].date + ")";
-        drawText(scoreText, 400, yPos, 1.2f, glm::vec3(1.0f, 1.0f, 0.0f));
+        drawText(400, yPos, scoreText, 1.0f, 1.0f, 0.0f);
         yPos -= 40;
     }
 
-    drawText("Press B to go back", 500, 100, 1.2f, glm::vec3(1.0f, 1.0f, 1.0f));
+    drawText(500, 100, "Press B to go back", 1.0f, 1.0f, 1.0f);
 }
 
 void Game::drawControlsMenu() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.1f, 0.2f, 0.1f, 1.0f);
 
-    drawText("CONTROLS", 520, 550, 2.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+    drawText(520, 550, "CONTROLS", 1.0f, 1.0f, 1.0f);
 
     int yPos = 450;
-    drawText("LEFT/RIGHT - Turn snake", 400, yPos, 1.2f, glm::vec3(0.0f, 1.0f, 0.0f)); yPos -= 40;
-    drawText("Q/E - Rotate camera", 400, yPos, 1.2f, glm::vec3(0.0f, 1.0f, 0.0f)); yPos -= 40;
-    drawText("Mouse Wheel - Zoom", 400, yPos, 1.2f, glm::vec3(0.0f, 1.0f, 0.0f)); yPos -= 40;
-    drawText("ESC - Pause/Menu", 400, yPos, 1.2f, glm::vec3(0.0f, 1.0f, 0.0f)); yPos -= 40;
-    drawText("P - Toggle pause", 400, yPos, 1.2f, glm::vec3(0.0f, 1.0f, 0.0f)); yPos -= 40;
-    drawText("R - Restart game", 400, yPos, 1.2f, glm::vec3(0.0f, 1.0f, 0.0f)); yPos -= 40;
-    drawText("D - Debug info", 400, yPos, 1.2f, glm::vec3(0.0f, 1.0f, 0.0f)); yPos -= 40;
+    drawText(400, yPos, "LEFT/RIGHT - Turn snake", 0.0f, 1.0f, 0.0f); yPos -= 40;
+    drawText(400, yPos, "Q/E - Rotate camera", 0.0f, 1.0f, 0.0f); yPos -= 40;
+    drawText(400, yPos, "Mouse Wheel - Zoom", 0.0f, 1.0f, 0.0f); yPos -= 40;
+    drawText(400, yPos, "ESC - Pause/Menu", 0.0f, 1.0f, 0.0f); yPos -= 40;
+    drawText(400, yPos, "P - Toggle pause", 0.0f, 1.0f, 0.0f); yPos -= 40;
+    drawText(400, yPos, "R - Restart game", 0.0f, 1.0f, 0.0f); yPos -= 40;
+    drawText(400, yPos, "D - Debug info", 0.0f, 1.0f, 0.0f); yPos -= 40;
 
-    drawText("Press B to go back", 500, 100, 1.2f, glm::vec3(1.0f, 1.0f, 1.0f));
+    drawText(500, 100, "Press B to go back", 1.0f, 1.0f, 1.0f);
 }
 
 
-// Инициализация UI
 void Game::initUI() {
+    std::cout << "Initializing UI..." << std::endl;
+
     // Создаем VAO и VBO для 2D прямоугольников
     float vertices[] = {
         0.0f, 0.0f,
@@ -970,8 +1117,9 @@ void Game::initUI() {
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
-    int centerX = windowWidth / 2 - 100; // Центрируем по горизонтали
-    // Инициализируем кнопки с правильными координатами
+
+    // Создаем кнопки
+    int centerX = windowWidth / 2 - 100;
     mainMenuButtons.clear();
     mainMenuButtons.push_back(MenuButton("PLAY", centerX, 450, 200, 50));
     mainMenuButtons.push_back(MenuButton("SETTINGS", centerX, 370, 200, 50));
@@ -979,22 +1127,21 @@ void Game::initUI() {
     mainMenuButtons.push_back(MenuButton("CONTROLS", centerX, 210, 200, 50));
     mainMenuButtons.push_back(MenuButton("EXIT", centerX, 130, 200, 50));
 
-
     pauseMenuButtons.clear();
-    pauseMenuButtons.push_back(MenuButton("RESUME", centerX, 450, 200, 50));        // ВЫШЕ
-    pauseMenuButtons.push_back(MenuButton("SETTINGS", centerX, 370, 200, 50));      // ВЫШЕ
-    pauseMenuButtons.push_back(MenuButton("MAIN MENU", centerX, 290, 200, 50));     // ВЫШЕ
-
-    settingsButtons.clear();
-    settingsButtons.push_back(MenuButton("BACK", centerX, 150, 200, 50));           // ВЫШЕ
+    pauseMenuButtons.push_back(MenuButton("RESUME", centerX, 450, 200, 50));
+    pauseMenuButtons.push_back(MenuButton("SETTINGS", centerX, 370, 200, 50));
+    pauseMenuButtons.push_back(MenuButton("MAIN MENU", centerX, 290, 200, 50));
 
     gameOverButtons.clear();
-    gameOverButtons.push_back(MenuButton("RESTART", centerX, 450, 150, 50));        // ВЫШЕ
-    gameOverButtons.push_back(MenuButton("MAIN MENU", centerX, 370, 150, 50));      // ВЫШЕ
+    gameOverButtons.push_back(MenuButton("RESTART", centerX, 450, 150, 50));
+    gameOverButtons.push_back(MenuButton("MAIN MENU", centerX, 370, 150, 50));
 
-    std::cout << "UI initialized successfully!" << std::endl;
+    settingsButtons.clear();
+    settingsButtons.push_back(MenuButton("BACK", centerX, 150, 200, 50));
+
+    uiInitialized = true;
+    std::cout << "UI initialized successfully" << std::endl;
 }
-
 // Методы создания моделей
 void Game::loadAllModels() {
     std::cout << "Loading models..." << std::endl;
@@ -1401,6 +1548,7 @@ void Game::createFenceModel(Model& model) {
     model.hasTexture = true;
     model.setupBuffers();
 }
+
 // В Game.cpp добавьте метод handleKeyPress:
 void Game::handleKeyPress(int key) {
     switch (gameState) {
@@ -1460,6 +1608,9 @@ void Game::handleKeyPress(int key) {
 
     case PAUSED:
         switch (key) {
+        case GLFW_KEY_ESCAPE:
+            gameState = PLAYING;
+            break;
         case GLFW_KEY_Q:
             gameState = SETTINGS;
             break;
@@ -1474,19 +1625,24 @@ void Game::handleKeyPress(int key) {
 
     case SETTINGS:
         switch (key) {
+        case GLFW_KEY_ESCAPE:
         case GLFW_KEY_B:
-            gameState = MAIN_MENU;
+            gameState = previousState; // Возвращаемся туда откуда пришли
             break;
         case GLFW_KEY_EQUAL: // +
-            gameSpeed = std::max(0.05f, gameSpeed - 0.02f);
+            gameSpeed = max(0.05f, gameSpeed - 0.02f);
             break;
         case GLFW_KEY_MINUS: // -
-            gameSpeed = std::min(0.3f, gameSpeed + 0.02f);
+            gameSpeed = min(0.3f, gameSpeed + 0.02f);
             break;
         }
         break;
 
     case HIGH_SCORES:
+        if (key == GLFW_KEY_B || key == GLFW_KEY_ESCAPE) {
+            gameState = previousState; // Возвращаемся туда откуда пришли
+        }
+        break;
     case CONTROLS:
         if (key == GLFW_KEY_B) {
             gameState = MAIN_MENU;
@@ -1504,5 +1660,99 @@ void Game::handleKeyPress(int key) {
             break;
         }
         break;
+    }
+}
+
+void Game::drawButtonWithText(const MenuButton& button) {
+    // Рисуем фон кнопки
+    glm::vec3 bgColor = button.hovered ? glm::vec3(0.2f, 0.6f, 0.2f) : glm::vec3(0.1f, 0.3f, 0.1f);
+    drawQuad(button.x, button.y, button.width, button.height, bgColor, 1.0f);
+
+    // Используем ПРОСТУЮ СИСТЕМУ ТЕКСТА - рисуем полоски для каждой буквы
+    float totalWidth = button.text.length() * 10.0f; // Примерная ширина
+    float textX = button.x + (button.width - totalWidth) / 2;
+    float textY = button.y + (button.height - 15.0f) / 2;
+
+    // Рисуем простые прямоугольники вместо текста
+    for (size_t i = 0; i < button.text.length(); i++) {
+        if (button.text[i] != ' ') {
+            drawQuad(textX + i * 10.0f, textY, 8.0f, 15.0f, glm::vec3(1.0f, 1.0f, 1.0f), 1.0f);
+        }
+    }
+}
+
+void Game::initFont() {
+    std::cout << "Simple font system ready" << std::endl;
+    fontBase = 1; // Просто помечаем что система готова
+}
+// Получение ширины текста
+float Game::getTextWidth(const std::string& text) {
+    SIZE size;
+    HDC hdc = wglGetCurrentDC();
+    GetTextExtentPoint32A(hdc, text.c_str(), (int)text.length(), &size);
+    return (float)size.cx;
+}
+
+
+
+// Текст по центру
+void Game::drawCenteredText(float y, const std::string& text, float r, float g, float b) {
+    GLint vp[4];
+    glGetIntegerv(GL_VIEWPORT, vp);
+
+    // Простая система - рисуем полоски
+    float totalWidth = text.length() * 10.0f;
+    float x = (vp[2] - totalWidth) / 2;
+
+    for (size_t i = 0; i < text.length(); i++) {
+        if (text[i] != ' ') {
+            drawQuad(x + i * 10.0f, y, 8.0f, 15.0f, glm::vec3(r, g, b), 1.0f);
+        }
+    }
+}
+void Game::initSimpleFont() {
+    std::cout << "Initializing simple font system..." << std::endl;
+
+    // Создаем простой растровый шрифт - каждый символ это прямоугольник определенного размера
+    fontChars.clear();
+
+    // Задаем размеры для каждого символа (примерные)
+    for (char c = 'A'; c <= 'Z'; c++) {
+        fontChars[c] = { 0, 0, 12.0f, 18.0f };
+    }
+    for (char c = 'a'; c <= 'z'; c++) {
+        fontChars[c] = { 0, 0, 10.0f, 15.0f };
+    }
+    for (char c = '0'; c <= '9'; c++) {
+        fontChars[c] = { 0, 0, 10.0f, 15.0f };
+    }
+    fontChars[' '] = { 0, 0, 6.0f, 1.0f }; // Пробел
+    fontChars[':'] = { 0, 0, 4.0f, 15.0f };
+    fontChars['-'] = { 0, 0, 6.0f, 2.0f };
+    fontChars['.'] = { 0, 0, 4.0f, 4.0f };
+
+    fontBase = 1; // Помечаем что шрифт "инициализирован"
+    std::cout << "Simple font system ready" << std::endl;
+}
+void Game::drawSimpleText(float x, float y, const std::string& text, float r, float g, float b) {
+    float currentX = x;
+    float baseY = y;
+
+    for (char c : text) {
+        // Если символ не найден, используем пробел
+        if (fontChars.find(c) == fontChars.end()) {
+            currentX += 8.0f; // Ширина пробела по умолчанию
+            continue;
+        }
+
+        const CharQuad& charQuad = fontChars[c];
+
+        // Не рисуем пробелы
+        if (c != ' ') {
+            // Рисуем символ как прямоугольник
+            drawQuad(currentX, baseY, charQuad.width, charQuad.height, glm::vec3(r, g, b), 1.0f);
+        }
+
+        currentX += charQuad.width + 1.0f; // +1 для межсимвольного расстояния
     }
 }

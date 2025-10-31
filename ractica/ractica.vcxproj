@@ -166,6 +166,10 @@
     <ClInclude Include="UI\MenuButton.h" />
     <ClInclude Include="Utils\MathUtils.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="text.fs" />
+    <None Include="text.vs" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

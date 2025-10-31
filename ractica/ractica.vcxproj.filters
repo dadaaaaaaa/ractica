@@ -108,4 +108,8 @@
       <Filter>Исходные файлы</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="text.vs" />
+    <None Include="text.fs" />
+  </ItemGroup>
 </Project>

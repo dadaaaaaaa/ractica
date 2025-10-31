@@ -19,3 +19,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+// Windows-специфичные библиотеки для шрифтов
+#ifdef _WIN32
+#include <windows.h>
+#include <wingdi.h>
+#endif

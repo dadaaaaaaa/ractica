@@ -32,13 +32,14 @@ private:
     Model flowerModel;
     Model treeModel;
     Model appleModel;
+    GLuint fontBase;
 
     // UI
     std::vector<MenuButton> mainMenuButtons;
     std::vector<MenuButton> pauseMenuButtons;
     std::vector<MenuButton> settingsButtons;
     std::vector<MenuButton> gameOverButtons;
-
+    GameState previousState;
     // Рекорды
     std::vector<HighScore> highScores;
 
@@ -49,7 +50,8 @@ private:
     bool gameOver;
     GameState gameState;
     float gameSpeed;
-
+    private:
+    bool uiInitialized = false;
     // Интерфейс
     int windowWidth;
     int windowHeight;
@@ -125,7 +127,11 @@ private:
     void drawTestQuad(float x, float y, float width, float height, const glm::vec3& color);
     void drawQuad(float x, float y, float width, float height, const glm::vec3& color, float alpha = 1.0f);
     void drawText(const std::string& text, float x, float y, float scale, const glm::vec3& color);
-
+    void drawButtonWithText(const MenuButton& button);
+    void initFont();
+    void drawText(float x, float y, const std::string& text, float r = 1.0f, float g = 1.0f, float b = 1.0f);
+    void drawCenteredText(float y, const std::string& text, float r = 1.0f, float g = 1.0f, float b = 1.0f);
+    float getTextWidth(const std::string& text);
     // Методы меню
     void drawMainMenu();
     void drawPauseMenu();
@@ -134,7 +140,12 @@ private:
     void drawControlsMenu();
     void drawGameOver();
     void renderGame();
-
+        struct CharQuad {
+            float x, y, width, height;
+        };
+        std::map<char, CharQuad> fontChars;
+        void initSimpleFont();
+        void drawSimpleText(float x, float y, const std::string& text, float r, float g, float b);
     // Создание моделей
     void loadAllModels();
     void createCircle(std::vector<Vertex>& vertices, float cx, float cy, float radius, int segments, const glm::vec3& normal = glm::vec3(0.0f, 0.0f, 1.0f));

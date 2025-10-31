@@ -103,6 +103,10 @@ int main() {
     std::cout << "Initializing game..." << std::endl;
     g_game.initialize();
 
+    // Принудительно вызываем отрисовку главного меню один раз
+    g_game.render();
+    glfwSwapBuffers(window);
+
     std::cout << "Game started successfully!" << std::endl;
 
     double lastUpdateTime = glfwGetTime();
