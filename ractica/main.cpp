@@ -193,7 +193,6 @@ int main() {
     // Очистка ресурсов
     if (uiVAO) glDeleteVertexArrays(1, &uiVAO);
     if (uiVBO) glDeleteBuffers(1, &uiVBO);
-
     glfwDestroyWindow(window);
     glfwTerminate();
 

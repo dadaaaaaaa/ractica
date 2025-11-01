@@ -4,7 +4,7 @@
 #include "Obstacle.h"
 #include "Sprite.h"
 #include "Bird.h"
-#include <vector>
+#include "../UI/NetworkManager.h"
 
 class GameObjects {
 private:
@@ -25,10 +25,16 @@ private:
     float gameSpeed;
     GameState previousState;
 
+    // ДОБАВЛЕНО: Поля для системы рекордов и времени игры
     std::vector<HighScore> highScores;
+    static const int MAX_HIGH_SCORES = 10;
+    int gameDuration;
+    float gameTimer;
+
     std::string playerName;
     std::vector<float> speedMultipliers;
     int currentSpeedIndex;
+    NetworkManager networkManager;
 
 public:
     GameObjects();
@@ -46,7 +52,7 @@ public:
     const std::vector<Sprite>& getCloudSprites() const { return cloudSprites; }
     const std::vector<Bird>& getBirds() const { return birds; }
     const std::vector<Sprite>& getFlowerSprites() const { return flowerSprites; }
-
+    void saveHighScoreToServer();
     Direction getCurrentDirection() const { return currentDirection; }
     int getVerticalDirection() const { return verticalDirection; }
     int getScore() const { return score; }
@@ -56,6 +62,9 @@ public:
     GameState getPreviousState() const { return previousState; }
     const std::vector<HighScore>& getHighScores() const { return highScores; }
     const std::string& getPlayerName() const { return playerName; }
+
+    // ДОБАВЛЕНО: Геттер для времени игры
+    int getGameDuration() const { return gameDuration; }
 
     void setCurrentDirection(Direction direction) { currentDirection = direction; }
     void setVerticalDirection(int direction) { verticalDirection = direction; }
@@ -82,6 +91,11 @@ public:
     void debugSnakeInfo();
     void loadHighScores();
     void saveHighScore();
+
+    // ДОБАВЛЕНО: Новые методы для работы с рекордами
+    void addHighScore(const std::string& playerName, int score);
+    bool isNewHighScore(int score) const;
+    void updateHighScores();
 
     void handleGameKeyPress(int key);
     void handleSettingsKeyPress(int key);

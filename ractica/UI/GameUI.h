@@ -67,11 +67,17 @@ private:
         );
         return static_cast<unsigned int>(24 * scale);
     }
-
+    std::string formatGameTime(int seconds) {
+        int minutes = seconds / 60;
+        int secs = seconds % 60;
+        std::stringstream ss;
+        ss << std::setw(2) << std::setfill('0') << minutes << ":"
+            << std::setw(2) << std::setfill('0') << secs;
+        return ss.str();
+    }
 public:
     GameUI();
     ~GameUI();
-
     int getWindowWidth() const { return windowWidth; }
     int getWindowHeight() const { return windowHeight; }
     double getMouseX() const { return mouseX; }

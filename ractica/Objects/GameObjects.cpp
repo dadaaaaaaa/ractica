@@ -1,8 +1,9 @@
-#include "../pch.h"
+﻿#include "../pch.h"
 #include "GameObjects.h"
 #include "../Graphics/ShaderManager.h"
 #include "../Graphics/Camera.h"
 #include "../Core/Constants.h"
+
 
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
@@ -15,11 +16,19 @@ GameObjects::GameObjects()
     gameState(MAIN_MENU),
     previousState(MAIN_MENU),
     gameSpeed(0.12f),
-    playerName("Player") {
+    playerName("Player"),
+    gameDuration(0),
+    gameTimer(0.0f) {
 
     speedMultipliers = { 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f };
     currentSpeedIndex = 3;
     updateGameSpeedFromMultiplier();
+    loadHighScores();
+}
+
+void GameObjects::saveHighScoreToServer() {
+    // Пока просто вызовем наш NetworkManager
+    networkManager.submitHighScore(playerName, score, gameSpeed, 0, snake.size());
 }
 
 void GameObjects::updateGameSpeedFromMultiplier() {
@@ -71,6 +80,13 @@ void GameObjects::handleSettingsKeyPress(int key) {
 void GameObjects::update() {
     if (gameOver || gameState != PLAYING) return;
 
+    // ДОБАВЛЕНО: Обновление времени игры
+    gameTimer += 0.016f; // ~60 FPS
+    if (gameTimer >= 1.0f) {
+        gameDuration++;
+        gameTimer = 0.0f;
+    }
+
     Point newHead = snake[0];
 
     switch (currentDirection) {
@@ -86,7 +102,7 @@ void GameObjects::update() {
         newHead.z < 0 || newHead.z >= GRID_DEPTH) {
         gameOver = true;
         gameState = GAME_OVER;
-        saveHighScore();
+        updateHighScores(); // ИЗМЕНЕНО: вызов новой функции
         return;
     }
 
@@ -94,7 +110,7 @@ void GameObjects::update() {
         if (segment == newHead) {
             gameOver = true;
             gameState = GAME_OVER;
-            saveHighScore();
+            updateHighScores(); // ИЗМЕНЕНО: вызов новой функции
             return;
         }
     }
@@ -103,7 +119,7 @@ void GameObjects::update() {
         if (obstacle.contains(newHead)) {
             gameOver = true;
             gameState = GAME_OVER;
-            saveHighScore();
+            updateHighScores(); // ИЗМЕНЕНО: вызов новой функции
             return;
         }
     }
@@ -139,41 +155,89 @@ void GameObjects::initGame() {
     score = 0;
     gameOver = false;
 
+    // ДОБАВЛЕНО: Сброс времени игры
+    gameDuration = 0;
+    gameTimer = 0.0f;
+
     g_camera.setTargetDistance(5.0f);
 }
 
-void GameObjects::saveHighScore() {
-    if (score > 0) {
-        time_t now = time(0);
-        tm* localTime = localtime(&now);
-        char dateStr[11];
-        strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", localTime);
+// НОВАЯ ФУНКЦИЯ: Загрузка рекордов из файла
+// В методе loadHighScores():
+void GameObjects::loadHighScores() {
+    std::cout << "🔄 Loading high scores from server..." << std::endl;
 
-        highScores.push_back(HighScore(playerName, score, dateStr));
+    // Загружаем только с сервера
+    highScores = networkManager.getTopScores();
 
-        std::sort(highScores.begin(), highScores.end(),
-            [](const HighScore& a, const HighScore& b) {
-                return a.score > b.score;
-            });
-
-        if (highScores.size() > 10) {
-            highScores.resize(10);
-        }
+    // Если сервер недоступен - таблица будет пустой
+    if (highScores.empty()) {
+        std::cout << "❌ No high scores available (server unavailable)" << std::endl;
+    }
+    else {
+        std::cout << "✅ Loaded " << highScores.size() << " high scores from server" << std::endl;
     }
 }
 
-void GameObjects::loadHighScores() {
-    highScores.clear();
-    highScores.push_back(HighScore("Champion", 150, "2024-01-15"));
-    highScores.push_back(HighScore("ProPlayer", 120, "2024-01-14"));
-    highScores.push_back(HighScore("SnakeMaster", 100, "2024-01-13"));
-    highScores.push_back(HighScore("Beginner", 80, "2024-01-12"));
-    highScores.push_back(HighScore("Newbie", 50, "2024-01-11"));
 
-    std::sort(highScores.begin(), highScores.end(),
-        [](const HighScore& a, const HighScore& b) {
-            return a.score > b.score;
-        });
+
+
+
+// НОВАЯ ФУНКЦИЯ: Проверка является ли счет новым рекордом
+bool GameObjects::isNewHighScore(int score) const {
+    if (highScores.size() < MAX_HIGH_SCORES) return true;
+    return score > highScores.back().score;
+}
+
+// НОВАЯ ФУНКЦИЯ: Добавление нового рекорда
+void GameObjects::addHighScore(const std::string& playerName, int score) {
+    // Получаем текущую дату
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d");
+
+    HighScore newScore(
+        playerName,
+        score,
+        ss.str(),
+        gameSpeed,
+        static_cast<int>(snake.size()),
+        gameDuration
+    );
+
+    highScores.push_back(newScore);
+    std::sort(highScores.begin(), highScores.end());
+
+    // Оставляем только топ MAX_HIGH_SCORES
+    if (highScores.size() > MAX_HIGH_SCORES) {
+        highScores.resize(MAX_HIGH_SCORES);
+    }
+
+}
+
+// НОВАЯ ФУНКЦИЯ: Обновление таблицы рекордов
+void GameObjects::updateHighScores() {
+    // НЕ отправляем рекорд если счет 0 или игра сразу завершилась
+    if (score <= 0) {
+        std::cout << "⚠️  Score is 0, not submitting to server" << std::endl;
+        return;
+    }
+
+    if (isNewHighScore(score)) {
+        std::cout << "🎉 NEW HIGH SCORE! " << playerName << ": " << score << " points!" << std::endl;
+
+        // Отправляем на сервер
+        if (networkManager.submitHighScore(playerName, score, gameSpeed, gameDuration, snake.size())) {
+            std::cout << "✅ High score sent to server successfully!" << std::endl;
+
+            // Перезагружаем рекорды с сервера
+            loadHighScores();
+        }
+        else {
+            std::cout << "❌ Failed to send high score to server" << std::endl;
+        }
+    }
 }
 
 void GameObjects::generateFence() {

@@ -408,20 +408,96 @@ void GameUI::drawGameOver(int score) {
     glDisable(GL_BLEND);
 }
 
+// ЗАМЕНИТЬ существующую функцию drawHighScoresMenu:
 void GameUI::drawHighScoresMenu(const std::vector<HighScore>& highScores) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.2f, 0.1f, 0.1f, 1.0f);
+    glClearColor(0.15f, 0.05f, 0.25f, 1.0f); // Темно-фиолетовый фон
 
-    drawCenteredText(550, "HIGH SCORES", 1.0f, 1.0f, 1.0f);
+    // Заголовок
+    drawCenteredText(550, "HIGH SCORES", 1.0f, 1.0f, 0.0f);
 
+    // Определяем позиции колонок
+    const int rankX = getScaledX(200);
+    const int playerX = getScaledX(300);
+    const int scoreX = getScaledX(500);
+    const int dateX = getScaledX(600);
+    const int speedX = getScaledX(750);
+    const int lengthX = getScaledX(850);
+    const int timeX = getScaledX(950);
+
+    // Заголовки колонок
+    int headerY = getScaledY(500);
+    drawText(rankX, headerY, "RANK", 0.8f, 0.8f, 1.0f);
+    drawText(playerX, headerY, "PLAYER", 0.8f, 0.8f, 1.0f);
+    drawText(scoreX, headerY, "SCORE", 0.8f, 0.8f, 1.0f);
+    drawText(dateX, headerY, "DATE", 0.8f, 0.8f, 1.0f);
+    drawText(speedX, headerY, "SPEED", 0.8f, 0.8f, 1.0f);
+    drawText(lengthX, headerY, "LENGTH", 0.8f, 0.8f, 1.0f);
+    drawText(timeX, headerY, "TIME", 0.8f, 0.8f, 1.0f);
+
+    // Разделительная линия под заголовком
+    int lineY = headerY - getScaledY(5);
+    drawQuad(rankX - getScaledX(10), lineY, windowWidth - rankX * 2, 2,
+        glm::vec3(0.5f, 0.5f, 0.8f), 0.8f);
+
+    // Данные таблицы
     int yPos = getScaledY(450);
     for (size_t i = 0; i < highScores.size() && i < 10; i++) {
-        std::string scoreText = std::to_string(i + 1) + ". " + highScores[i].playerName +
-            " - " + std::to_string(highScores[i].score) + " (" + highScores[i].date + ")";
-        drawCenteredText(yPos, scoreText, 1.0f, 1.0f, 0.0f);
-        yPos -= getScaledY(40);
+        const auto& hs = highScores[i];
+
+        // Цвета для разных позиций
+        glm::vec3 textColor;
+        if (i == 0) textColor = glm::vec3(1.0f, 0.8f, 0.0f);      // Золотой
+        else if (i == 1) textColor = glm::vec3(0.7f, 0.7f, 0.7f); // Серебряный
+        else if (i == 2) textColor = glm::vec3(0.8f, 0.5f, 0.2f); // Бронзовый
+        else textColor = glm::vec3(0.0f, 1.0f, 0.0f);             // Зеленый
+
+        // Ранг
+        std::string rankStr = std::to_string(i + 1) + ".";
+        drawText(rankX, yPos, rankStr, textColor.r, textColor.g, textColor.b);
+
+        // Имя игрока (обрезаем если слишком длинное)
+        std::string playerName = hs.playerName.substr(0, 10);
+        if (hs.playerName.length() > 10) playerName += "..";
+        drawText(playerX, yPos, playerName, textColor.r, textColor.g, textColor.b);
+
+        // Счет
+        std::string scoreStr = std::to_string(hs.score);
+        float scoreWidth = getTextWidth(scoreStr);
+        drawText(scoreX + getScaledX(50) - scoreWidth, yPos, scoreStr,
+            textColor.r, textColor.g, textColor.b);
+
+        // Дата
+        drawText(dateX, yPos, hs.date, textColor.r, textColor.g, textColor.b);
+
+        // Скорость
+        std::string speedStr = std::to_string(hs.gameSpeed).substr(0, 3) + "x";
+        float speedWidth = getTextWidth(speedStr);
+        drawText(speedX + getScaledX(30) - speedWidth, yPos, speedStr,
+            textColor.r, textColor.g, textColor.b);
+
+        // Длина змейки
+        std::string lengthStr = std::to_string(hs.snakeLength);
+        float lengthWidth = getTextWidth(lengthStr);
+        drawText(lengthX + getScaledX(40) - lengthWidth, yPos, lengthStr,
+            textColor.r, textColor.g, textColor.b);
+
+        // Время игры
+        std::string timeStr = formatGameTime(hs.gameDuration);
+        float timeWidth = getTextWidth(timeStr);
+        drawText(timeX + getScaledX(40) - timeWidth, yPos, timeStr,
+            textColor.r, textColor.g, textColor.b);
+
+        yPos -= getScaledY(35);
     }
 
+    // Подпись если таблица пустая
+    if (highScores.empty()) {
+        drawCenteredText(400, "No high scores yet! Play the game to set records!",
+            1.0f, 0.5f, 0.5f);
+    }
+
+    // Кнопка назад
     for (auto& button : highScoresButtons) {
         button.hovered = button.contains(mouseX, mouseY);
         drawButtonWithText(button);

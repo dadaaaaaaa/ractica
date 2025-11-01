@@ -150,6 +150,7 @@
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="UI\GameUI.cpp" />
     <ClCompile Include="UI\MenuButton.cpp" />
+    <ClCompile Include="UI\NetworkManager.cpp" />
     <ClCompile Include="Utils\MathUtils.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -172,6 +173,7 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="UI\GameUI.h" />
     <ClInclude Include="UI\MenuButton.h" />
+    <ClInclude Include="UI\NetworkManager.h" />
     <ClInclude Include="Utils\MathUtils.h" />
   </ItemGroup>
   <ItemGroup>

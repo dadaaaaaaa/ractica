@@ -75,6 +75,9 @@
     <ClCompile Include="Graphics\GameRenderer.cpp">
       <Filter>Исходные файлы\Graphics</Filter>
     </ClCompile>
+    <ClCompile Include="UI\NetworkManager.cpp">
+      <Filter>Исходные файлы\UI</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="struct.txt" />
@@ -130,6 +133,9 @@
     </ClInclude>
     <ClInclude Include="Core\MathUtils.h">
       <Filter>Исходные файлы\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="UI\NetworkManager.h">
+      <Filter>Исходные файлы\UI</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
