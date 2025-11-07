@@ -60,20 +60,41 @@ void GameUI::setWindowSize(int width, int height) {
         }
     }
 }
-
+void GameUI::updateSaveGameInfo(bool hasSaveGame) {
+    hasSaveGameFlag = hasSaveGame;
+    recreateButtons();
+}
 void GameUI::recreateButtons() {
     int centerX = getScaledX(600 - 100);
     int buttonYStart = getScaledY(400 + 100);
     int backButtonX = windowWidth - getScaledX(220);
     int backButtonY = getScaledY(50);
 
-    mainMenuButtons.clear();
-    mainMenuButtons.push_back(MenuButton("PLAY", centerX, buttonYStart, getScaledWidth(200), getScaledHeight(50)));
-    mainMenuButtons.push_back(MenuButton("SETTINGS", centerX, buttonYStart - getScaledY(80), getScaledWidth(200), getScaledHeight(50)));
-    mainMenuButtons.push_back(MenuButton("HIGH SCORES", centerX, buttonYStart - getScaledY(160), getScaledWidth(200), getScaledHeight(50)));
-    mainMenuButtons.push_back(MenuButton("CONTROLS", centerX, buttonYStart - getScaledY(240), getScaledWidth(200), getScaledHeight(50)));
-    mainMenuButtons.push_back(MenuButton("EXIT", centerX, buttonYStart - getScaledY(320), getScaledWidth(200), getScaledHeight(50)));
+    // Используем сохраненную информацию о сохранениях
+    bool hasSave = hasSaveGameFlag;
 
+    mainMenuButtons.clear();
+
+    if (hasSave) {
+        mainMenuButtons.push_back(MenuButton("CONTINUE", centerX, buttonYStart, getScaledWidth(200), getScaledHeight(50)));
+        mainMenuButtons.push_back(MenuButton("NEW GAME", centerX, buttonYStart - getScaledY(80), getScaledWidth(200), getScaledHeight(50)));
+    }
+    else {
+        mainMenuButtons.push_back(MenuButton("PLAY", centerX, buttonYStart, getScaledWidth(200), getScaledHeight(50)));
+    }
+
+    // Используем правильные отступы в зависимости от наличия сохранений
+    int firstOffset = hasSave ? 160 : 80;
+    int secondOffset = hasSave ? 240 : 160;
+    int thirdOffset = hasSave ? 320 : 240;
+    int fourthOffset = hasSave ? 400 : 320;
+
+    mainMenuButtons.push_back(MenuButton("SETTINGS", centerX, buttonYStart - getScaledY(firstOffset), getScaledWidth(200), getScaledHeight(50)));
+    mainMenuButtons.push_back(MenuButton("HIGH SCORES", centerX, buttonYStart - getScaledY(secondOffset), getScaledWidth(200), getScaledHeight(50)));
+    mainMenuButtons.push_back(MenuButton("CONTROLS", centerX, buttonYStart - getScaledY(thirdOffset), getScaledWidth(200), getScaledHeight(50)));
+    mainMenuButtons.push_back(MenuButton("EXIT", centerX, buttonYStart - getScaledY(fourthOffset), getScaledWidth(200), getScaledHeight(50)));
+
+    // Остальные меню без изменений
     pauseMenuButtons.clear();
     pauseMenuButtons.push_back(MenuButton("RESUME", centerX, buttonYStart, getScaledWidth(200), getScaledHeight(50)));
     pauseMenuButtons.push_back(MenuButton("SETTINGS", centerX, buttonYStart - getScaledY(80), getScaledWidth(200), getScaledHeight(50)));
@@ -570,40 +591,64 @@ void GameUI::handleMouseClick(GameObjects& objects) {
     case MAIN_MENU:
         for (size_t i = 0; i < mainMenuButtons.size(); i++) {
             if (mainMenuButtons[i].contains(mouseX, mouseY)) {
-                switch (i) {
-                case 0: objects.setGameState(PLAYING); objects.initGame(); break;
-                case 1: objects.setPreviousState(MAIN_MENU); objects.setGameState(SETTINGS); break;
-                case 2: objects.setPreviousState(MAIN_MENU); objects.setGameState(HIGH_SCORES); break;
-                case 3: objects.setPreviousState(MAIN_MENU); objects.setGameState(CONTROLS); break;
-                case 4: g_shouldExitGame = true; break;
+                bool hasSave = objects.hasSaveGame();
+
+                if (hasSave) {
+                    switch (i) {
+                    case 0:
+                        objects.setGameState(PLAYING);
+                        objects.loadGame(); // CONTINUE - загружаем сохранение
+                        break;
+                    case 1:
+                        objects.initGame(); // NEW GAME - начинаем новую
+                        objects.setGameState(PLAYING);
+                        objects.deleteSaveGame(); // Удаляем старое сохранение
+                        break;
+                    case 2:
+                        objects.setPreviousState(MAIN_MENU);
+                        objects.setGameState(SETTINGS);
+                        break;
+                    case 3:
+                        objects.setPreviousState(MAIN_MENU);
+                        objects.setGameState(HIGH_SCORES);
+                        break;
+                    case 4:
+                        objects.setPreviousState(MAIN_MENU);
+                        objects.setGameState(CONTROLS);
+                        break;
+                    case 5:
+                        // EXIT - сохраняем игру и выходим
+                        objects.saveGame(); // Сохраняем игру при выходе через EXIT
+                        objects.saveSettings(); // Сохраняем настройки
+                        g_shouldExitGame = true;
+                        break;
+                    }
                 }
-                return;
-            }
-        }
-        break;
-
-    case SETTINGS:
-        for (auto& button : settingsButtons) {
-            if (button.contains(mouseX, mouseY)) {
-                objects.setGameState(objects.getPreviousState());
-                return;
-            }
-        }
-        break;
-
-    case HIGH_SCORES:
-        for (auto& button : highScoresButtons) {
-            if (button.contains(mouseX, mouseY)) {
-                objects.setGameState(objects.getPreviousState());
-                return;
-            }
-        }
-        break;
-
-    case CONTROLS:
-        for (auto& button : controlsButtons) {
-            if (button.contains(mouseX, mouseY)) {
-                objects.setGameState(objects.getPreviousState());
+                else {
+                    switch (i) {
+                    case 0:
+                        objects.setGameState(PLAYING);
+                        objects.initGame(); // PLAY - начинаем новую игру
+                        break;
+                    case 1:
+                        objects.setPreviousState(MAIN_MENU);
+                        objects.setGameState(SETTINGS);
+                        break;
+                    case 2:
+                        objects.setPreviousState(MAIN_MENU);
+                        objects.setGameState(HIGH_SCORES);
+                        break;
+                    case 3:
+                        objects.setPreviousState(MAIN_MENU);
+                        objects.setGameState(CONTROLS);
+                        break;
+                    case 4:
+                        // EXIT - сохраняем настройки и выходим (игры нет для сохранения)
+                        objects.saveSettings();
+                        g_shouldExitGame = true;
+                        break;
+                    }
+                }
                 return;
             }
         }
@@ -613,10 +658,52 @@ void GameUI::handleMouseClick(GameObjects& objects) {
         for (size_t i = 0; i < pauseMenuButtons.size(); i++) {
             if (pauseMenuButtons[i].contains(mouseX, mouseY)) {
                 switch (i) {
-                case 0: objects.setGameState(PLAYING); break;
-                case 1: objects.setPreviousState(PAUSED); objects.setGameState(SETTINGS); break;
-                case 2: objects.setGameState(MAIN_MENU); break;
+                case 0:
+                    // RESUME - просто продолжаем игру без сохранения
+                    objects.setGameState(PLAYING);
+                    break;
+                case 1:
+                    // SETTINGS - переходим в настройки
+                    objects.setPreviousState(PAUSED);
+                    objects.setGameState(SETTINGS);
+                    break;
+                case 2:
+                    // MAIN MENU - сохраняем игру и возвращаемся в меню
+                    objects.saveGame(); // Сохраняем игру при переходе в главное меню
+                    objects.setGameState(MAIN_MENU);
+                    break;
                 }
+                return;
+            }
+        }
+        break;
+
+    case SETTINGS:
+        for (auto& button : settingsButtons) {
+            if (button.contains(mouseX, mouseY)) {
+                // BACK - возвращаемся в предыдущее состояние
+                // Настройки НЕ сохраняем здесь - они сохраняются только при изменении
+                objects.setGameState(objects.getPreviousState());
+                return;
+            }
+        }
+        break;
+
+    case HIGH_SCORES:
+        for (auto& button : highScoresButtons) {
+            if (button.contains(mouseX, mouseY)) {
+                // BACK - возвращаемся в предыдущее состояние
+                objects.setGameState(objects.getPreviousState());
+                return;
+            }
+        }
+        break;
+
+    case CONTROLS:
+        for (auto& button : controlsButtons) {
+            if (button.contains(mouseX, mouseY)) {
+                // BACK - возвращаемся в предыдущее состояние
+                objects.setGameState(objects.getPreviousState());
                 return;
             }
         }
@@ -626,8 +713,17 @@ void GameUI::handleMouseClick(GameObjects& objects) {
         for (size_t i = 0; i < gameOverButtons.size(); i++) {
             if (gameOverButtons[i].contains(mouseX, mouseY)) {
                 switch (i) {
-                case 0: objects.initGame(); objects.setGameState(PLAYING); break;
-                case 1: objects.setGameState(MAIN_MENU); break;
+                case 0:
+                    // RESTART - начинаем новую игру, удаляем сохранение
+                    objects.initGame();
+                    objects.setGameState(PLAYING);
+                    objects.deleteSaveGame(); // Удаляем сохранение завершенной игры
+                    break;
+                case 1:
+                    // MAIN MENU - возвращаемся в меню, удаляем сохранение
+                    objects.setGameState(MAIN_MENU);
+                    objects.deleteSaveGame(); // Удаляем сохранение завершенной игры
+                    break;
                 }
                 return;
             }

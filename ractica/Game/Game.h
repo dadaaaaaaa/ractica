@@ -20,7 +20,8 @@ public:
     void update();
     void render();
     void initUI();
-
+    void continueGame();
+    void startNewGame();
     // Геттеры
     GameState getGameState() const { return objects.getGameState(); }
     int getScore() const { return objects.getScore(); }

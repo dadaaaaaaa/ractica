@@ -1,38 +1,51 @@
-#include "../pch.h"
+п»ї#include "../pch.h"
 #include "Game.h"
 
-// Глобальные экземпляры
+// Р“Р»РѕР±Р°Р»СЊРЅС‹Рµ СЌРєР·РµРјРїР»СЏСЂС‹
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 extern GLuint uiVAO, uiVBO;
 
 Game::Game() {
-    // Инициализация делегируется компонентам
+    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РґРµР»РµРіРёСЂСѓРµС‚СЃСЏ РєРѕРјРїРѕРЅРµРЅС‚Р°Рј
 }
 
 void Game::initialize() {
     std::cout << "=== GAME INITIALIZATION START ===" << std::endl;
 
-    // ПРАВИЛЬНЫЙ ПОРЯДОК (без двойной инициализации):
-
-    // 1. Сначала рендерер (шейдеры)
+    // 1. РЎРЅР°С‡Р°Р»Р° СЂРµРЅРґРµСЂРµСЂ (С€РµР№РґРµСЂС‹)
     std::cout << "Initializing renderer..." << std::endl;
     renderer.initialize();
 
-    // 2. Потом UI (ОДИН РАЗ!)
+    // 2. РџРѕС‚РѕРј UI (РћР”РРќ Р РђР—!)
     std::cout << "Initializing UI..." << std::endl;
-        ui.initUI();
-    
+    ui.initUI();
 
-    // 3. Игровые объекты
+    // 3. РРіСЂРѕРІС‹Рµ РѕР±СЉРµРєС‚С‹
     std::cout << "Loading high scores..." << std::endl;
     objects.loadHighScores();
 
-    std::cout << "Initializing game..." << std::endl;
-    objects.initGame();
-
+    // РќР• РёРЅРёС†РёР°Р»РёР·РёСЂСѓРµРј РёРіСЂСѓ СЃСЂР°Р·Сѓ - Р¶РґРµРј РІС‹Р±РѕСЂР° РІ РјРµРЅСЋ
     std::cout << "=== GAME INITIALIZATION COMPLETE ===" << std::endl;
 }
+
+void Game::startNewGame() {
+    objects.initGame();
+    objects.setGameState(PLAYING);
+    objects.deleteSaveGame(); // РЈРґР°Р»СЏРµРј СЃС‚Р°СЂРѕРµ СЃРѕС…СЂР°РЅРµРЅРёРµ
+}
+
+void Game::continueGame() {
+    if (objects.loadGame()) {
+        objects.setGameState(PLAYING);
+    }
+    else {
+        // Р•СЃР»Рё РЅРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ - РЅР°С‡РёРЅР°РµРј РЅРѕРІСѓСЋ
+        startNewGame();
+    }
+}
+
+
 
 void Game::update() {
     if (objects.isGameOver() || objects.getGameState() != PLAYING) return;
@@ -43,8 +56,7 @@ void Game::update() {
 void Game::render() {
     switch (objects.getGameState()) {
     case MAIN_MENU:
-
-        objects.initGame();
+        ui.updateSaveGameInfo(objects.hasSaveGame());
         ui.drawMainMenu();
         break;
     case PLAYING:
@@ -78,11 +90,17 @@ void Game::render() {
 }
 
 void Game::handleKeyPress(int key) {
-    // Делегируем обработку ввода соответствующим компонентам
+    // Р”РµР»РµРіРёСЂСѓРµРј РѕР±СЂР°Р±РѕС‚РєСѓ РІРІРѕРґР° СЃРѕРѕС‚РІРµС‚СЃС‚РІСѓСЋС‰РёРј РєРѕРјРїРѕРЅРµРЅС‚Р°Рј
     switch (objects.getGameState()) {
     case PLAYING:
         objects.handleGameKeyPress(key);
-        break;
+
+        // РЎРѕС…СЂР°РЅРµРЅРёРµ РїРѕ F5
+        if (key == GLFW_KEY_F5) {
+            objects.saveGame();
+            std::cout << "рџ’ѕ Game saved!" << std::endl;
+        }
+
     case SETTINGS:
         objects.handleSettingsKeyPress(key);
         break;
@@ -94,7 +112,7 @@ void Game::handleKeyPress(int key) {
 
 void Game::handleMouseClick() {
     if (objects.getGameState() == SETTINGS) {
-        // Проверяем клики на кнопки скорости
+        // РџСЂРѕРІРµСЂСЏРµРј РєР»РёРєРё РЅР° РєРЅРѕРїРєРё СЃРєРѕСЂРѕСЃС‚Рё
         if (ui.isSpeedIncreaseButtonClicked(ui.getMouseX(), ui.getMouseY())) {
             objects.increaseSpeed();
         }

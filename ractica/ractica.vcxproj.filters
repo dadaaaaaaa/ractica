@@ -31,6 +31,9 @@
     <Filter Include="Исходные файлы\Utils">
       <UniqueIdentifier>{387e7824-1424-405c-9b9f-28a46566f216}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Файлы ресурсов\models">
+      <UniqueIdentifier>{e13eb976-ddd6-465e-9fa9-d94d402ffb79}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -38,9 +41,6 @@
     </ClCompile>
     <ClCompile Include="pch.cpp">
       <Filter>Исходные файлы</Filter>
-    </ClCompile>
-    <ClCompile Include="Objects\Bird.cpp">
-      <Filter>Исходные файлы\Objects</Filter>
     </ClCompile>
     <ClCompile Include="Graphics\Camera.cpp">
       <Filter>Исходные файлы\Graphics</Filter>
@@ -57,14 +57,8 @@
     <ClCompile Include="Graphics\Model.cpp">
       <Filter>Исходные файлы\Graphics</Filter>
     </ClCompile>
-    <ClCompile Include="Objects\Obstacle.cpp">
-      <Filter>Исходные файлы\Objects</Filter>
-    </ClCompile>
     <ClCompile Include="Graphics\ShaderManager.cpp">
       <Filter>Исходные файлы\Graphics</Filter>
-    </ClCompile>
-    <ClCompile Include="Objects\Sprite.cpp">
-      <Filter>Исходные файлы\Objects</Filter>
     </ClCompile>
     <ClCompile Include="UI\GameUI.cpp">
       <Filter>Исходные файлы\UI</Filter>
@@ -78,14 +72,20 @@
     <ClCompile Include="UI\NetworkManager.cpp">
       <Filter>Исходные файлы\UI</Filter>
     </ClCompile>
+    <ClCompile Include="Objects\Bird.cpp">
+      <Filter>Исходные файлы\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="Objects\Obstacle.cpp">
+      <Filter>Исходные файлы\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="Objects\Sprite.cpp">
+      <Filter>Исходные файлы\Objects</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="struct.txt" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Objects\Bird.h">
-      <Filter>Исходные файлы\Objects</Filter>
-    </ClInclude>
     <ClInclude Include="Graphics\Camera.h">
       <Filter>Исходные файлы\Graphics</Filter>
     </ClInclude>
@@ -104,14 +104,8 @@
     <ClInclude Include="Graphics\Model.h">
       <Filter>Исходные файлы\Graphics</Filter>
     </ClInclude>
-    <ClInclude Include="Objects\Obstacle.h">
-      <Filter>Исходные файлы\Objects</Filter>
-    </ClInclude>
     <ClInclude Include="Graphics\ShaderManager.h">
       <Filter>Исходные файлы\Graphics</Filter>
-    </ClInclude>
-    <ClInclude Include="Objects\Sprite.h">
-      <Filter>Исходные файлы\Objects</Filter>
     </ClInclude>
     <ClInclude Include="Core\Types.h">
       <Filter>Исходные файлы\Core</Filter>
@@ -137,9 +131,29 @@
     <ClInclude Include="UI\NetworkManager.h">
       <Filter>Исходные файлы\UI</Filter>
     </ClInclude>
+    <ClInclude Include="Objects\Bird.h">
+      <Filter>Исходные файлы\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="Objects\Obstacle.h">
+      <Filter>Исходные файлы\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="Objects\Sprite.h">
+      <Filter>Исходные файлы\Objects</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="text.vs" />
     <None Include="text.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Object Include="models\snake_body.obj">
+      <Filter>Файлы ресурсов\models</Filter>
+    </Object>
+    <Object Include="models\snake_head.obj">
+      <Filter>Файлы ресурсов\models</Filter>
+    </Object>
+    <Object Include="models\snake_tail.obj">
+      <Filter>Файлы ресурсов\models</Filter>
+    </Object>
   </ItemGroup>
 </Project>

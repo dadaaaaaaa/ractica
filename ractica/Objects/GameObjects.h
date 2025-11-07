@@ -35,16 +35,20 @@ private:
     std::vector<float> speedMultipliers;
     int currentSpeedIndex;
     NetworkManager networkManager;
-
+    std::string settingsFileName = "settings.dat";
+    std::string saveFileName = "savegame.dat";
 public:
     GameObjects();
-
+    void saveOnExit();
+    void returnToMainMenu();
+    void pauseGame();
     void updateGameSpeedFromMultiplier();
     float getSpeedMultiplier() const;
     std::string getSpeedDisplayText() const;
     void increaseSpeed();
     void decreaseSpeed();
-
+    void saveSettings();
+    void loadSettings();
     const std::vector<Point>& getSnake() const { return snake; }
     const std::vector<Point>& getFood() const { return food; }
     const std::vector<Obstacle>& getObstacles() const { return obstacles; }
@@ -73,7 +77,12 @@ public:
     void setGameState(GameState state) { gameState = state; }
     void setGameSpeed(float speed) { gameSpeed = speed; }
     void setPreviousState(GameState state) { previousState = state; }
-    void setPlayerName(const std::string& name) { playerName = name; }
+    void setPlayerName(const std::string& name);
+
+    bool saveGame();
+    bool loadGame();
+    bool hasSaveGame() const;
+    void deleteSaveGame();
 
     void generateFence();
     void generateClouds();

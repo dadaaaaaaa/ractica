@@ -1,11 +1,11 @@
-#include "../pch.h"
+﻿#include "../pch.h"
 #include "GameRenderer.h"
 #include "../Graphics/ShaderManager.h"
 #include "../Graphics/Camera.h"
 #include "../Core/Constants.h"
 #include "../Utils/MathUtils.h"
 
-// ���������� ����������
+// Глобальные экземпляры
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 
@@ -64,17 +64,74 @@ void GameRenderer::drawFloor() {
 }
 
 void GameRenderer::drawSnake(const std::vector<Point>& snake) {
+    if (snake.empty()) return;
+
     for (size_t i = 0; i < snake.size(); i++) {
         const Point& segment = snake[i];
         float x = (segment.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
         float y = segment.y * CELL_SIZE + 0.05f;
         float z = (segment.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
-        glm::vec3 color = (i == 0) ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(0.0f, 0.7f, 0.0f);
-        drawModel(snakeModel, x, y, z, CELL_SIZE * 0.8f, color);
+        // Выбираем модель в зависимости от позиции в змейке
+        const Model* modelToDraw = &snakeBodyModel;
+        glm::vec3 color = glm::vec3(0.0f, 0.7f, 0.0f); // Зеленый для тела
+
+        if (i == 0) {
+            // Голова
+            modelToDraw = &snakeHeadModel;
+            color = glm::vec3(0.0f, 1.0f, 0.0f); // Ярко-зеленый
+        }
+        else if (i == snake.size() - 1) {
+            // Хвост
+            modelToDraw = &snakeTailModel;
+            color = glm::vec3(0.0f, 0.5f, 0.0f); // Темно-зеленый
+        }
+
+        // Определяем направление для вращения модели
+        float rotationAngle = calculateSegmentRotation(snake, i);
+
+        drawModelWithRotation(*modelToDraw, x, y, z, CELL_SIZE * 0.8f, color, rotationAngle);
     }
 }
 
+float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, size_t index) {
+    if (snake.size() <= 1) return 0.0f;
+
+    Point current = snake[index];
+    Point next;
+
+    // Для головы смотрим куда она движется
+    if (index == 0) {
+        next = snake[1];
+    }
+    // Для остальных сегментов смотрим откуда пришли
+    else {
+        next = snake[index - 1];
+    }
+
+    // Определяем направление
+    if (current.x > next.x) return 90.0f;    // Движение вправо
+    if (current.x < next.x) return -90.0f;   // Движение влево
+    if (current.z > next.z) return 0.0f;     // Движение вперед
+    if (current.z < next.z) return 180.0f;   // Движение назад
+
+    return 0.0f;
+}
+
+
+void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, float z, float scale,
+    const glm::vec3& color, float rotationAngle) {
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    modelMatrix = glm::translate(modelMatrix, glm::vec3(x, y, z));
+    modelMatrix = glm::rotate(modelMatrix, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
+
+    g_shaderManager.setModelMatrix(modelMatrix);
+    g_shaderManager.setColor(color);
+    g_shaderManager.setUseTexture(model.hasTexture);
+
+    model.draw();
+}
 void GameRenderer::drawFood(const std::vector<Point>& food) {
     for (const auto& apple : food) {
         float x = (apple.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
@@ -174,24 +231,73 @@ void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
         flowerModel.draw();
     }
 }
+void GameRenderer::createSnakeHeadModel(Model& model) {
+    // Простая треугольная голова
+    createTexturedCubeModel(model);
+    model.hasTexture = false;
+}
 
+void GameRenderer::createSnakeBodyModel(Model& model) {
+    // Простой куб для тела
+    createTexturedCubeModel(model);
+    model.hasTexture = false;
+}
+
+void GameRenderer::createSnakeTailModel(Model& model) {
+    // Простой куб для хвоста (можно сделать меньше)
+    createTexturedCubeModel(model);
+    model.hasTexture = false;
+}
 void GameRenderer::loadAllModels() {
     std::cout << "Loading models..." << std::endl;
 
-    createTexturedCubeModel(snakeModel);
+    // Для змейки пытаемся загрузить из файла
+    // Загружаем отдельные модели для змейки
+    if (!loadModelFromFile(snakeHeadModel, "models/snake_head.obj", "textures/snake.png")) {
+        std::cout << "⚠️ Using fallback for snake head..." << std::endl;
+        createSnakeHeadModel(snakeHeadModel); // Создаем простую голову
+    }
+
+    if (!loadModelFromFile(snakeBodyModel, "models/snake_body.obj", "textures/snake.png")) {
+        std::cout << "⚠️ Using fallback for snake body..." << std::endl;
+        createSnakeBodyModel(snakeBodyModel); // Создаем простое тело
+    }
+
+    if (!loadModelFromFile(snakeTailModel, "models/snake_tail.obj", "textures/snake.png")) {
+        std::cout << "⚠️ Using fallback for snake tail..." << std::endl;
+        createSnakeTailModel(snakeTailModel); // Создаем простой хвост
+    }
+
+    // Остальные модели создаем как раньше
     createTexturedSphereModel(foodModel);
+    foodModel.hasTexture = false;
+
     createTexturedCubeModel(obstacleModel);
+    obstacleModel.hasTexture = false;
+
     createTexturedFloorModel(floorModel);
+    floorModel.hasTexture = false;
+
     createFenceModel(fenceModel);
+    fenceModel.hasTexture = false;
+
     createCloudModel(cloudModel);
+    cloudModel.hasTexture = false;
+
     createAnimatedBirdModel(birdModel);
+    birdModel.hasTexture = false;
+
     createFlowerModel(flowerModel);
+    flowerModel.hasTexture = false;
+
     createTreeModel(treeModel);
+    treeModel.hasTexture = false;
+
     createDetailedAppleModel(appleModel);
+    appleModel.hasTexture = false;
 
     std::cout << "All models loaded successfully!" << std::endl;
 }
-
 void GameRenderer::createCircle(std::vector<Vertex>& vertices, float cx, float cy, float radius, int segments, const glm::vec3& normal) {
     for (int i = 0; i < segments; i++) {
         float angle1 = 2.0f * 3.14159f * i / segments;
@@ -579,4 +685,246 @@ void GameRenderer::createFenceModel(Model& model) {
 
     model.hasTexture = true;
     model.setupBuffers();
+}
+bool GameRenderer::loadModelFromFile(Model& model, const std::string& modelPath, const std::string& texturePath) {
+    // Очищаем предыдущую модель
+    model.vertices.clear();
+    model.hasTexture = false;
+    model.textureID = 0;
+
+    // Пытаемся загрузить модель из .obj файла
+    if (!loadOBJModel(model, modelPath)) {
+        std::cout << "❌ Failed to load model: " << modelPath << std::endl;
+        return false;
+    }
+
+    // Пытаемся загрузить текстуру
+    if (!loadTexture(model, texturePath)) {
+        std::cout << "⚠️ Failed to load texture: " << texturePath << " - using color only" << std::endl;
+        model.hasTexture = false;
+    }
+    else {
+        model.hasTexture = true;
+        std::cout << "✅ Loaded texture: " << texturePath << std::endl;
+    }
+
+    model.setupBuffers();
+    std::cout << "✅ Successfully loaded model: " << modelPath << " (" << model.vertices.size() << " vertices)" << std::endl;
+    return true;
+}
+
+bool GameRenderer::loadOBJModel(Model& model, const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cout << "❌ Model file not found: " << path << std::endl;
+        return false;
+    }
+
+    std::vector<glm::vec3> positions;
+    std::vector<glm::vec3> normals;
+    std::vector<glm::vec2> texCoords;
+    std::vector<Vertex> vertices;
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string type;
+        iss >> type;
+
+        if (type == "v") { // Vertex position
+            float x, y, z;
+            iss >> x >> y >> z;
+            positions.push_back(glm::vec3(x, y, z));
+        }
+        else if (type == "vn") { // Vertex normal
+            float x, y, z;
+            iss >> x >> y >> z;
+            normals.push_back(glm::vec3(x, y, z));
+        }
+        else if (type == "vt") { // Texture coordinate
+            float u, v;
+            iss >> u >> v;
+            texCoords.push_back(glm::vec2(u, 1.0f - v)); // Flip V coordinate for OpenGL
+        }
+        else if (type == "f") { // Face
+            std::string v1, v2, v3;
+            iss >> v1 >> v2 >> v3;
+
+            std::vector<std::string> facePoints = { v1, v2, v3 };
+
+            for (const auto& point : facePoints) {
+                std::istringstream viss(point);
+                std::string indexStr;
+                std::vector<int> indices;
+
+                // Парсим форматы: f v, f v/vt, f v/vt/vn, f v//vn
+                while (std::getline(viss, indexStr, '/')) {
+                    if (!indexStr.empty()) {
+                        indices.push_back(std::stoi(indexStr) - 1); // OBJ uses 1-based indexing
+                    }
+                    else {
+                        indices.push_back(-1);
+                    }
+                }
+
+                Vertex vertex;
+
+                // Position (обязательно)
+                if (indices.size() > 0 && indices[0] >= 0 && indices[0] < positions.size()) {
+                    vertex.position = positions[indices[0]];
+                }
+                else {
+                    std::cout << "❌ Invalid position index in face" << std::endl;
+                    continue;
+                }
+
+                // Texture coordinates (опционально)
+                if (indices.size() > 1 && indices[1] >= 0 && indices[1] < texCoords.size()) {
+                    vertex.texCoords = texCoords[indices[1]];
+                }
+                else {
+                    vertex.texCoords = glm::vec2(0.0f, 0.0f);
+                }
+
+                // Normal (опционально)
+                if (indices.size() > 2 && indices[2] >= 0 && indices[2] < normals.size()) {
+                    vertex.normal = normals[indices[2]];
+                }
+                else {
+                    // Вычисляем нормаль по умолчанию
+                    vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                }
+
+                vertices.push_back(vertex);
+            }
+        }
+    }
+
+    file.close();
+
+    if (vertices.empty()) {
+        std::cout << "❌ No vertices loaded from: " << path << std::endl;
+        return false;
+    }
+
+    model.vertices = vertices;
+    return true;
+}
+
+bool GameRenderer::loadTexture(Model& model, const std::string& path) {
+    // Сначала пробуем загрузить из файла
+    if (!loadTextureFromFile(model, path)) {
+        // Если не получилось - создаем procedural текстуру
+        std::cout << "⚠️ Creating procedural texture for: " << path << std::endl;
+        return createProceduralTexture(model, path);
+    }
+    return true;
+}
+
+bool GameRenderer::loadTextureFromFile(Model& model, const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    // Простая проверка на PNG (первые 8 байт)
+    char header[8];
+    file.read(header, 8);
+    file.close();
+
+    // Проверяем сигнатуру PNG
+    bool isPNG = (header[0] == -119 && header[1] == 'P' && header[2] == 'N' && header[3] == 'G');
+
+    if (!isPNG) {
+        std::cout << "❌ Not a PNG file: " << path << std::endl;
+        return false;
+    }
+
+    std::cout << "✅ PNG file detected: " << path << std::endl;
+
+    // Создаем procedural текстуру на основе типа
+    return createProceduralTexture(model, path);
+}
+
+bool GameRenderer::createProceduralTexture(Model& model, const std::string& name) {
+    const int TEXTURE_SIZE = 64;
+    std::vector<unsigned char> textureData(TEXTURE_SIZE * TEXTURE_SIZE * 3); // RGB
+
+    // Создаем procedural текстуру в зависимости от имени
+    if (name.find("snake") != std::string::npos) {
+        createSnakeTexture(textureData, TEXTURE_SIZE);
+    }
+    else {
+        // Дефолтная текстура - шахматная доска
+        createCheckerboardTexture(textureData, TEXTURE_SIZE);
+    }
+
+    // Загружаем в OpenGL
+    glGenTextures(1, &model.textureID);
+    glBindTexture(GL_TEXTURE_2D, model.textureID);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, TEXTURE_SIZE, TEXTURE_SIZE, 0,
+        GL_RGB, GL_UNSIGNED_BYTE, textureData.data());
+
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    model.hasTexture = true;
+    std::cout << "✅ Created procedural texture: " << name << std::endl;
+    return true;
+}
+
+void GameRenderer::createSnakeTexture(std::vector<unsigned char>& data, int size) {
+    // Зеленая текстура с темными полосками для змейки
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            int index = (y * size + x) * 3;
+
+            // Основной зеленый цвет
+            unsigned char r = 0;
+            unsigned char g = 200;
+            unsigned char b = 0;
+
+            // Добавляем полоски
+            if ((x / 8) % 2 == 0) {
+                g = 150; // Темно-зеленые полоски
+            }
+
+            // Добавляем шум для текстуры
+            if (rand() % 100 < 30) {
+                g += (rand() % 50) - 25;
+                g = max(0, min(255, (int)g)); // Clamp
+            }
+
+            data[index] = r;
+            data[index + 1] = g;
+            data[index + 2] = b;
+        }
+    }
+}
+
+void GameRenderer::createCheckerboardTexture(std::vector<unsigned char>& data, int size) {
+    // Шахматная текстура
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            int index = (y * size + x) * 3;
+
+            bool isBlack = ((x / 8) + (y / 8)) % 2 == 0;
+
+            if (isBlack) {
+                data[index] = 50;
+                data[index + 1] = 50;
+                data[index + 2] = 50;
+            }
+            else {
+                data[index] = 200;
+                data[index + 1] = 200;
+                data[index + 2] = 200;
+            }
+        }
+    }
 }

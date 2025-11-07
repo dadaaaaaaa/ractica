@@ -9,7 +9,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
-class GameObjects;
+class GameObjects;  // Предварительное объявление
 
 struct TextCharacter {
     GLuint textureID;
@@ -31,7 +31,7 @@ private:
     GLuint textVAO, textVBO, textShader;
     FT_Library ft;
     FT_Face face;
-
+    bool hasSaveGameFlag = false;
     int windowWidth;
     int windowHeight;
     double mouseX, mouseY;
@@ -44,8 +44,6 @@ private:
     bool loadFreeTypeFont(const std::string& fontPath = "C:/Windows/Fonts/arial.ttf",
         unsigned int fontSize = 24);
     void cleanupFreeType();
-
-    void recreateButtons();
 
     int getScaledX(int x) const {
         return static_cast<int>(x * static_cast<float>(windowWidth) / 1200.0f);
@@ -67,6 +65,7 @@ private:
         );
         return static_cast<unsigned int>(24 * scale);
     }
+
     std::string formatGameTime(int seconds) {
         int minutes = seconds / 60;
         int secs = seconds % 60;
@@ -75,9 +74,11 @@ private:
             << std::setw(2) << std::setfill('0') << secs;
         return ss.str();
     }
+
 public:
     GameUI();
     ~GameUI();
+    void updateSaveGameInfo(bool hasSaveGame);
     int getWindowWidth() const { return windowWidth; }
     int getWindowHeight() const { return windowHeight; }
     double getMouseX() const { return mouseX; }
@@ -94,10 +95,12 @@ public:
     void initWindowsFont();
     void cleanup();
 
+    // Убрал параметр GameObjects из drawMainMenu
     void drawMainMenu();
     void drawPauseMenu();
     void drawGameOver(int score);
-    void drawSettingsMenu(float gameSpeed, const std::string& playerName, float speedMultiplier, const std::string& speedDisplayText);
+    void drawSettingsMenu(float gameSpeed, const std::string& playerName,
+        float speedMultiplier, const std::string& speedDisplayText);
     void drawHighScoresMenu(const std::vector<HighScore>& highScores);
     void drawControlsMenu();
 
@@ -109,8 +112,11 @@ public:
     float getTextWidth(const std::string& text);
     bool ensureFontInitialized();
 
+    // Оставил GameObjects только там где действительно нужно
     void handleMouseClick(GameObjects& objects);
+    void recreateButtons(); // Убрал параметр GameObjects
 
     bool isSpeedIncreaseButtonClicked(double mouseX, double mouseY);
     bool isSpeedDecreaseButtonClicked(double mouseX, double mouseY);
+
 };

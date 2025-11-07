@@ -22,6 +22,9 @@ GameObjects::GameObjects()
 
     speedMultipliers = { 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f };
     currentSpeedIndex = 3;
+
+    // Загружаем настройки при создании
+    loadSettings();
     updateGameSpeedFromMultiplier();
     loadHighScores();
 }
@@ -54,6 +57,7 @@ void GameObjects::increaseSpeed() {
     if (currentSpeedIndex < speedMultipliers.size() - 1) {
         currentSpeedIndex++;
         updateGameSpeedFromMultiplier();
+        saveSettings(); // Сохраняем настройки сразу при изменении
     }
 }
 
@@ -61,7 +65,83 @@ void GameObjects::decreaseSpeed() {
     if (currentSpeedIndex > 0) {
         currentSpeedIndex--;
         updateGameSpeedFromMultiplier();
+        saveSettings(); // Сохраняем настройки сразу при изменении
     }
+}
+
+void GameObjects::saveOnExit() {
+    // Сохраняем игру если она активна и не завершена
+    if (gameState == PLAYING && !gameOver) {
+        saveGame();
+        std::cout << "💾 Game saved on exit" << std::endl;
+    }
+
+    // Сохраняем настройки при выходе
+    saveSettings();
+    std::cout << "💾 Settings saved on exit" << std::endl;
+}
+
+void GameObjects::setPlayerName(const std::string& name) {
+    playerName = name;
+    saveSettings(); // Сохраняем настройки сразу при изменении
+}
+
+struct SettingsData {
+    int version = 1;
+    float gameSpeed;
+    int currentSpeedIndex;
+    char playerName[32];
+};
+
+void GameObjects::saveSettings() {
+    std::ofstream file(settingsFileName, std::ios::binary);
+    if (!file.is_open()) return;
+
+    SettingsData settings;
+    settings.version = 1;
+    settings.gameSpeed = gameSpeed;
+    settings.currentSpeedIndex = currentSpeedIndex;
+    strncpy_s(settings.playerName, playerName.c_str(), 31);
+    settings.playerName[31] = '\0';
+
+    file.write(reinterpret_cast<char*>(&settings), sizeof(SettingsData));
+    file.close();
+
+    std::cout << "✅ Settings saved" << std::endl;
+}
+
+void GameObjects::loadSettings() {
+    std::ifstream file(settingsFileName, std::ios::binary);
+    if (!file.is_open()) return;
+
+    SettingsData settings;
+    file.read(reinterpret_cast<char*>(&settings), sizeof(SettingsData));
+    file.close();
+
+    if (settings.version == 1) {
+        gameSpeed = settings.gameSpeed;
+        currentSpeedIndex = settings.currentSpeedIndex;
+        playerName = std::string(settings.playerName);
+        std::cout << "✅ Settings loaded" << std::endl;
+    }
+}
+
+
+
+void GameObjects::pauseGame() {
+    if (gameState == PLAYING) {
+        gameState = PAUSED;
+        // НЕ сохраняем при паузе - только при выходе в меню
+    }
+}
+
+void GameObjects::returnToMainMenu() {
+    // Сохраняем игру только при возврате в меню из активной игры
+    if (gameState == PLAYING && !gameOver) {
+        saveGame();
+        std::cout << "💾 Game saved when returning to main menu" << std::endl;
+    }
+    gameState = MAIN_MENU;
 }
 
 void GameObjects::handleSettingsKeyPress(int key) {
@@ -561,12 +641,14 @@ void GameObjects::updateBirds() {
 void GameObjects::handleGameKeyPress(int key) {
     switch (key) {
     case GLFW_KEY_LEFT:
+        // Только поворот змейки
         if (currentDirection == FORWARD) currentDirection = LEFT;
         else if (currentDirection == LEFT) currentDirection = BACKWARD;
         else if (currentDirection == BACKWARD) currentDirection = RIGHT;
         else if (currentDirection == RIGHT) currentDirection = FORWARD;
         break;
     case GLFW_KEY_RIGHT:
+        // Только поворот змейки
         if (currentDirection == FORWARD) currentDirection = RIGHT;
         else if (currentDirection == RIGHT) currentDirection = BACKWARD;
         else if (currentDirection == BACKWARD) currentDirection = LEFT;
@@ -578,6 +660,14 @@ void GameObjects::handleGameKeyPress(int key) {
     case GLFW_KEY_R:
         initGame();
         gameState = PLAYING;
+        break;
+    case GLFW_KEY_Q:
+        g_camera.rotate(-10.0f);
+        std::cout << "Camera rotated left (Q pressed)" << std::endl;
+        break;
+    case GLFW_KEY_E:
+        g_camera.rotate(10.0f);
+        std::cout << "Camera rotated right (E pressed)" << std::endl;
         break;
     }
 }
@@ -652,4 +742,225 @@ void GameObjects::handleMenuKeyPress(int key) {
         }
         break;
     }
+}
+#pragma pack(push, 1)
+struct SaveData {
+    int version = 1;
+    int score;
+    int gameDuration;
+    float gameSpeed;
+    int currentDirection;
+
+    // Змейка
+    int snakeLength;
+    Point snake[1000];
+
+    // Еда
+    int foodCount;
+    Point food[50];
+
+    // Препятствия
+    int obstaclesCount;
+    Point obstacles[100];
+
+
+    // Облака
+    int cloudSpritesCount;
+    struct CloudSave {
+        glm::vec3 position;
+        glm::vec3 color;
+        float size;
+        float speed;
+    } cloudSprites[100]; // Увеличил с 50 до 100
+
+    // Птицы
+    int birdsCount;
+    struct BirdSave {
+        glm::vec3 position;
+        glm::vec3 color;
+        float size;
+        float speed;
+        glm::vec3 direction;
+    } birds[50]; // Увеличил с 30 до 50
+
+    // Цветы (увеличим размер - цветов может быть много)
+    int flowerSpritesCount;
+    struct FlowerSave {
+        glm::vec3 position;
+        glm::vec3 color;
+        float size;
+    } flowerSprites[100]; // Увеличил с 50 до 100
+};
+#pragma pack(pop)
+
+bool GameObjects::saveGame() {
+    std::ofstream file(saveFileName, std::ios::binary);
+    if (!file.is_open()) {
+        std::cout << "❌ Failed to save game" << std::endl;
+        return false;
+    }
+
+    SaveData save;
+    save.version = 1;
+    save.score = score;
+    save.gameDuration = gameDuration;
+    save.gameSpeed = gameSpeed;
+    save.currentDirection = currentDirection;
+
+    // Сохраняем змейку
+    save.snakeLength = static_cast<int>(snake.size());
+    for (int i = 0; i < save.snakeLength && i < 1000; i++) {
+        save.snake[i] = snake[i];
+    }
+
+    // Сохраняем еду
+    save.foodCount = static_cast<int>(food.size());
+    for (int i = 0; i < save.foodCount && i < 50; i++) {
+        save.food[i] = food[i];
+    }
+
+    // Сохраняем препятствия
+    save.obstaclesCount = static_cast<int>(obstacles.size());
+    for (int i = 0; i < save.obstaclesCount && i < 100; i++) {
+        save.obstacles[i] = obstacles[i].center;
+    }
+
+    // ЗАБОР НЕ СОХРАНЯЕМ - он статичный
+
+    // Сохраняем облака
+    save.cloudSpritesCount = static_cast<int>(cloudSprites.size());
+    for (int i = 0; i < save.cloudSpritesCount && i < 100; i++) {
+        save.cloudSprites[i].position = cloudSprites[i].position;
+        save.cloudSprites[i].color = cloudSprites[i].color;
+        save.cloudSprites[i].size = cloudSprites[i].size;
+        save.cloudSprites[i].speed = cloudSprites[i].speed;
+    }
+
+    // Сохраняем птиц
+    save.birdsCount = static_cast<int>(birds.size());
+    for (int i = 0; i < save.birdsCount && i < 50; i++) {
+        save.birds[i].position = birds[i].position;
+        save.birds[i].color = birds[i].color;
+        save.birds[i].size = birds[i].size;
+        save.birds[i].speed = birds[i].speed;
+        save.birds[i].direction = birds[i].direction;
+    }
+
+    // Сохраняем цветы
+    save.flowerSpritesCount = static_cast<int>(flowerSprites.size());
+    for (int i = 0; i < save.flowerSpritesCount && i < 100; i++) {
+        save.flowerSprites[i].position = flowerSprites[i].position;
+        save.flowerSprites[i].color = flowerSprites[i].color;
+        save.flowerSprites[i].size = flowerSprites[i].size;
+    }
+
+    file.write(reinterpret_cast<char*>(&save), sizeof(SaveData));
+    file.close();
+
+    std::cout << "✅ Game saved successfully! ("
+        << save.snakeLength << " snake segments, "
+        << save.foodCount << " food, "
+        << save.obstaclesCount << " obstacles, "
+        << save.cloudSpritesCount << " clouds, "
+        << save.birdsCount << " birds, "
+        << save.flowerSpritesCount << " flowers)" << std::endl;
+    return true;
+}
+
+bool GameObjects::loadGame() {
+    std::ifstream file(saveFileName, std::ios::binary);
+    if (!file.is_open()) {
+        std::cout << "❌ No save game found" << std::endl;
+        return false;
+    }
+
+    SaveData save;
+    file.read(reinterpret_cast<char*>(&save), sizeof(SaveData));
+    file.close();
+
+    if (save.version != 1) {
+        std::cout << "❌ Invalid save game version" << std::endl;
+        return false;
+    }
+
+    // Восстанавливаем основное состояние
+    score = save.score;
+    gameDuration = save.gameDuration;
+    gameSpeed = save.gameSpeed;
+    currentDirection = static_cast<Direction>(save.currentDirection);
+    gameOver = false;
+
+    // ГЕНЕРИРУЕМ ЗАБОР ЗАНОВО (вместо загрузки из сохранения)
+    generateFence();
+
+    // Восстанавливаем змейку
+    snake.clear();
+    for (int i = 0; i < save.snakeLength && i < 1000; i++) {
+        snake.push_back(save.snake[i]);
+    }
+
+    // Восстанавливаем еду
+    food.clear();
+    for (int i = 0; i < save.foodCount && i < 50; i++) {
+        food.push_back(save.food[i]);
+    }
+
+    // Восстанавливаем препятствия
+    obstacles.clear();
+    for (int i = 0; i < save.obstaclesCount && i < 100; i++) {
+        obstacles.push_back(Obstacle(save.obstacles[i]));
+    }
+
+    // ЗАБОР УБРАН - больше не загружаем из сохранения
+
+    // Восстанавливаем облака
+    cloudSprites.clear();
+    for (int i = 0; i < save.cloudSpritesCount && i < 100; i++) {
+        Sprite cloud(save.cloudSprites[i].position,
+            save.cloudSprites[i].color,
+            save.cloudSprites[i].size,
+            save.cloudSprites[i].speed);
+        cloudSprites.push_back(cloud);
+    }
+
+    // Восстанавливаем птиц
+    birds.clear();
+    for (int i = 0; i < save.birdsCount && i < 50; i++) {
+        Bird bird(save.birds[i].position,
+            save.birds[i].color,
+            save.birds[i].size,
+            save.birds[i].speed);
+        bird.direction = save.birds[i].direction;
+        birds.push_back(bird);
+    }
+
+    // Восстанавливаем цветы
+    flowerSprites.clear();
+    for (int i = 0; i < save.flowerSpritesCount && i < 100; i++) {
+        Sprite flower(save.flowerSprites[i].position,
+            save.flowerSprites[i].color,
+            save.flowerSprites[i].size,
+            0.0f); // цветы не двигаются
+        flowerSprites.push_back(flower);
+    }
+
+    std::cout << "✅ Game loaded successfully! ("
+        << save.snakeLength << " snake segments, "
+        << save.foodCount << " food, "
+        << save.obstaclesCount << " obstacles, "
+        << "fence regenerated, "
+        << save.cloudSpritesCount << " clouds, "
+        << save.birdsCount << " birds, "
+        << save.flowerSpritesCount << " flowers)" << std::endl;
+    return true;
+}
+
+bool GameObjects::hasSaveGame() const {
+    std::ifstream file(saveFileName);
+    return file.good();
+}
+
+void GameObjects::deleteSaveGame() {
+    std::remove(saveFileName.c_str());
+    std::cout << "✅ Save game deleted" << std::endl;
 }

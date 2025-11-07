@@ -109,6 +109,7 @@
       <PreprocessorDefinitions>GLEW_STATIC_DEBUG;_CONSOLE;%(PreprocessorDefinitions);GLEW_STATIC</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Влад\source\repos\ractica\includes\GLEW;C:\Users\Влад\source\repos\ractica\includes\GLFW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -179,6 +180,18 @@
   <ItemGroup>
     <None Include="text.fs" />
     <None Include="text.vs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Object Include="models\snake_body.obj">
+      <DeploymentContent>true</DeploymentContent>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </Object>
+    <Object Include="models\snake_head.obj">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </Object>
+    <Object Include="models\snake_tail.obj">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </Object>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

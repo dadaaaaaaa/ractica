@@ -20,9 +20,7 @@ public:
     NetworkManager(const std::string& url = "https://snake-game.loca.lt");
     ~NetworkManager();
 
-    bool submitHighScore(const std::string& playerName, int score,
-        float gameSpeed = 1.0f, int gameDuration = 0,
-        int snakeLength = 0);
+    bool submitHighScore(const std::string& playerName, int score, float gameSpeed = 1.0f, int gameDuration = 0, int snakeLength = 0);
     void testAllEndpoints();
     HighScore parseHighScoreFromJson(const Json::Value& item);
     std::vector<HighScore> getTopScores();
