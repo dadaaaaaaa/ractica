@@ -1,34 +1,49 @@
-#include "pch.h"
+п»ї#include "pch.h"
 #include "Game/Game.h"
 #include "Graphics/ShaderManager.h"
 #include "Graphics/Camera.h"
 #include "Core/Constants.h"
+#include "Core/Types.h"
 
-// Глобальные экземпляры
+// Р“Р»РѕР±Р°Р»СЊРЅС‹Рµ СЌРєР·РµРјРїР»СЏСЂС‹
 ShaderManager g_shaderManager;
 Camera g_camera;
 Game g_game;
 GLuint uiVAO = 0, uiVBO = 0;
 bool g_shouldExitGame = false;
-// Колбэки GLFW
+
+// ============================================================================
+// РљРћР›Р‘Р­РљР GLFW
+// ============================================================================
+
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     if (action == GLFW_PRESS) {
         g_game.handleKeyPress(key);
 
-        // Обработка выхода
+        // РћР±СЂР°Р±РѕС‚РєР° РІС‹С…РѕРґР° С‡РµСЂРµР· ESC
         if (key == GLFW_KEY_ESCAPE) {
-            if (g_game.getGameState() == PLAYING) {
+            GameState currentState = g_game.getGameState();
+
+            if (currentState == PLAYING) {
                 g_game.setGameState(PAUSED);
+                std::cout << "вЏёпёЏ Game paused" << std::endl;
             }
-            else if (g_game.getGameState() == PAUSED) {
+            else if (currentState == PAUSED) {
                 g_game.setGameState(PLAYING);
+                std::cout << "в–¶пёЏ Game resumed" << std::endl;
             }
-            else if (g_game.getGameState() == MAIN_MENU) {
+            else if (currentState == MAIN_MENU) {
                 glfwSetWindowShouldClose(window, GL_TRUE);
             }
             else {
                 g_game.setGameState(MAIN_MENU);
+                std::cout << "рџЏ  Returning to main menu" << std::endl;
             }
+        }
+
+        // Р’С‹С…РѕРґ РёР· РёРіСЂС‹ С‡РµСЂРµР· Alt+F4 РёР»Рё Р·Р°РєСЂС‹С‚РёРµ РѕРєРЅР°
+        if (key == GLFW_KEY_F4 && (mods & GLFW_MOD_ALT)) {
+            glfwSetWindowShouldClose(window, GL_TRUE);
         }
     }
 }
@@ -38,13 +53,14 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
 }
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        g_game.setMousePressed(true);
-        g_game.handleMouseClick();
-    }
-
-    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
-        g_game.setMousePressed(false);
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) {
+            g_game.setMousePressed(true);
+            g_game.handleMouseClick();
+        }
+        else if (action == GLFW_RELEASE) {
+            g_game.setMousePressed(false);
+        }
     }
 }
 
@@ -55,146 +71,294 @@ void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
 void windowSizeCallback(GLFWwindow* window, int width, int height) {
     g_game.setWindowSize(width, height);
     glViewport(0, 0, width, height);
-}
 
-// Функция для проверки ошибок OpenGL
-void checkGLError(const char* functionName) {
-    GLenum error;
-    while ((error = glGetError()) != GL_NO_ERROR) {
-        std::cout << "OpenGL error " << error << " in " << functionName << std::endl;
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "рџ”„ Window resized to: " << width << "x" << height << std::endl;
     }
 }
 
-int main() {
-    if (!glfwInit()) return -1;
+void windowCloseCallback(GLFWwindow* window) {
+    std::cout << "вљ пёЏ Window close requested" << std::endl;
+    g_shouldExitGame = true;
+}
 
+// ============================================================================
+// РЈРўРР›РРўР«
+// ============================================================================
+
+void checkGLError(const char* functionName) {
+    if (!ENABLE_DEBUG_INFO) return;
+
+    GLenum error;
+    while ((error = glGetError()) != GL_NO_ERROR) {
+        std::cout << "вќЊ OpenGL error " << error << " in " << functionName << std::endl;
+    }
+}
+
+void printSystemInfo() {
+    std::cout << "=== SYSTEM INFO ===" << std::endl;
+    std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
+    std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+    std::cout << "Renderer: " << glGetString(GL_RENDERER) << std::endl;
+    std::cout << "Vendor: " << glGetString(GL_VENDOR) << std::endl;
+    std::cout << "GLEW version: " << glewGetString(GLEW_VERSION) << std::endl;
+    std::cout << "GLFW version: " << glfwGetVersionString() << std::endl;
+    std::cout << "==================" << std::endl;
+}
+
+bool initializeGLFW() {
+    if (!glfwInit()) {
+        std::cerr << "вќЊ Failed to initialize GLFW" << std::endl;
+        return false;
+    }
+
+    // РќР°СЃС‚СЂРѕР№РєР° OpenGL context
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // Р”Р»СЏ Mac OS X
+    glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 
-    GLFWwindow* window = glfwCreateWindow(1200, 800, "3D Snake Game", NULL, NULL);
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "вњ… GLFW initialized successfully" << std::endl;
+    }
+
+    return true;
+}
+
+bool initializeGLEW() {
+    // Р’РєР»СЋС‡Р°РµРј СЌРєСЃРїРµСЂРёРјРµРЅС‚Р°Р»СЊРЅС‹Р№ СЂРµР¶РёРј РґР»СЏ core profile
+    glewExperimental = GL_TRUE;
+
+    GLenum glewError = glewInit();
+    if (glewError != GLEW_OK) {
+        std::cerr << "вќЊ Failed to initialize GLEW: " << glewGetErrorString(glewError) << std::endl;
+        return false;
+    }
+
+    // РРіРЅРѕСЂРёСЂСѓРµРј РїРµСЂРІСѓСЋ РѕС€РёР±РєСѓ (РµСЃР»Рё РµСЃС‚СЊ) РёР·-Р·Р° glewExperimental
+    glGetError();
+
+    // РџСЂРѕРІРµСЂСЏРµРј РїРѕРґРґРµСЂР¶РєСѓ РЅРµРѕР±С…РѕРґРёРјС‹С… С„СѓРЅРєС†РёР№
+    if (!GLEW_VERSION_3_3) {
+        std::cerr << "вќЊ OpenGL 3.3 not supported!" << std::endl;
+        return false;
+    }
+
+    if (!glGenVertexArrays) {
+        std::cerr << "вќЊ glGenVertexArrays not loaded!" << std::endl;
+        return false;
+    }
+
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "вњ… GLEW initialized successfully" << std::endl;
+    }
+
+    return true;
+}
+
+bool createWindow(GLFWwindow*& window) {
+    window = glfwCreateWindow(
+        DEFAULT_WINDOW_WIDTH,
+        DEFAULT_WINDOW_HEIGHT,
+        "3D Snake Game",
+        NULL, NULL
+    );
+
     if (!window) {
-        glfwTerminate();
-        return -1;
+        std::cerr << "вќЊ Failed to create GLFW window" << std::endl;
+        return false;
     }
 
     glfwMakeContextCurrent(window);
 
-    // Инициализируем GLEW ПРАВИЛЬНО
-    glewExperimental = GL_TRUE; // Это важно для core profile
-    GLenum glewError = glewInit();
-    if (glewError != GLEW_OK) {
-        std::cout << "Failed to initialize GLEW: " << glewGetErrorString(glewError) << std::endl;
-        glfwTerminate();
-        return -1;
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "вњ… Window created successfully: "
+            << DEFAULT_WINDOW_WIDTH << "x" << DEFAULT_WINDOW_HEIGHT << std::endl;
     }
 
-    // Игнорируем первую ошибку (если есть) из-за glewExperimental
-    glGetError();
+    return true;
+}
 
-    std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
-    std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-    std::cout << "GLEW version: " << glewGetString(GLEW_VERSION) << std::endl;
-
-    // Проверяем поддержку необходимых функций
-    if (!GLEW_VERSION_3_3) {
-        std::cout << "OpenGL 3.3 not supported!" << std::endl;
-        glfwTerminate();
-        return -1;
-    }
-
-    // Проверяем, что функции загружены
-    if (!glGenVertexArrays) {
-        std::cout << "glGenVertexArrays not loaded!" << std::endl;
-        glfwTerminate();
-        return -1;
-    }
-
-    // Устанавливаем колбэки
+void setupCallbacks(GLFWwindow* window) {
     glfwSetKeyCallback(window, keyCallback);
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
+    glfwSetWindowCloseCallback(window, windowCloseCallback);
 
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "вњ… GLFW callbacks set up" << std::endl;
+    }
+}
+
+void setupOpenGL() {
+    // РћСЃРЅРѕРІРЅС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё OpenGL
     glEnable(GL_DEPTH_TEST);
-    checkGLError("glEnable");
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
 
-    srand(static_cast<unsigned int>(time(0)));
+    // Р¦РІРµС‚ РѕС‡РёСЃС‚РєРё
+    glClearColor(
+        BACKGROUND_COLOR_R,
+        BACKGROUND_COLOR_G,
+        BACKGROUND_COLOR_B,
+        BACKGROUND_COLOR_A
+    );
 
-    // Теперь инициализируем системы ПОСЛЕ проверки GLEW
-    std::cout << "Initializing shaders..." << std::endl;
-    if (!g_shaderManager.initialize()) {
-        std::cerr << "Failed to initialize shaders!" << std::endl;
+    checkGLError("OpenGL setup");
+
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "вњ… OpenGL configured successfully" << std::endl;
+    }
+}
+
+void updateWindowTitle(GLFWwindow* window) {
+    std::string title = "3D Snake Game";
+    GameState currentState = g_game.getGameState();
+
+    switch (currentState) {
+    case PLAYING:
+        title += " - Score: " + std::to_string(g_game.getScore());
+        break;
+    case PAUSED:
+        title += " - PAUSED - Score: " + std::to_string(g_game.getScore());
+        break;
+    case GAME_OVER:
+        title += " - GAME OVER - Score: " + std::to_string(g_game.getScore());
+        break;
+    case MAIN_MENU:
+        title += " - Main Menu";
+        break;
+    case SETTINGS:
+        title += " - Settings";
+        break;
+    case HIGH_SCORES:
+        title += " - High Scores";
+        break;
+    case CONTROLS:
+        title += " - Controls";
+        break;
+    }
+
+    glfwSetWindowTitle(window, title.c_str());
+}
+
+void cleanup() {
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "рџ§№ Cleaning up resources..." << std::endl;
+    }
+
+    if (uiVAO) glDeleteVertexArrays(1, &uiVAO);
+    if (uiVBO) glDeleteBuffers(1, &uiVBO);
+
+    g_game.cleanup();
+
+    glfwTerminate();
+
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "вњ… Cleanup completed" << std::endl;
+    }
+}
+
+// ============================================================================
+// Р“Р›РђР’РќРђРЇ Р¤РЈРќРљР¦РРЇ
+// ============================================================================
+
+int main() {
+    std::cout << "рџљЂ Starting 3D Snake Game..." << std::endl;
+
+    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ GLFW
+    if (!initializeGLFW()) {
+        return -1;
+    }
+
+    // РЎРѕР·РґР°РЅРёРµ РѕРєРЅР°
+    GLFWwindow* window = nullptr;
+    if (!createWindow(window)) {
         glfwTerminate();
         return -1;
     }
 
-    std::cout << "Initializing game..." << std::endl;
-    g_game.initialize();
+    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ GLEW
+    if (!initializeGLEW()) {
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return -1;
+    }
 
-    // Принудительно вызываем отрисовку главного меню один раз
+    // Р’С‹РІРѕРґ РёРЅС„РѕСЂРјР°С†РёРё Рѕ СЃРёСЃС‚РµРјРµ
+    printSystemInfo();
+
+    // РќР°СЃС‚СЂРѕР№РєР° РєРѕР»Р±СЌРєРѕРІ
+    setupCallbacks(window);
+
+    // РќР°СЃС‚СЂРѕР№РєР° OpenGL
+    setupOpenGL();
+
+    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РіРµРЅРµСЂР°С‚РѕСЂР° СЃР»СѓС‡Р°Р№РЅС‹С… С‡РёСЃРµР»
+    srand(static_cast<unsigned int>(time(nullptr)));
+
+    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ С€РµР№РґРµСЂРѕРІ
+    std::cout << "рџЋЁ Initializing shaders..." << std::endl;
+    if (!g_shaderManager.initialize()) {
+        std::cerr << "вќЊ Failed to initialize shaders!" << std::endl;
+        cleanup();
+        return -1;
+    }
+
+    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РёРіСЂС‹
+    std::cout << "рџЋ® Initializing game..." << std::endl;
+    if (!g_game.isRunning()) {
+        g_game.initialize();
+    }
+
+    // РџРµСЂРІРѕРЅР°С‡Р°Р»СЊРЅР°СЏ РѕС‚СЂРёСЃРѕРІРєР°
     g_game.render();
     glfwSwapBuffers(window);
 
-    std::cout << "Game started successfully!" << std::endl;
+    std::cout << "вњ… Game started successfully!" << std::endl;
 
+    // Р“Р»Р°РІРЅС‹Р№ РёРіСЂРѕРІРѕР№ С†РёРєР»
     double lastUpdateTime = glfwGetTime();
-    double lastSpriteUpdateTime = glfwGetTime();
+    double lastFrameTime = glfwGetTime();
 
     while (!glfwWindowShouldClose(window) && !g_shouldExitGame) {
         double currentTime = glfwGetTime();
+        double deltaTime = currentTime - lastFrameTime;
 
-        // Обновление заголовка окна
-        std::string title = "3D Snake Game";
+        // РћР±РЅРѕРІР»РµРЅРёРµ Р·Р°РіРѕР»РѕРІРєР° РѕРєРЅР°
+        updateWindowTitle(window);
+
+        // РћР±РЅРѕРІР»РµРЅРёРµ РёРіСЂС‹ СЃ С„РёРєСЃРёСЂРѕРІР°РЅРЅС‹Рј РІСЂРµРјРµРЅРЅС‹Рј С€Р°РіРѕРј
         GameState currentState = g_game.getGameState();
-        if (currentState == PLAYING) {
-            title += " - Score: " + std::to_string(g_game.getScore());
-        }
-        else if (currentState == PAUSED) {
-            title += " - PAUSED - Score: " + std::to_string(g_game.getScore());
-        }
-        else if (currentState == GAME_OVER) {
-            title += " - GAME OVER - Score: " + std::to_string(g_game.getScore());
-        }
-        glfwSetWindowTitle(window, title.c_str());
-
-        // Обновление игры
         if (currentState == PLAYING && currentTime - lastUpdateTime > g_game.getGameSpeed()) {
             g_game.update();
             lastUpdateTime = currentTime;
         }
 
-        // Обновление спрайтов
-        if (currentTime - lastSpriteUpdateTime > 0.05) {
-            lastSpriteUpdateTime = currentTime;
-        }
-
-        // Обновление камеры
-        if (currentState == PLAYING || currentState == PAUSED || currentState == GAME_OVER) {
-            if (!g_game.getSnake().empty()) {
-                const auto& head = g_game.getSnake()[0];
-                glm::vec3 headPos = glm::vec3(
-                    (head.x - GRID_WIDTH / 2.0f) * CELL_SIZE,
-                    head.y * CELL_SIZE,
-                    (head.z - GRID_DEPTH / 2.0f) * CELL_SIZE
-                );
-                g_camera.update(headPos, 0.016f);
-            }
-        }
-
-        // Рендеринг
+        // Р РµРЅРґРµСЂРёРЅРі
         g_game.render();
 
+        // РћР±РјРµРЅ Р±СѓС„РµСЂРѕРІ Рё РѕР±СЂР°Р±РѕС‚РєР° СЃРѕР±С‹С‚РёР№
         glfwSwapBuffers(window);
         glfwPollEvents();
+
+        // РћРіСЂР°РЅРёС‡РµРЅРёРµ FPS РґР»СЏ СЌРєРѕРЅРѕРјРёРё СЂРµСЃСѓСЂСЃРѕРІ
+        if (deltaTime < MIN_FRAME_TIME) {
+            double sleepTime = MIN_FRAME_TIME - deltaTime;
+            std::this_thread::sleep_for(std::chrono::duration<double>(sleepTime));
+        }
+
+        lastFrameTime = currentTime;
     }
 
-    // Очистка ресурсов
-    if (uiVAO) glDeleteVertexArrays(1, &uiVAO);
-    if (uiVBO) glDeleteBuffers(1, &uiVBO);
-    glfwDestroyWindow(window);
-    glfwTerminate();
+    // РћС‡РёСЃС‚РєР° СЂРµСЃСѓСЂСЃРѕРІ
+    cleanup();
 
+    std::cout << "рџ‘‹ Game exited successfully" << std::endl;
     return 0;
 }

@@ -3,10 +3,15 @@
 #include "../Graphics/ShaderManager.h"
 #include "../Graphics/Camera.h"
 #include "../Core/Constants.h"
+#include "../Core/Types.h"
 
-
+// Глобальные экземпляры
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
+
+// ============================================================================
+// КОНСТРУКТОР И ИНИЦИАЛИЗАЦИЯ
+// ============================================================================
 
 GameObjects::GameObjects()
     : currentDirection(FORWARD),
@@ -15,28 +20,31 @@ GameObjects::GameObjects()
     gameOver(false),
     gameState(MAIN_MENU),
     previousState(MAIN_MENU),
-    gameSpeed(0.12f),
-    playerName("Player"),
+    gameSpeed(BASE_GAME_SPEED),
+    playerName(DEFAULT_PLAYER_NAME),
     gameDuration(0),
     gameTimer(0.0f) {
 
+    // Инициализация множителей скорости
     speedMultipliers = { 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f };
-    currentSpeedIndex = 3;
+    currentSpeedIndex = 3; // Начинаем с множителя 1.0x
 
-    // Загружаем настройки при создании
+    // Загружаем настройки и данные при создании
     loadSettings();
     updateGameSpeedFromMultiplier();
     loadHighScores();
+
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "🎮 GameObjects initialized" << std::endl;
+    }
 }
 
-void GameObjects::saveHighScoreToServer() {
-    // Пока просто вызовем наш NetworkManager
-    networkManager.submitHighScore(playerName, score, gameSpeed, 0, snake.size());
-}
+// ============================================================================
+// УПРАВЛЕНИЕ СКОРОСТЬЮ ИГРЫ
+// ============================================================================
 
 void GameObjects::updateGameSpeedFromMultiplier() {
-    float baseSpeed = 0.12f;
-    gameSpeed = baseSpeed / speedMultipliers[currentSpeedIndex];
+    gameSpeed = BASE_GAME_SPEED / speedMultipliers[currentSpeedIndex];
 }
 
 float GameObjects::getSpeedMultiplier() const {
@@ -57,7 +65,10 @@ void GameObjects::increaseSpeed() {
     if (currentSpeedIndex < speedMultipliers.size() - 1) {
         currentSpeedIndex++;
         updateGameSpeedFromMultiplier();
-        saveSettings(); // Сохраняем настройки сразу при изменении
+        saveSettings();
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "🚀 Speed increased to: " << getSpeedDisplayText() << std::endl;
+        }
     }
 }
 
@@ -65,54 +76,47 @@ void GameObjects::decreaseSpeed() {
     if (currentSpeedIndex > 0) {
         currentSpeedIndex--;
         updateGameSpeedFromMultiplier();
-        saveSettings(); // Сохраняем настройки сразу при изменении
+        saveSettings();
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "🐢 Speed decreased to: " << getSpeedDisplayText() << std::endl;
+        }
     }
 }
 
-void GameObjects::saveOnExit() {
-    // Сохраняем игру если она активна и не завершена
-    if (gameState == PLAYING && !gameOver) {
-        saveGame();
-        std::cout << "💾 Game saved on exit" << std::endl;
-    }
-
-    // Сохраняем настройки при выходе
-    saveSettings();
-    std::cout << "💾 Settings saved on exit" << std::endl;
-}
-
-void GameObjects::setPlayerName(const std::string& name) {
-    playerName = name;
-    saveSettings(); // Сохраняем настройки сразу при изменении
-}
-
-struct SettingsData {
-    int version = 1;
-    float gameSpeed;
-    int currentSpeedIndex;
-    char playerName[32];
-};
+// ============================================================================
+// СИСТЕМА СОХРАНЕНИЯ И ЗАГРУЗКИ НАСТРОЕК
+// ============================================================================
 
 void GameObjects::saveSettings() {
     std::ofstream file(settingsFileName, std::ios::binary);
-    if (!file.is_open()) return;
+    if (!file.is_open()) {
+        std::cout << "❌ Failed to open settings file for writing" << std::endl;
+        return;
+    }
 
     SettingsData settings;
     settings.version = 1;
     settings.gameSpeed = gameSpeed;
     settings.currentSpeedIndex = currentSpeedIndex;
-    strncpy_s(settings.playerName, playerName.c_str(), 31);
-    settings.playerName[31] = '\0';
+    strncpy_s(settings.playerName, playerName.c_str(), MAX_PLAYER_NAME_LENGTH);
+    settings.playerName[MAX_PLAYER_NAME_LENGTH] = '\0';
 
     file.write(reinterpret_cast<char*>(&settings), sizeof(SettingsData));
     file.close();
 
-    std::cout << "✅ Settings saved" << std::endl;
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "✅ Settings saved: " << playerName << ", speed: " << getSpeedDisplayText() << std::endl;
+    }
 }
 
 void GameObjects::loadSettings() {
     std::ifstream file(settingsFileName, std::ios::binary);
-    if (!file.is_open()) return;
+    if (!file.is_open()) {
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "⚠️ No settings file found, using defaults" << std::endl;
+        }
+        return;
+    }
 
     SettingsData settings;
     file.read(reinterpret_cast<char*>(&settings), sizeof(SettingsData));
@@ -122,107 +126,175 @@ void GameObjects::loadSettings() {
         gameSpeed = settings.gameSpeed;
         currentSpeedIndex = settings.currentSpeedIndex;
         playerName = std::string(settings.playerName);
-        std::cout << "✅ Settings loaded" << std::endl;
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "✅ Settings loaded: " << playerName << ", speed: " << getSpeedDisplayText() << std::endl;
+        }
+    }
+    else {
+        std::cout << "❌ Invalid settings version" << std::endl;
     }
 }
 
+// ============================================================================
+// СИСТЕМА РЕКОРДОВ
+// ============================================================================
 
+void GameObjects::loadHighScores() {
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "🔄 Loading high scores..." << std::endl;
+    }
 
-void GameObjects::pauseGame() {
-    if (gameState == PLAYING) {
-        gameState = PAUSED;
-        // НЕ сохраняем при паузе - только при выходе в меню
+    highScores = networkManager.getTopScores();
+
+    if (highScores.empty()) {
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "❌ No high scores available" << std::endl;
+        }
+    }
+    else {
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "✅ Loaded " << highScores.size() << " high scores" << std::endl;
+        }
     }
 }
 
-void GameObjects::returnToMainMenu() {
-    // Сохраняем игру только при возврате в меню из активной игры
-    if (gameState == PLAYING && !gameOver) {
-        saveGame();
-        std::cout << "💾 Game saved when returning to main menu" << std::endl;
-    }
-    gameState = MAIN_MENU;
+void GameObjects::refreshHighScores() {
+    loadHighScores();
 }
 
-void GameObjects::handleSettingsKeyPress(int key) {
-    switch (key) {
-    case GLFW_KEY_EQUAL:
-    case GLFW_KEY_RIGHT:
-        increaseSpeed();
-        break;
-    case GLFW_KEY_MINUS:
-    case GLFW_KEY_LEFT:
-        decreaseSpeed();
-        break;
+bool GameObjects::isNewHighScore(int score) const {
+    if (highScores.size() < HIGH_SCORES_DISPLAY_LIMIT) return true;
+    return score > highScores.back().score;
+}
+
+bool GameObjects::isNetworkAvailable() const {
+    return networkManager.isConnected();
+}
+
+void GameObjects::updateHighScores() {
+    if (score < MIN_SCORE_FOR_HIGHSCORE) {
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "⚠️ Score too low (" << score << "), not submitting" << std::endl;
+        }
+        return;
+    }
+
+    if (isNewHighScore(score)) {
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "🎉 NEW HIGH SCORE! " << playerName << ": " << score << " points!" << std::endl;
+        }
+
+        if (networkManager.submitHighScore(playerName, score, gameSpeed, gameDuration, snake.size())) {
+            if (ENABLE_DEBUG_INFO) {
+                std::cout << "✅ High score sent successfully!" << std::endl;
+            }
+            loadHighScores();
+        }
+        else {
+            std::cout << "❌ Failed to send high score" << std::endl;
+        }
     }
 }
+
+// ============================================================================
+// ОСНОВНОЙ ИГРОВОЙ ЦИКЛ
+// ============================================================================
 
 void GameObjects::update() {
     if (gameOver || gameState != PLAYING) return;
 
-    // ДОБАВЛЕНО: Обновление времени игры
-    gameTimer += 0.016f; // ~60 FPS
+    // Обновление времени игры
+    gameTimer += PHYSICS_TIMESTEP;
     if (gameTimer >= 1.0f) {
         gameDuration++;
         gameTimer = 0.0f;
     }
 
-    Point newHead = snake[0];
+    // Обновление декораций
+    updateClouds();
+    updateBirds();
 
+    // Вычисление новой позиции головы змейки
+    Point newHead = snake[0];
     switch (currentDirection) {
     case FORWARD: newHead.z++; break;
     case BACKWARD: newHead.z--; break;
     case RIGHT: newHead.x--; break;
     case LEFT: newHead.x++; break;
     }
-
     newHead.y = 0;
 
+    // Проверка столкновения со стенами
     if (newHead.x < 0 || newHead.x >= GRID_WIDTH ||
         newHead.z < 0 || newHead.z >= GRID_DEPTH) {
-        gameOver = true;
-        gameState = GAME_OVER;
-        updateHighScores(); // ИЗМЕНЕНО: вызов новой функции
+        handleGameOver();
         return;
     }
 
+    // Проверка столкновения с собой
     for (const auto& segment : snake) {
         if (segment == newHead) {
-            gameOver = true;
-            gameState = GAME_OVER;
-            updateHighScores(); // ИЗМЕНЕНО: вызов новой функции
+            handleGameOver();
             return;
         }
     }
 
+    // Проверка столкновения с препятствиями
     for (const auto& obstacle : obstacles) {
         if (obstacle.contains(newHead)) {
-            gameOver = true;
-            gameState = GAME_OVER;
-            updateHighScores(); // ИЗМЕНЕНО: вызов новой функции
+            handleGameOver();
             return;
         }
     }
 
+    // Перемещение змейки
     snake.insert(snake.begin(), newHead);
 
+    // Проверка съедания еды
     auto foodIt = std::find(food.begin(), food.end(), newHead);
     if (foodIt != food.end()) {
         score++;
         food.erase(foodIt);
         generateSingleFood();
+
+        // Увеличение скорости с ростом счета
+        gameSpeed += SPEED_INCREMENT_PER_FOOD;
     }
     else {
         snake.pop_back();
     }
 }
 
-void GameObjects::initGame() {
-    snake.clear();
-    snake.push_back(Point(GRID_WIDTH / 2, 0, GRID_DEPTH / 2));
-    snake.push_back(Point(GRID_WIDTH / 2 - 1, 0, GRID_DEPTH / 2));
-    snake.push_back(Point(GRID_WIDTH / 2 - 2, 0, GRID_DEPTH / 2));
+void GameObjects::handleGameOver() {
+    gameOver = true;
+    gameState = GAME_OVER;
+    updateHighScores();
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "💀 Game Over! Final score: " << score << std::endl;
+    }
+}
 
+// ============================================================================
+// ИНИЦИАЛИЗАЦИЯ ИГРЫ
+// ============================================================================
+
+void GameObjects::initGame() {
+    // Очистка всех игровых объектов
+    snake.clear();
+    food.clear();
+    obstacles.clear();
+    fenceBlocks.clear();
+    cloudSprites.clear();
+    birds.clear();
+    flowerSprites.clear();
+
+    // Создание начальной змейки
+    snake.push_back(Point(GRID_WIDTH / 2, 0, GRID_DEPTH / 2));
+    for (int i = 1; i < INITIAL_SNAKE_LENGTH; i++) {
+        snake.push_back(Point(GRID_WIDTH / 2 - i, 0, GRID_DEPTH / 2));
+    }
+
+    // Генерация игрового мира
     generateFence();
     generateInitialFood();
     generateObstacles();
@@ -230,185 +302,115 @@ void GameObjects::initGame() {
     generateBirds();
     generateGroundSprites();
 
+    // Сброс состояния игры
     currentDirection = FORWARD;
     verticalDirection = 0;
     score = 0;
     gameOver = false;
-
-    // ДОБАВЛЕНО: Сброс времени игры
     gameDuration = 0;
     gameTimer = 0.0f;
+    gameSpeed = BASE_GAME_SPEED / speedMultipliers[currentSpeedIndex];
 
+    // Настройка камеры
     g_camera.setTargetDistance(5.0f);
-}
 
-// НОВАЯ ФУНКЦИЯ: Загрузка рекордов из файла
-// В методе loadHighScores():
-void GameObjects::loadHighScores() {
-    std::cout << "🔄 Loading high scores from server..." << std::endl;
-
-    // Загружаем только с сервера
-    highScores = networkManager.getTopScores();
-
-    // Если сервер недоступен - таблица будет пустой
-    if (highScores.empty()) {
-        std::cout << "❌ No high scores available (server unavailable)" << std::endl;
-    }
-    else {
-        std::cout << "✅ Loaded " << highScores.size() << " high scores from server" << std::endl;
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "🎮 New game started!" << std::endl;
     }
 }
 
-
-
-
-
-// НОВАЯ ФУНКЦИЯ: Проверка является ли счет новым рекордом
-bool GameObjects::isNewHighScore(int score) const {
-    if (highScores.size() < MAX_HIGH_SCORES) return true;
-    return score > highScores.back().score;
-}
-
-// НОВАЯ ФУНКЦИЯ: Добавление нового рекорда
-void GameObjects::addHighScore(const std::string& playerName, int score) {
-    // Получаем текущую дату
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    std::stringstream ss;
-    ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d");
-
-    HighScore newScore(
-        playerName,
-        score,
-        ss.str(),
-        gameSpeed,
-        static_cast<int>(snake.size()),
-        gameDuration
-    );
-
-    highScores.push_back(newScore);
-    std::sort(highScores.begin(), highScores.end());
-
-    // Оставляем только топ MAX_HIGH_SCORES
-    if (highScores.size() > MAX_HIGH_SCORES) {
-        highScores.resize(MAX_HIGH_SCORES);
-    }
-
-}
-
-// НОВАЯ ФУНКЦИЯ: Обновление таблицы рекордов
-void GameObjects::updateHighScores() {
-    // НЕ отправляем рекорд если счет 0 или игра сразу завершилась
-    if (score <= 0) {
-        std::cout << "⚠️  Score is 0, not submitting to server" << std::endl;
-        return;
-    }
-
-    if (isNewHighScore(score)) {
-        std::cout << "🎉 NEW HIGH SCORE! " << playerName << ": " << score << " points!" << std::endl;
-
-        // Отправляем на сервер
-        if (networkManager.submitHighScore(playerName, score, gameSpeed, gameDuration, snake.size())) {
-            std::cout << "✅ High score sent to server successfully!" << std::endl;
-
-            // Перезагружаем рекорды с сервера
-            loadHighScores();
-        }
-        else {
-            std::cout << "❌ Failed to send high score to server" << std::endl;
-        }
-    }
-}
+// ============================================================================
+// ГЕНЕРАЦИЯ ИГРОВОГО МИРА
+// ============================================================================
 
 void GameObjects::generateFence() {
     fenceBlocks.clear();
+
     for (int x = 0; x < GRID_WIDTH; x += 2) {
         fenceBlocks.push_back(Point(x, 0, 0));
-    }
-    for (int x = 0; x < GRID_WIDTH; x += 2) {
         fenceBlocks.push_back(Point(x, 0, GRID_DEPTH - 1));
     }
+
     for (int z = 2; z < GRID_DEPTH - 2; z += 2) {
         fenceBlocks.push_back(Point(0, 0, z));
-    }
-    for (int z = 2; z < GRID_DEPTH - 2; z += 2) {
         fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, z));
     }
 }
 
 void GameObjects::generateClouds() {
     cloudSprites.clear();
+
     float gameFieldMinX = -GRID_WIDTH * CELL_SIZE * 0.5f;
     float gameFieldMaxX = GRID_WIDTH * CELL_SIZE * 0.5f;
     float gameFieldMinZ = -GRID_DEPTH * CELL_SIZE * 0.5f;
     float gameFieldMaxZ = GRID_DEPTH * CELL_SIZE * 0.5f;
-    float safeDistance = 2.0f;
 
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < CLOUD_COUNT; i++) {
         glm::vec3 position;
         bool validPosition = false;
         int attempts = 0;
 
-        while (!validPosition && attempts < 30) {
+        while (!validPosition && attempts < MAX_GENERATION_ATTEMPTS) {
             float angle = (rand() % 360) * 3.14159f / 180.0f;
-            float minDistance = 10.0f;
-            float maxDistance = 16.0f;
-            float distance = minDistance + (rand() % (int)(maxDistance - minDistance));
+            float distance = CLOUD_MIN_DISTANCE + (rand() % (int)(CLOUD_MAX_DISTANCE - CLOUD_MIN_DISTANCE));
 
             position.x = cos(angle) * distance;
             position.z = sin(angle) * distance;
-            position.y = 2.5f + (rand() % 10) * 0.1f;
+            position.y = CLOUD_MIN_HEIGHT + (rand() % 10) * 0.1f;
 
-            bool outsideX = position.x < gameFieldMinX - safeDistance || position.x > gameFieldMaxX + safeDistance;
-            bool outsideZ = position.z < gameFieldMinZ - safeDistance || position.z > gameFieldMaxZ + safeDistance;
+            bool outsideX = position.x < gameFieldMinX - CLOUD_SAFE_DISTANCE ||
+                position.x > gameFieldMaxX + CLOUD_SAFE_DISTANCE;
+            bool outsideZ = position.z < gameFieldMinZ - CLOUD_SAFE_DISTANCE ||
+                position.z > gameFieldMaxZ + CLOUD_SAFE_DISTANCE;
 
             if (outsideX || outsideZ) {
                 validPosition = true;
             }
-
             attempts++;
         }
 
-        float size = 0.4f + (rand() % 8) * 0.1f;
-        float speed = 0.08f + (rand() % 6) * 0.01f;
+        if (validPosition) {
+            float size = 0.4f + (rand() % 8) * 0.1f;
+            float speed = CLOUD_SPEED + (rand() % 6) * 0.01f;
 
-        int cloudType = rand() % 3;
-        glm::vec3 color;
-        switch (cloudType) {
-        case 0: color = glm::vec3(0.95f, 0.95f, 0.95f); break;
-        case 1: color = glm::vec3(0.85f, 0.85f, 0.85f); break;
-        case 2: color = glm::vec3(0.90f, 0.90f, 0.92f); break;
+            int cloudType = rand() % 3;
+            glm::vec3 color;
+            switch (cloudType) {
+            case 0: color = glm::vec3(0.95f, 0.95f, 0.95f); break;
+            case 1: color = glm::vec3(0.85f, 0.85f, 0.85f); break;
+            case 2: color = glm::vec3(0.90f, 0.90f, 0.92f); break;
+            }
+
+            cloudSprites.push_back(Sprite(position, color, size, speed));
         }
-
-        cloudSprites.push_back(Sprite(position, color, size, speed));
     }
 }
 
 void GameObjects::generateBirds() {
     birds.clear();
+
     float gameFieldMinX = -GRID_WIDTH * CELL_SIZE * 0.5f;
     float gameFieldMaxX = GRID_WIDTH * CELL_SIZE * 0.5f;
     float gameFieldMinZ = -GRID_DEPTH * CELL_SIZE * 0.5f;
     float gameFieldMaxZ = GRID_DEPTH * CELL_SIZE * 0.5f;
-    float safeDistance = 1.5f;
 
-    for (int i = 0; i < 15; i++) {
+    for (int i = 0; i < BIRD_COUNT; i++) {
         glm::vec3 position;
         bool validPosition = false;
         int attempts = 0;
 
-        while (!validPosition && attempts < 30) {
+        while (!validPosition && attempts < MAX_GENERATION_ATTEMPTS) {
             float angle = (rand() % 360) * 3.14159f / 180.0f;
-            float minDistance = 8.0f;
-            float maxDistance = 12.0f;
-            float distance = minDistance + (rand() % (int)(maxDistance - minDistance));
+            float distance = BIRD_MIN_DISTANCE + (rand() % (int)(BIRD_MAX_DISTANCE - BIRD_MIN_DISTANCE));
 
             position.x = cos(angle) * distance;
             position.z = sin(angle) * distance;
-            position.y = 3.0f + (rand() % 8) * 0.1f;
+            position.y = BIRD_MIN_HEIGHT + (rand() % 8) * 0.1f;
 
-            bool outsideX = position.x < gameFieldMinX - safeDistance || position.x > gameFieldMaxX + safeDistance;
-            bool outsideZ = position.z < gameFieldMinZ - safeDistance || position.z > gameFieldMaxZ + safeDistance;
+            bool outsideX = position.x < gameFieldMinX - BIRD_SAFE_DISTANCE ||
+                position.x > gameFieldMaxX + BIRD_SAFE_DISTANCE;
+            bool outsideZ = position.z < gameFieldMinZ - BIRD_SAFE_DISTANCE ||
+                position.z > gameFieldMaxZ + BIRD_SAFE_DISTANCE;
 
             if (outsideX || outsideZ) {
                 validPosition = true;
@@ -416,38 +418,41 @@ void GameObjects::generateBirds() {
             attempts++;
         }
 
-        float size = 0.06f + (rand() % 6) * 0.02f;
-        float speed = 0.12f + (rand() % 8) * 0.02f;
+        if (validPosition) {
+            float size = 0.06f + (rand() % 6) * 0.02f;
+            float speed = BIRD_SPEED + (rand() % 8) * 0.02f;
 
-        float currentAngle = atan2f(position.z, position.x);
-        float movementAngle = currentAngle + 3.14159f / 2.0f;
-        if (rand() % 2 == 0) movementAngle += 3.14159f;
+            float currentAngle = atan2f(position.z, position.x);
+            float movementAngle = currentAngle + 3.14159f / 2.0f;
+            if (rand() % 2 == 0) movementAngle += 3.14159f;
 
-        glm::vec3 direction = glm::vec3(cos(movementAngle), 0.0f, sin(movementAngle));
+            glm::vec3 direction = glm::vec3(cos(movementAngle), 0.0f, sin(movementAngle));
 
-        int birdType = rand() % 4;
-        glm::vec3 color;
-        switch (birdType) {
-        case 0: color = glm::vec3(0.1f, 0.1f, 0.3f); break;
-        case 1: color = glm::vec3(0.3f, 0.2f, 0.1f); break;
-        case 2: color = glm::vec3(0.8f, 0.8f, 0.9f); break;
-        case 3: color = glm::vec3(0.2f, 0.2f, 0.2f); break;
+            int birdType = rand() % 4;
+            glm::vec3 color;
+            switch (birdType) {
+            case 0: color = glm::vec3(0.1f, 0.1f, 0.3f); break;
+            case 1: color = glm::vec3(0.3f, 0.2f, 0.1f); break;
+            case 2: color = glm::vec3(0.8f, 0.8f, 0.9f); break;
+            case 3: color = glm::vec3(0.2f, 0.2f, 0.2f); break;
+            }
+
+            Bird bird(position, color, size, speed);
+            bird.setDirection(direction);
+            birds.push_back(bird);
         }
-
-        Bird bird(position, color, size, speed);
-        bird.direction = direction;
-
-        birds.push_back(bird);
     }
 }
 
 void GameObjects::generateGroundSprites() {
     flowerSprites.clear();
-    for (int i = 0; i < 25; i++) {
-        float x = (rand() % 200 - 100) * 0.1f;
-        float y = 0.01f;
-        float z = (rand() % 200 - 100) * 0.1f;
-        float size = 0.1f + (rand() % 5) * 0.02f;
+
+    for (int i = 0; i < FLOWER_COUNT; i++) {
+        float x = (rand() % (int)(FIELD_EXTENT * 20) - FIELD_EXTENT * 10) * 0.1f;
+        float z = (rand() % (int)(FIELD_EXTENT * 20) - FIELD_EXTENT * 10) * 0.1f;
+        float y = FLOWER_HEIGHT;
+
+        float size = MIN_FLOWER_SIZE + (rand() % (int)((MAX_FLOWER_SIZE - MIN_FLOWER_SIZE) * 100)) * 0.01f;
 
         int colorType = rand() % 4;
         glm::vec3 color;
@@ -464,15 +469,16 @@ void GameObjects::generateGroundSprites() {
 
 void GameObjects::generateObstacles() {
     obstacles.clear();
+
     for (int i = 0; i < OBSTACLE_COUNT; i++) {
         Point center;
         bool validPosition = false;
         int attempts = 0;
 
         do {
-            center.x = 10 + rand() % (GRID_WIDTH - 20);
+            center.x = OBSTACLE_GENERATION_MARGIN + rand() % (GRID_WIDTH - 2 * (int)OBSTACLE_GENERATION_MARGIN);
             center.y = 0;
-            center.z = 10 + rand() % (GRID_DEPTH - 20);
+            center.z = OBSTACLE_GENERATION_MARGIN + rand() % (GRID_DEPTH - 2 * (int)OBSTACLE_GENERATION_MARGIN);
 
             validPosition = true;
             Obstacle tempObstacle(center);
@@ -515,7 +521,7 @@ void GameObjects::generateObstacles() {
             }
 
             attempts++;
-            if (attempts > 100) break;
+            if (attempts > MAX_OBSTACLE_GENERATION_ATTEMPTS) break;
 
         } while (!validPosition);
 
@@ -531,9 +537,9 @@ void GameObjects::generateSingleFood() {
     int attempts = 0;
 
     do {
-        newFood.x = 5 + rand() % (GRID_WIDTH - 10);
+        newFood.x = FOOD_GENERATION_MARGIN + rand() % (GRID_WIDTH - 2 * (int)FOOD_GENERATION_MARGIN);
         newFood.y = 0;
-        newFood.z = 5 + rand() % (GRID_DEPTH - 10);
+        newFood.z = FOOD_GENERATION_MARGIN + rand() % (GRID_DEPTH - 2 * (int)FOOD_GENERATION_MARGIN);
 
         validPosition = true;
 
@@ -566,7 +572,7 @@ void GameObjects::generateSingleFood() {
         }
 
         attempts++;
-        if (attempts > 50) break;
+        if (attempts > MAX_FOOD_GENERATION_ATTEMPTS) break;
 
     } while (!validPosition);
 
@@ -582,6 +588,10 @@ void GameObjects::generateInitialFood() {
     }
 }
 
+// ============================================================================
+// ОБНОВЛЕНИЕ ДЕКОРАЦИЙ
+// ============================================================================
+
 void GameObjects::updateClouds() {
     for (auto& cloud : cloudSprites) {
         float currentAngle = atan2f(cloud.position.z, cloud.position.x);
@@ -590,84 +600,94 @@ void GameObjects::updateClouds() {
         cloud.position.x += cos(movementAngle) * cloud.speed * 0.01f;
         cloud.position.z += sin(movementAngle) * cloud.speed * 0.01f;
 
-        cloud.position.y += (rand() % 100 - 50) * 0.0001f;
+        cloud.position.y += (rand() % 100 - 50) * CLOUD_HEIGHT_VARIATION;
 
-        if (cloud.position.y < 2.3f) cloud.position.y = 2.3f;
-        if (cloud.position.y > 3.7f) cloud.position.y = 3.7f;
+        cloud.position.y = glm::clamp(cloud.position.y, CLOUD_MIN_HEIGHT, CLOUD_MAX_HEIGHT);
 
         float currentDistance = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
-        float targetDistance = 13.0f;
-
-        if (currentDistance < 9.0f || currentDistance > 17.0f) {
+        if (currentDistance < CLOUD_MIN_DISTANCE_THRESHOLD || currentDistance > CLOUD_MAX_DISTANCE_THRESHOLD) {
             glm::vec3 normalized = glm::normalize(cloud.position);
-            cloud.position = normalized * targetDistance;
-            cloud.position.y = 2.5f + (rand() % 10) * 0.1f;
+            cloud.position = normalized * CLOUD_TARGET_DISTANCE;
+            cloud.position.y = CLOUD_MIN_HEIGHT + (rand() % 10) * 0.1f;
         }
     }
 }
 
 void GameObjects::updateBirds() {
     for (auto& bird : birds) {
-        bird.wingAngle = sin(glfwGetTime() * bird.wingSpeed) * 0.5f;
-        bird.position += bird.direction * bird.speed * 0.02f;
-        bird.position.y += sin(glfwGetTime() * 2.0f + bird.position.x) * 0.005f;
+        bird.update(PHYSICS_TIMESTEP);
 
-        if (bird.position.y < 2.8f) bird.position.y = 2.8f;
-        if (bird.position.y > 4.0f) bird.position.y = 4.0f;
+        float currentDistance = glm::length(glm::vec2(bird.getPosition().x, bird.getPosition().z));
+        if (currentDistance < BIRD_MIN_DISTANCE_THRESHOLD || currentDistance > BIRD_MAX_DISTANCE_THRESHOLD) {
+            glm::vec3 normalized = glm::normalize(bird.getPosition());
+            glm::vec3 newPosition = normalized * BIRD_TARGET_DISTANCE;
+            newPosition.y = BIRD_MIN_HEIGHT + (rand() % 8) * 0.1f;
+            bird.setPosition(newPosition);
 
-        float currentDistance = glm::length(glm::vec2(bird.position.x, bird.position.z));
-        float targetDistance = 10.0f;
-
-        if (currentDistance < 6.0f || currentDistance > 14.0f) {
-            glm::vec3 normalized = glm::normalize(bird.position);
-            bird.position = normalized * targetDistance;
-            bird.position.y = 3.0f + (rand() % 8) * 0.1f;
-
-            float currentAngle = atan2f(bird.position.z, bird.position.x);
+            float currentAngle = atan2f(newPosition.z, newPosition.x);
             float movementAngle = currentAngle + 3.14159f / 2.0f;
             if (rand() % 2 == 0) movementAngle += 3.14159f;
 
-            bird.direction = glm::vec3(cos(movementAngle), 0.0f, sin(movementAngle));
-        }
-
-        if (rand() % 300 < 1) {
-            float currentAngle = atan2f(bird.direction.z, bird.direction.x);
-            float randomChange = (rand() % 20 - 10) * 3.14159f / 180.0f;
-            bird.direction = glm::vec3(cos(currentAngle + randomChange), 0.0f, sin(currentAngle + randomChange));
+            bird.setDirection(glm::vec3(cos(movementAngle), 0.0f, sin(movementAngle)));
         }
     }
 }
 
+// ============================================================================
+// ОБРАБОТКА ВВОДА
+// ============================================================================
+
 void GameObjects::handleGameKeyPress(int key) {
     switch (key) {
-    case GLFW_KEY_LEFT:
-        // Только поворот змейки
+    case KEY_LEFT:
         if (currentDirection == FORWARD) currentDirection = LEFT;
         else if (currentDirection == LEFT) currentDirection = BACKWARD;
         else if (currentDirection == BACKWARD) currentDirection = RIGHT;
         else if (currentDirection == RIGHT) currentDirection = FORWARD;
         break;
-    case GLFW_KEY_RIGHT:
-        // Только поворот змейки
+    case KEY_RIGHT:
         if (currentDirection == FORWARD) currentDirection = RIGHT;
         else if (currentDirection == RIGHT) currentDirection = BACKWARD;
         else if (currentDirection == BACKWARD) currentDirection = LEFT;
         else if (currentDirection == LEFT) currentDirection = FORWARD;
         break;
-    case GLFW_KEY_P:
+    case KEY_P:
         gameState = PAUSED;
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "⏸️ Game paused" << std::endl;
+        }
         break;
-    case GLFW_KEY_R:
+    case KEY_R:
         initGame();
         gameState = PLAYING;
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "🔄 Game restarted" << std::endl;
+        }
         break;
-    case GLFW_KEY_Q:
+    case KEY_Q:
         g_camera.rotate(-10.0f);
-        std::cout << "Camera rotated left (Q pressed)" << std::endl;
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "📷 Camera rotated left" << std::endl;
+        }
         break;
-    case GLFW_KEY_E:
+    case KEY_E:
         g_camera.rotate(10.0f);
-        std::cout << "Camera rotated right (E pressed)" << std::endl;
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "📷 Camera rotated right" << std::endl;
+        }
+        break;
+    }
+}
+
+void GameObjects::handleSettingsKeyPress(int key) {
+    switch (key) {
+    case KEY_EQUAL:
+    case KEY_RIGHT:
+        increaseSpeed();
+        break;
+    case KEY_MINUS:
+    case KEY_LEFT:
+        decreaseSpeed();
         break;
     }
 }
@@ -696,102 +716,57 @@ void GameObjects::handleMenuKeyPress(int key) {
 
     case PAUSED:
         switch (key) {
-        case GLFW_KEY_ESCAPE:
+        case KEY_ESC:
             gameState = PLAYING;
             break;
-        case GLFW_KEY_Q:
+        case KEY_Q:
             previousState = PAUSED;
             gameState = SETTINGS;
             break;
-        case GLFW_KEY_M:
+        case KEY_M:
             gameState = MAIN_MENU;
             break;
-        case GLFW_KEY_P:
+        case KEY_P:
             gameState = PLAYING;
             break;
         }
         break;
 
     case SETTINGS:
-        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_B || key == GLFW_KEY_BACKSPACE) {
+        if (key == KEY_ESC || key == KEY_B || key == GLFW_KEY_BACKSPACE) {
             gameState = previousState;
         }
         break;
 
     case HIGH_SCORES:
-        if (key == GLFW_KEY_B || key == GLFW_KEY_ESCAPE || key == GLFW_KEY_BACKSPACE) {
+        if (key == KEY_B || key == KEY_ESC || key == GLFW_KEY_BACKSPACE) {
             gameState = previousState;
         }
         break;
 
     case CONTROLS:
-        if (key == GLFW_KEY_B || key == GLFW_KEY_ESCAPE || key == GLFW_KEY_BACKSPACE) {
+        if (key == KEY_B || key == KEY_ESC || key == GLFW_KEY_BACKSPACE) {
             gameState = MAIN_MENU;
         }
         break;
 
     case GAME_OVER:
         switch (key) {
-        case GLFW_KEY_R:
+        case KEY_R:
             initGame();
             gameState = PLAYING;
             break;
-        case GLFW_KEY_M:
+        case KEY_M:
             gameState = MAIN_MENU;
             break;
         }
         break;
     }
 }
-#pragma pack(push, 1)
-struct SaveData {
-    int version = 1;
-    int score;
-    int gameDuration;
-    float gameSpeed;
-    int currentDirection;
 
-    // Змейка
-    int snakeLength;
-    Point snake[1000];
-
-    // Еда
-    int foodCount;
-    Point food[50];
-
-    // Препятствия
-    int obstaclesCount;
-    Point obstacles[100];
-
-
-    // Облака
-    int cloudSpritesCount;
-    struct CloudSave {
-        glm::vec3 position;
-        glm::vec3 color;
-        float size;
-        float speed;
-    } cloudSprites[100]; // Увеличил с 50 до 100
-
-    // Птицы
-    int birdsCount;
-    struct BirdSave {
-        glm::vec3 position;
-        glm::vec3 color;
-        float size;
-        float speed;
-        glm::vec3 direction;
-    } birds[50]; // Увеличил с 30 до 50
-
-    // Цветы (увеличим размер - цветов может быть много)
-    int flowerSpritesCount;
-    struct FlowerSave {
-        glm::vec3 position;
-        glm::vec3 color;
-        float size;
-    } flowerSprites[100]; // Увеличил с 50 до 100
-};
-#pragma pack(pop)
+// ============================================================================
+// СИСТЕМА СОХРАНЕНИЯ ИГРЫ
+// ============================================================================
 
 bool GameObjects::saveGame() {
     std::ofstream file(saveFileName, std::ios::binary);
@@ -809,7 +784,7 @@ bool GameObjects::saveGame() {
 
     // Сохраняем змейку
     save.snakeLength = static_cast<int>(snake.size());
-    for (int i = 0; i < save.snakeLength && i < 1000; i++) {
+    for (int i = 0; i < save.snakeLength && i < MAX_SNAKE_LENGTH; i++) {
         save.snake[i] = snake[i];
     }
 
@@ -825,45 +800,15 @@ bool GameObjects::saveGame() {
         save.obstacles[i] = obstacles[i].center;
     }
 
-    // ЗАБОР НЕ СОХРАНЯЕМ - он статичный
-
-    // Сохраняем облака
-    save.cloudSpritesCount = static_cast<int>(cloudSprites.size());
-    for (int i = 0; i < save.cloudSpritesCount && i < 100; i++) {
-        save.cloudSprites[i].position = cloudSprites[i].position;
-        save.cloudSprites[i].color = cloudSprites[i].color;
-        save.cloudSprites[i].size = cloudSprites[i].size;
-        save.cloudSprites[i].speed = cloudSprites[i].speed;
-    }
-
-    // Сохраняем птиц
-    save.birdsCount = static_cast<int>(birds.size());
-    for (int i = 0; i < save.birdsCount && i < 50; i++) {
-        save.birds[i].position = birds[i].position;
-        save.birds[i].color = birds[i].color;
-        save.birds[i].size = birds[i].size;
-        save.birds[i].speed = birds[i].speed;
-        save.birds[i].direction = birds[i].direction;
-    }
-
-    // Сохраняем цветы
-    save.flowerSpritesCount = static_cast<int>(flowerSprites.size());
-    for (int i = 0; i < save.flowerSpritesCount && i < 100; i++) {
-        save.flowerSprites[i].position = flowerSprites[i].position;
-        save.flowerSprites[i].color = flowerSprites[i].color;
-        save.flowerSprites[i].size = flowerSprites[i].size;
-    }
-
     file.write(reinterpret_cast<char*>(&save), sizeof(SaveData));
     file.close();
 
-    std::cout << "✅ Game saved successfully! ("
-        << save.snakeLength << " snake segments, "
-        << save.foodCount << " food, "
-        << save.obstaclesCount << " obstacles, "
-        << save.cloudSpritesCount << " clouds, "
-        << save.birdsCount << " birds, "
-        << save.flowerSpritesCount << " flowers)" << std::endl;
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "✅ Game saved successfully! ("
+            << save.snakeLength << " snake segments, "
+            << save.foodCount << " food, "
+            << save.obstaclesCount << " obstacles)" << std::endl;
+    }
     return true;
 }
 
@@ -890,12 +835,12 @@ bool GameObjects::loadGame() {
     currentDirection = static_cast<Direction>(save.currentDirection);
     gameOver = false;
 
-    // ГЕНЕРИРУЕМ ЗАБОР ЗАНОВО (вместо загрузки из сохранения)
+    // Генерируем забор заново
     generateFence();
 
     // Восстанавливаем змейку
     snake.clear();
-    for (int i = 0; i < save.snakeLength && i < 1000; i++) {
+    for (int i = 0; i < save.snakeLength && i < MAX_SNAKE_LENGTH; i++) {
         snake.push_back(save.snake[i]);
     }
 
@@ -911,49 +856,23 @@ bool GameObjects::loadGame() {
         obstacles.push_back(Obstacle(save.obstacles[i]));
     }
 
-    // ЗАБОР УБРАН - больше не загружаем из сохранения
+    // Генерируем декорации заново
+    generateClouds();
+    generateBirds();
+    generateGroundSprites();
 
-    // Восстанавливаем облака
-    cloudSprites.clear();
-    for (int i = 0; i < save.cloudSpritesCount && i < 100; i++) {
-        Sprite cloud(save.cloudSprites[i].position,
-            save.cloudSprites[i].color,
-            save.cloudSprites[i].size,
-            save.cloudSprites[i].speed);
-        cloudSprites.push_back(cloud);
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "✅ Game loaded successfully! ("
+            << save.snakeLength << " snake segments, "
+            << save.foodCount << " food, "
+            << save.obstaclesCount << " obstacles)" << std::endl;
     }
-
-    // Восстанавливаем птиц
-    birds.clear();
-    for (int i = 0; i < save.birdsCount && i < 50; i++) {
-        Bird bird(save.birds[i].position,
-            save.birds[i].color,
-            save.birds[i].size,
-            save.birds[i].speed);
-        bird.direction = save.birds[i].direction;
-        birds.push_back(bird);
-    }
-
-    // Восстанавливаем цветы
-    flowerSprites.clear();
-    for (int i = 0; i < save.flowerSpritesCount && i < 100; i++) {
-        Sprite flower(save.flowerSprites[i].position,
-            save.flowerSprites[i].color,
-            save.flowerSprites[i].size,
-            0.0f); // цветы не двигаются
-        flowerSprites.push_back(flower);
-    }
-
-    std::cout << "✅ Game loaded successfully! ("
-        << save.snakeLength << " snake segments, "
-        << save.foodCount << " food, "
-        << save.obstaclesCount << " obstacles, "
-        << "fence regenerated, "
-        << save.cloudSpritesCount << " clouds, "
-        << save.birdsCount << " birds, "
-        << save.flowerSpritesCount << " flowers)" << std::endl;
     return true;
 }
+
+// ============================================================================
+// ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ
+// ============================================================================
 
 bool GameObjects::hasSaveGame() const {
     std::ifstream file(saveFileName);
@@ -961,6 +880,136 @@ bool GameObjects::hasSaveGame() const {
 }
 
 void GameObjects::deleteSaveGame() {
-    std::remove(saveFileName.c_str());
-    std::cout << "✅ Save game deleted" << std::endl;
+    if (std::remove(saveFileName.c_str()) == 0) {
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "✅ Save game deleted" << std::endl;
+        }
+    }
+    else {
+        std::cout << "❌ Failed to delete save game" << std::endl;
+    }
+}
+
+void GameObjects::pauseGame() {
+    if (gameState == PLAYING) {
+        gameState = PAUSED;
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "⏸️ Game paused" << std::endl;
+        }
+    }
+}
+
+void GameObjects::resumeGame() {
+    if (gameState == PAUSED) {
+        gameState = PLAYING;
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "▶️ Game resumed" << std::endl;
+        }
+    }
+}
+
+void GameObjects::returnToMainMenu() {
+    if (gameState == PLAYING && !gameOver) {
+        saveGame();
+        if (ENABLE_DEBUG_INFO) {
+            std::cout << "💾 Game saved and returning to main menu" << std::endl;
+        }
+    }
+    gameState = MAIN_MENU;
+}
+
+void GameObjects::saveOnExit() {
+    if (gameState == PLAYING && !gameOver) {
+        saveGame();
+    }
+    saveSettings();
+}
+
+void GameObjects::setPlayerName(const std::string& name) {
+    playerName = name;
+    if (playerName.empty()) {
+        playerName = DEFAULT_PLAYER_NAME;
+    }
+    saveSettings();
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "👤 Player name set to: " << playerName << std::endl;
+    }
+}
+
+// ============================================================================
+// ОТЛАДОЧНЫЕ ФУНКЦИИ
+// ============================================================================
+
+void GameObjects::debugSnakeInfo() {
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "🐍 Snake length: " << snake.size()
+            << ", Head: (" << snake[0].x << ", " << snake[0].z << ")"
+            << ", Direction: " << currentDirection << std::endl;
+    }
+}
+
+void GameObjects::printDebugInfo() const {
+    if (!ENABLE_DEBUG_INFO) return;
+
+    std::cout << "=== GAME DEBUG INFO ===" << std::endl;
+    std::cout << "State: " << gameStateToString(gameState) << std::endl;
+    std::cout << "Score: " << score << std::endl;
+    std::cout << "Duration: " << gameDuration << "s" << std::endl;
+    std::cout << "Speed: " << getSpeedDisplayText() << std::endl;
+    std::cout << "Snake length: " << snake.size() << std::endl;
+    std::cout << "Food count: " << food.size() << std::endl;
+    std::cout << "Obstacles: " << obstacles.size() << std::endl;
+    std::cout << "Clouds: " << cloudSprites.size() << std::endl;
+    std::cout << "Birds: " << birds.size() << std::endl;
+    std::cout << "Flowers: " << flowerSprites.size() << std::endl;
+    std::cout << "Player: " << playerName << std::endl;
+    std::cout << "Network: " << (isNetworkAvailable() ? "Available" : "Unavailable") << std::endl;
+    std::cout << "======================" << std::endl;
+}
+
+std::string GameObjects::gameStateToString(GameState state) const {
+    switch (state) {
+    case MAIN_MENU: return "MAIN_MENU";
+    case PLAYING: return "PLAYING";
+    case PAUSED: return "PAUSED";
+    case GAME_OVER: return "GAME_OVER";
+    case SETTINGS: return "SETTINGS";
+    case HIGH_SCORES: return "HIGH_SCORES";
+    case CONTROLS: return "CONTROLS";
+    default: return "UNKNOWN";
+    }
+}
+
+// ============================================================================
+// ОЧИСТКА РЕСУРСОВ
+// ============================================================================
+
+void GameObjects::reset() {
+    snake.clear();
+    food.clear();
+    obstacles.clear();
+    fenceBlocks.clear();
+    cloudSprites.clear();
+    birds.clear();
+    flowerSprites.clear();
+    highScores.clear();
+
+    score = 0;
+    gameOver = false;
+    gameDuration = 0;
+    gameTimer = 0.0f;
+    currentDirection = FORWARD;
+    verticalDirection = 0;
+
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "🔄 All game data reset" << std::endl;
+    }
+}
+
+GameObjects::~GameObjects() {
+    saveOnExit();
+
+    if (ENABLE_DEBUG_INFO) {
+        std::cout << "🧹 GameObjects cleaned up" << std::endl;
+    }
 }
