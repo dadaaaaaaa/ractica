@@ -160,8 +160,8 @@
   <ItemGroup>
     <ClInclude Include="Core\Constants.h" />
     <ClInclude Include="Core\GameConfig.h" />
+    <ClInclude Include="Core\MathUtils.h" />
     <ClInclude Include="Core\Types.h" />
-    <ClInclude Include="Core\UITypes.h" />
     <ClInclude Include="Game\Game.h" />
     <ClInclude Include="Graphics\Camera.h" />
     <ClInclude Include="Graphics\GameRenderer.h" />

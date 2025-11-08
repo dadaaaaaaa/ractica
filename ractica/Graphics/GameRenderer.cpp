@@ -9,92 +9,37 @@
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 
-// Конструктор рендерера - инициализирует флаги
-GameRenderer::GameRenderer() : modelsLoaded(false) {
+GameRenderer::GameRenderer() {
+   
 }
 
-// Инициализирует рендерер и загружает все модели
 void GameRenderer::initialize() {
-    if (modelsLoaded) return;
-
-    std::cout << "🎮 Initializing game renderer..." << std::endl;
     loadAllModels();
-    modelsLoaded = true;
-    std::cout << "✅ Game renderer initialized successfully" << std::endl;
 }
 
-// Очищает ресурсы рендерера
-void GameRenderer::cleanup() {
-    std::cout << "🧹 Cleaning up renderer resources..." << std::endl;
-
-    // Очищаем модели (у каждой модели есть свой деструктор)
-    snakeHeadModel.cleanup();
-    snakeBodyModel.cleanup();
-    snakeTailModel.cleanup();
-    appleModel.cleanup();
-    treeModel.cleanup();
-    floorModel.cleanup();
-    fenceModel.cleanup();
-    cloudModel.cleanup();
-    birdModel.cleanup();
-    flowerModel.cleanup();
-
-    modelsLoaded = false;
-    std::cout << "✅ Renderer cleanup complete" << std::endl;
-}
-
-// Основной метод рендеринга игровой сцены
 void GameRenderer::renderGame(const GameObjects& objects) {
-    // Очищаем буферы и устанавливаем цвет неба
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.53f, 0.81f, 0.92f, 1.0f); // Голубой цвет неба
+    glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
 
-    // Активируем 3D шейдер для рендеринга игровых объектов
     g_shaderManager.use3DShader();
 
-    // Получаем матрицы проекции и вида от камеры
-    float aspectRatio = static_cast<float>(DEFAULT_WINDOW_WIDTH) / DEFAULT_WINDOW_HEIGHT;
-    glm::mat4 projection = g_camera.getProjectionMatrix(aspectRatio);
-    glm::mat4 view = g_camera.getViewMatrix();
+    glm::mat4 projection = glm::perspective(glm::radians(60.0f), 1200.0f / 800.0f, 0.1f, 100.0f);
+    glm::mat4 view = glm::lookAt(g_camera.getPosition(), g_camera.getPosition() + g_camera.getFront(), g_camera.getUp());
 
-    // Устанавливаем матрицы в шейдер
     g_shaderManager.setViewMatrix(view);
     g_shaderManager.setProjectionMatrix(projection);
 
-    // Рендерим все элементы игровой сцены в правильном порядке
-    drawFloor();                                    // Пол/земля
-    drawGroundSprites(objects.getFlowerSprites());  // Цветы на земле
-    drawFence(objects.getFenceBlocks());            // Забор по границам
-    drawObstaclesAsTrees(objects.getObstacles());   // Деревья-препятствия
-    drawSnake(objects.getSnake());                  // Змейка
-    drawFood(objects.getFood());                    // Еда (яблоки)
-    drawClouds(objects.getCloudSprites());          // Облака на небе
-    drawBirds(objects.getBirds());                  // Птицы в небе
+    drawFloor();
+    drawGroundSprites(objects.getFlowerSprites());
+    drawFence(objects.getFenceBlocks());
+    drawObstaclesAsTrees(objects.getObstacles());
+    drawSnake(objects.getSnake());
+    drawFood(objects.getFood());
+    drawClouds(objects.getCloudSprites());
+    drawBirds(objects.getBirds());
 }
 
-// Рендерит HUD (интерфейс поверх игровой сцены)
-void GameRenderer::renderHUD(const GameObjects& objects, const GameUI& ui) {
-    // Включаем смешивание для полупрозрачного HUD
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    // Отключаем тест глубины чтобы HUD был поверх всего
-    glDisable(GL_DEPTH_TEST);
-
-    // Здесь можно добавить отрисовку игрового HUD:
-    // - Счет
-    // - Таймер
-    // - Индикатор скорости
-    // - Индикатор длины змейки
-
-    // Восстанавливаем настройки
-    glDisable(GL_BLEND);
-    glEnable(GL_DEPTH_TEST);
-}
-
-// Рендерит модель в указанной позиции с заданным цветом и масштабом
-void GameRenderer::drawModel(const Model& model, float x, float y, float z,
-    float scale, const glm::vec3& color) {
+void GameRenderer::drawModel(const Model& model, float x, float y, float z, float scale, const glm::vec3& color) {
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     modelMatrix = glm::translate(modelMatrix, glm::vec3(x, y, z));
     modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
@@ -106,72 +51,49 @@ void GameRenderer::drawModel(const Model& model, float x, float y, float z,
     model.draw();
 }
 
-// Рендерит модель с вращением вокруг оси Y
-void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, float z,
-    float scale, const glm::vec3& color, float rotationAngle) {
-    glm::mat4 modelMatrix = glm::mat4(1.0f);
-    modelMatrix = glm::translate(modelMatrix, glm::vec3(x, y, z));
-    modelMatrix = glm::rotate(modelMatrix, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
-    modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
-
-    g_shaderManager.setModelMatrix(modelMatrix);
-    g_shaderManager.setColor(color);
-    g_shaderManager.setUseTexture(model.hasTexture);
-
-    model.draw();
-}
-
-// ============================================================================
-// МЕТОДЫ РЕНДЕРИНГА КОНКРЕТНЫХ ОБЪЕКТОВ
-// ============================================================================
-
-// Рендерит пол игрового поля
 void GameRenderer::drawFloor() {
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::scale(model, glm::vec3(2.0f, 1.0f, 2.0f));
     model = glm::translate(model, glm::vec3(0.0f, -0.5f, 0.0f));
 
     g_shaderManager.setModelMatrix(model);
-    g_shaderManager.setColor(glm::vec3(0.3f, 0.6f, 0.2f)); // Зеленый цвет травы
+    g_shaderManager.setColor(glm::vec3(0.3f, 0.6f, 0.2f));
     g_shaderManager.setUseTexture(floorModel.hasTexture);
 
     floorModel.draw();
 }
 
-// Рендерит змейку с разными моделями для головы, тела и хвоста
 void GameRenderer::drawSnake(const std::vector<Point>& snake) {
     if (snake.empty()) return;
 
     for (size_t i = 0; i < snake.size(); i++) {
         const Point& segment = snake[i];
-
-        // Конвертируем координаты сетки в мировые координаты
         float x = (segment.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = segment.y * CELL_SIZE + 0.05f; // Небольшой подъем над землей
+        float y = segment.y * CELL_SIZE + 0.05f;
         float z = (segment.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
-        // Выбираем модель и цвет в зависимости от позиции в змейке
+        // Выбираем модель в зависимости от позиции в змейке
         const Model* modelToDraw = &snakeBodyModel;
         glm::vec3 color = glm::vec3(0.0f, 0.7f, 0.0f); // Зеленый для тела
 
         if (i == 0) {
-            // Голова змейки
+            // Голова
             modelToDraw = &snakeHeadModel;
             color = glm::vec3(0.0f, 1.0f, 0.0f); // Ярко-зеленый
         }
         else if (i == snake.size() - 1) {
-            // Хвост змейки
+            // Хвост
             modelToDraw = &snakeTailModel;
             color = glm::vec3(0.0f, 0.5f, 0.0f); // Темно-зеленый
         }
 
-        // Вычисляем угол поворота для сегмента и рисуем
+        // Определяем направление для вращения модели
         float rotationAngle = calculateSegmentRotation(snake, i);
+
         drawModelWithRotation(*modelToDraw, x, y, z, CELL_SIZE * 0.8f, color, rotationAngle);
     }
 }
 
-// Вычисляет угол поворота для сегмента змейки на основе направления движения
 float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, size_t index) {
     if (snake.size() <= 1) return 0.0f;
 
@@ -187,27 +109,39 @@ float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, si
         next = snake[index - 1];
     }
 
-    // Определяем направление и возвращаем соответствующий угол
+    // Определяем направление
     if (current.x > next.x) return 90.0f;    // Движение вправо
     if (current.x < next.x) return -90.0f;   // Движение влево
     if (current.z > next.z) return 0.0f;     // Движение вперед
     if (current.z < next.z) return 180.0f;   // Движение назад
 
-    return 0.0f; // Направление по умолчанию
+    return 0.0f;
 }
 
-// Рендерит еду (яблоки) на игровом поле
+
+void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, float z, float scale,
+    const glm::vec3& color, float rotationAngle) {
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    modelMatrix = glm::translate(modelMatrix, glm::vec3(x, y, z));
+    modelMatrix = glm::rotate(modelMatrix, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
+
+    g_shaderManager.setModelMatrix(modelMatrix);
+    g_shaderManager.setColor(color);
+    g_shaderManager.setUseTexture(model.hasTexture);
+
+    model.draw();
+}
 void GameRenderer::drawFood(const std::vector<Point>& food) {
     for (const auto& apple : food) {
         float x = (apple.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = apple.y * CELL_SIZE + 0.05f; // Небольшой подъем над землей
+        float y = apple.y * CELL_SIZE + 0.05f;
         float z = (apple.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
         drawModel(appleModel, x, y, z, CELL_SIZE * 0.8f, glm::vec3(1.0f, 0.8f, 0.2f));
     }
 }
 
-// Рендерит препятствия в виде деревьев
 void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) {
     for (const auto& obstacle : obstacles) {
         for (const auto& block : obstacle.blocks) {
@@ -220,22 +154,19 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
     }
 }
 
-// Рендерит забор по границам игрового поля
 void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
     for (const auto& fenceBlock : fenceBlocks) {
         float x = (fenceBlock.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
         float y = fenceBlock.y * CELL_SIZE;
         float z = (fenceBlock.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
-        glm::vec3 fenceColor(0.55f, 0.27f, 0.07f); // Коричневый цвет забора
+        glm::vec3 fenceColor(0.55f, 0.27f, 0.07f);
         drawModel(fenceModel, x, y, z, CELL_SIZE * 1.2f, fenceColor);
     }
 }
 
-// Рендерит облака на небе (только те, что далеко от центра)
 void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
     for (const auto& cloud : cloudSprites) {
-        // Пропускаем облака слишком близко к центру
         float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
         if (distanceToCenter < 8.0f) continue;
 
@@ -243,7 +174,6 @@ void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
         model = glm::translate(model, cloud.position);
         model = glm::scale(model, glm::vec3(cloud.size));
 
-        // Поворачиваем облако чтобы оно всегда было ориентировано на камеру (billboard)
         glm::vec3 toCamera = glm::normalize(g_camera.getPosition() - cloud.position);
         float angle = atan2f(toCamera.x, toCamera.z);
         model = glm::rotate(model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -256,22 +186,19 @@ void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
     }
 }
 
-// Рендерит одну птицу с анимацией крыльев
 void GameRenderer::drawBird(const Bird& bird) {
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, bird.position);
     model = glm::scale(model, glm::vec3(bird.size));
 
-    // Ориентируем птицу в направлении движения
     if (glm::length(bird.direction) > 0.1f) {
-        float yaw = atan2f(bird.direction.x, bird.direction.z);
-        model = glm::rotate(model, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+        float angle = atan2f(bird.direction.x, bird.direction.z);
+        model = glm::rotate(model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
 
         float pitch = atan2f(bird.direction.y, glm::length(glm::vec2(bird.direction.x, bird.direction.z)));
         model = glm::rotate(model, pitch, glm::vec3(1.0f, 0.0f, 0.0f));
     }
 
-    // Анимация крыльев
     model = glm::rotate(model, bird.wingAngle * 0.3f, glm::vec3(1.0f, 0.0f, 0.0f));
 
     g_shaderManager.setModelMatrix(model);
@@ -281,21 +208,18 @@ void GameRenderer::drawBird(const Bird& bird) {
     birdModel.draw();
 }
 
-// Рендерит всех птиц
 void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
     for (const auto& bird : birds) {
         drawBird(bird);
     }
 }
 
-// Рендерит цветы на земле (billboard спрайты)
 void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
     for (const auto& flower : flowerSprites) {
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, flower.position);
         model = glm::scale(model, glm::vec3(flower.size));
 
-        // Поворачиваем цветок чтобы он всегда был ориентирован на камеру
         glm::vec3 toCamera = glm::normalize(g_camera.getPosition() - flower.position);
         float angle = atan2f(toCamera.x, toCamera.z);
         model = glm::rotate(model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -307,39 +231,25 @@ void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
         flowerModel.draw();
     }
 }
-
-// ============================================================================
-// МЕТОДЫ СОЗДАНИЯ МОДЕЛЕЙ ЗМЕЙКИ
-// ============================================================================
-
-// Создает простую треугольную модель головы змейки
 void GameRenderer::createSnakeHeadModel(Model& model) {
     // Простая треугольная голова
     createTexturedCubeModel(model);
     model.hasTexture = false;
 }
 
-// Создает простую кубическую модель тела змейки
 void GameRenderer::createSnakeBodyModel(Model& model) {
     // Простой куб для тела
     createTexturedCubeModel(model);
     model.hasTexture = false;
 }
 
-// Создает простую кубическую модель хвоста змейки
 void GameRenderer::createSnakeTailModel(Model& model) {
     // Простой куб для хвоста (можно сделать меньше)
     createTexturedCubeModel(model);
     model.hasTexture = false;
 }
-
-// ============================================================================
-// ЗАГРУЗКА ВСЕХ МОДЕЛЕЙ
-// ============================================================================
-
-// Загружает или создает все модели, используемые в игре
 void GameRenderer::loadAllModels() {
-    std::cout << "📦 Loading models..." << std::endl;
+    std::cout << "Loading models..." << std::endl;
 
     // Для змейки пытаемся загрузить из файла
     // Загружаем отдельные модели для змейки
@@ -386,14 +296,8 @@ void GameRenderer::loadAllModels() {
     createDetailedAppleModel(appleModel);
     appleModel.hasTexture = false;
 
-    std::cout << "✅ All models loaded successfully!" << std::endl;
+    std::cout << "All models loaded successfully!" << std::endl;
 }
-
-// ============================================================================
-// ГЕОМЕТРИЧЕСКИЕ ПРИМИТИВЫ
-// ============================================================================
-
-// Создает круг из треугольников
 void GameRenderer::createCircle(std::vector<Vertex>& vertices, float cx, float cy, float radius, int segments, const glm::vec3& normal) {
     for (int i = 0; i < segments; i++) {
         float angle1 = 2.0f * 3.14159f * i / segments;
@@ -416,7 +320,6 @@ void GameRenderer::createCircle(std::vector<Vertex>& vertices, float cx, float c
     }
 }
 
-// Создает цилиндр с заданными параметрами
 void GameRenderer::createCylinder(std::vector<Vertex>& vertices, float x, float y, float z, float radius, float height, int segments, const glm::vec3& color) {
     for (int i = 0; i < segments; i++) {
         float angle1 = 2.0f * 3.14159f * i / segments;
@@ -440,7 +343,6 @@ void GameRenderer::createCylinder(std::vector<Vertex>& vertices, float x, float 
     }
 }
 
-// Создает часть сферы (сетка треугольников)
 void GameRenderer::createSpherePart(std::vector<Vertex>& vertices, float cx, float cy, float cz, float radius, int segments, int rings, const glm::vec3& color) {
     for (int i = 0; i < rings; ++i) {
         for (int j = 0; j < segments; ++j) {
@@ -491,16 +393,10 @@ void GameRenderer::createSpherePart(std::vector<Vertex>& vertices, float cx, flo
     }
 }
 
-// ============================================================================
-// МЕТОДЫ СОЗДАНИЯ КОНКРЕТНЫХ МОДЕЛЕЙ
-// ============================================================================
-
-// Создает часть облака (сферический элемент)
 void GameRenderer::createCloudPart(std::vector<Vertex>& vertices, float x, float y, float z, float radius) {
     createSpherePart(vertices, x, y, z, radius, 8, 4, glm::vec3(1.0f));
 }
 
-// Создает модель облака из нескольких сферических частей
 void GameRenderer::createCloudModel(Model& model) {
     createCloudPart(model.vertices, 0.0f, 0.0f, 0.0f, 0.4f);
     createCloudPart(model.vertices, 0.3f, 0.1f, 0.0f, 0.3f);
@@ -513,7 +409,6 @@ void GameRenderer::createCloudModel(Model& model) {
     model.setupBuffers();
 }
 
-// Создает анимированную модель птицы
 void GameRenderer::createAnimatedBirdModel(Model& model) {
     createSpherePart(model.vertices, 0.0f, 0.0f, 0.0f, 0.3f, 12, 8, glm::vec3(1.0f));
     createSpherePart(model.vertices, 0.4f, 0.1f, 0.0f, 0.15f, 8, 6, glm::vec3(1.0f));
@@ -548,7 +443,6 @@ void GameRenderer::createAnimatedBirdModel(Model& model) {
     model.setupBuffers();
 }
 
-// Создает модель цветка с лепестками и стеблем
 void GameRenderer::createFlowerModel(Model& model) {
     createCircle(model.vertices, 0.0f, 0.0f, 0.1f, 8);
 
@@ -576,7 +470,6 @@ void GameRenderer::createFlowerModel(Model& model) {
     model.setupBuffers();
 }
 
-// Создает модель дерева (ствол + крона)
 void GameRenderer::createTreeModel(Model& model) {
     createCylinder(model.vertices, 0.0f, 0.0f, 0.0f, 0.08f, 0.6f, 8, glm::vec3(0.4f, 0.2f, 0.1f));
     createSpherePart(model.vertices, 0.0f, 0.8f, 0.0f, 0.3f, 12, 8, glm::vec3(0.1f, 0.4f, 0.1f));
@@ -585,7 +478,6 @@ void GameRenderer::createTreeModel(Model& model) {
     model.setupBuffers();
 }
 
-// Создает детализированную модель яблока
 void GameRenderer::createDetailedAppleModel(Model& model) {
     createSpherePart(model.vertices, 0.0f, 0.0f, 0.0f, 0.5f, 16, 12, glm::vec3(1.0f, 0.0f, 0.0f));
     createSpherePart(model.vertices, 0.0f, 0.3f, 0.0f, 0.1f, 8, 4, glm::vec3(0.3f, 0.2f, 0.1f));
@@ -607,11 +499,6 @@ void GameRenderer::createDetailedAppleModel(Model& model) {
     model.setupBuffers();
 }
 
-// ============================================================================
-// БАЗОВЫЕ ГЕОМЕТРИЧЕСКИЕ МОДЕЛИ
-// ============================================================================
-
-// Создает текстурированную кубическую модель
 void GameRenderer::createTexturedCubeModel(Model& model) {
     float vertices[] = {
         -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
@@ -669,7 +556,6 @@ void GameRenderer::createTexturedCubeModel(Model& model) {
     model.setupBuffers();
 }
 
-// Создает текстурированную сферическую модель
 void GameRenderer::createTexturedSphereModel(Model& model) {
     const int segments = 16;
     const int rings = 16;
@@ -722,7 +608,6 @@ void GameRenderer::createTexturedSphereModel(Model& model) {
     model.setupBuffers();
 }
 
-// Создает текстурированную модель пола
 void GameRenderer::createTexturedFloorModel(Model& model) {
     float floorSize = 8.0f;
 
@@ -752,7 +637,6 @@ void GameRenderer::createTexturedFloorModel(Model& model) {
     model.setupBuffers();
 }
 
-// Создает текстурированную модель забора
 void GameRenderer::createFenceModel(Model& model) {
     float vertices[] = {
         -0.3f, -0.5f, -0.1f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
@@ -802,12 +686,6 @@ void GameRenderer::createFenceModel(Model& model) {
     model.hasTexture = true;
     model.setupBuffers();
 }
-
-// ============================================================================
-// ЗАГРУЗКА МОДЕЛЕЙ ИЗ ФАЙЛОВ
-// ============================================================================
-
-// Загружает модель из файла OBJ и текстуру
 bool GameRenderer::loadModelFromFile(Model& model, const std::string& modelPath, const std::string& texturePath) {
     // Очищаем предыдущую модель
     model.vertices.clear();
@@ -835,7 +713,6 @@ bool GameRenderer::loadModelFromFile(Model& model, const std::string& modelPath,
     return true;
 }
 
-// Загружает модель из файла формата OBJ
 bool GameRenderer::loadOBJModel(Model& model, const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -934,7 +811,6 @@ bool GameRenderer::loadOBJModel(Model& model, const std::string& path) {
     return true;
 }
 
-// Загружает текстуру для модели
 bool GameRenderer::loadTexture(Model& model, const std::string& path) {
     // Сначала пробуем загрузить из файла
     if (!loadTextureFromFile(model, path)) {
@@ -945,7 +821,6 @@ bool GameRenderer::loadTexture(Model& model, const std::string& path) {
     return true;
 }
 
-// Загружает текстуру из файла изображения
 bool GameRenderer::loadTextureFromFile(Model& model, const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
@@ -971,7 +846,6 @@ bool GameRenderer::loadTextureFromFile(Model& model, const std::string& path) {
     return createProceduralTexture(model, path);
 }
 
-// Создает procedural текстуру на основе имени файла
 bool GameRenderer::createProceduralTexture(Model& model, const std::string& name) {
     const int TEXTURE_SIZE = 64;
     std::vector<unsigned char> textureData(TEXTURE_SIZE * TEXTURE_SIZE * 3); // RGB
@@ -1004,7 +878,6 @@ bool GameRenderer::createProceduralTexture(Model& model, const std::string& name
     return true;
 }
 
-// Создает текстуру для змейки (зеленая с полосками)
 void GameRenderer::createSnakeTexture(std::vector<unsigned char>& data, int size) {
     // Зеленая текстура с темными полосками для змейки
     for (int y = 0; y < size; y++) {
@@ -1034,7 +907,6 @@ void GameRenderer::createSnakeTexture(std::vector<unsigned char>& data, int size
     }
 }
 
-// Создает шахматную текстуру
 void GameRenderer::createCheckerboardTexture(std::vector<unsigned char>& data, int size) {
     // Шахматная текстура
     for (int y = 0; y < size; y++) {
