@@ -160,13 +160,26 @@ void GameObjects::handleSettingsKeyPress(int key) {
 void GameObjects::update() {
     if (gameOver || gameState != PLAYING) return;
 
-    // ДОБАВЛЕНО: Обновление времени игры
-    gameTimer += 0.016f; // ~60 FPS
+    // Контроль времени для движения змейки
+    static float lastMoveTime = 0;
+    float currentTime = glfwGetTime();
+
+    if (currentTime - lastMoveTime < gameSpeed) {
+        // Обновляем только облака и птиц (они могут двигаться каждый кадр)
+        updateClouds();
+        updateBirds();
+        return; // Ждем пока не пройдет достаточно времени для движения змейки
+    }
+    lastMoveTime = currentTime;
+
+    // Обновление времени игры (только когда змейка двигается)
+    gameTimer += gameSpeed;
     if (gameTimer >= 1.0f) {
         gameDuration++;
         gameTimer = 0.0f;
     }
 
+    // ДВИЖЕНИЕ ЗМЕЙКИ (выполняется только с интервалом gameSpeed)
     Point newHead = snake[0];
 
     switch (currentDirection) {
@@ -178,34 +191,39 @@ void GameObjects::update() {
 
     newHead.y = 0;
 
+    // Проверка столкновения со стенками
     if (newHead.x < 0 || newHead.x >= GRID_WIDTH ||
         newHead.z < 0 || newHead.z >= GRID_DEPTH) {
         gameOver = true;
         gameState = GAME_OVER;
-        updateHighScores(); // ИЗМЕНЕНО: вызов новой функции
+        updateHighScores();
         return;
     }
 
+    // Проверка столкновения с собой
     for (const auto& segment : snake) {
         if (segment == newHead) {
             gameOver = true;
             gameState = GAME_OVER;
-            updateHighScores(); // ИЗМЕНЕНО: вызов новой функции
+            updateHighScores();
             return;
         }
     }
 
+    // Проверка столкновения с препятствиями
     for (const auto& obstacle : obstacles) {
         if (obstacle.contains(newHead)) {
             gameOver = true;
             gameState = GAME_OVER;
-            updateHighScores(); // ИЗМЕНЕНО: вызов новой функции
+            updateHighScores();
             return;
         }
     }
 
+    // Двигаем змейку
     snake.insert(snake.begin(), newHead);
 
+    // Проверка съедания еды
     auto foodIt = std::find(food.begin(), food.end(), newHead);
     if (foodIt != food.end()) {
         score++;
@@ -215,6 +233,10 @@ void GameObjects::update() {
     else {
         snake.pop_back();
     }
+
+    // Обновляем облака и птиц (после движения змейки)
+    updateClouds();
+    updateBirds();
 }
 
 void GameObjects::initGame() {
