@@ -254,17 +254,17 @@ void GameRenderer::loadAllModels() {
     // Для змейки пытаемся загрузить из файла
     // Загружаем отдельные модели для змейки
     if (!loadModelFromFile(snakeHeadModel, "models/snake_head.obj", "textures/snake.png")) {
-        std::cout << "⚠️ Using fallback for snake head..." << std::endl;
+        std::cout << " Using fallback for snake head..." << std::endl;
         createSnakeHeadModel(snakeHeadModel); // Создаем простую голову
     }
 
     if (!loadModelFromFile(snakeBodyModel, "models/snake_body.obj", "textures/snake.png")) {
-        std::cout << "⚠️ Using fallback for snake body..." << std::endl;
+        std::cout << "Using fallback for snake body..." << std::endl;
         createSnakeBodyModel(snakeBodyModel); // Создаем простое тело
     }
 
     if (!loadModelFromFile(snakeTailModel, "models/snake_tail.obj", "textures/snake.png")) {
-        std::cout << "⚠️ Using fallback for snake tail..." << std::endl;
+        std::cout << "Using fallback for snake tail..." << std::endl;
         createSnakeTailModel(snakeTailModel); // Создаем простой хвост
     }
 
@@ -694,29 +694,29 @@ bool GameRenderer::loadModelFromFile(Model& model, const std::string& modelPath,
 
     // Пытаемся загрузить модель из .obj файла
     if (!loadOBJModel(model, modelPath)) {
-        std::cout << "❌ Failed to load model: " << modelPath << std::endl;
+        std::cout << "Failed to load model: " << modelPath << std::endl;
         return false;
     }
 
     // Пытаемся загрузить текстуру
     if (!loadTexture(model, texturePath)) {
-        std::cout << "⚠️ Failed to load texture: " << texturePath << " - using color only" << std::endl;
+        std::cout << "Failed to load texture: " << texturePath << " - using color only" << std::endl;
         model.hasTexture = false;
     }
     else {
         model.hasTexture = true;
-        std::cout << "✅ Loaded texture: " << texturePath << std::endl;
+        std::cout << "Loaded texture: " << texturePath << std::endl;
     }
 
     model.setupBuffers();
-    std::cout << "✅ Successfully loaded model: " << modelPath << " (" << model.vertices.size() << " vertices)" << std::endl;
+    std::cout << " Successfully loaded model: " << modelPath << " (" << model.vertices.size() << " vertices)" << std::endl;
     return true;
 }
 
 bool GameRenderer::loadOBJModel(Model& model, const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::cout << "❌ Model file not found: " << path << std::endl;
+        std::cout << "Model file not found: " << path << std::endl;
         return false;
     }
 
@@ -774,7 +774,7 @@ bool GameRenderer::loadOBJModel(Model& model, const std::string& path) {
                     vertex.position = positions[indices[0]];
                 }
                 else {
-                    std::cout << "❌ Invalid position index in face" << std::endl;
+                    std::cout << " Invalid position index in face" << std::endl;
                     continue;
                 }
 
@@ -803,7 +803,7 @@ bool GameRenderer::loadOBJModel(Model& model, const std::string& path) {
     file.close();
 
     if (vertices.empty()) {
-        std::cout << "❌ No vertices loaded from: " << path << std::endl;
+        std::cout << " No vertices loaded from: " << path << std::endl;
         return false;
     }
 
@@ -815,7 +815,7 @@ bool GameRenderer::loadTexture(Model& model, const std::string& path) {
     // Сначала пробуем загрузить из файла
     if (!loadTextureFromFile(model, path)) {
         // Если не получилось - создаем procedural текстуру
-        std::cout << "⚠️ Creating procedural texture for: " << path << std::endl;
+        std::cout << "Creating procedural texture for: " << path << std::endl;
         return createProceduralTexture(model, path);
     }
     return true;
@@ -836,11 +836,11 @@ bool GameRenderer::loadTextureFromFile(Model& model, const std::string& path) {
     bool isPNG = (header[0] == -119 && header[1] == 'P' && header[2] == 'N' && header[3] == 'G');
 
     if (!isPNG) {
-        std::cout << "❌ Not a PNG file: " << path << std::endl;
+        std::cout << " Not a PNG file: " << path << std::endl;
         return false;
     }
 
-    std::cout << "✅ PNG file detected: " << path << std::endl;
+    std::cout << " PNG file detected: " << path << std::endl;
 
     // Создаем procedural текстуру на основе типа
     return createProceduralTexture(model, path);
@@ -874,7 +874,7 @@ bool GameRenderer::createProceduralTexture(Model& model, const std::string& name
     glGenerateMipmap(GL_TEXTURE_2D);
 
     model.hasTexture = true;
-    std::cout << "✅ Created procedural texture: " << name << std::endl;
+    std::cout << " Created procedural texture: " << name << std::endl;
     return true;
 }
 

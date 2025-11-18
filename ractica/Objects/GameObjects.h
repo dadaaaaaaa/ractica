@@ -16,7 +16,7 @@ private:
     std::vector<Sprite> cloudSprites;
     std::vector<Bird> birds;
     std::vector<Sprite> flowerSprites;
-
+    bool nameInputActive = false;
     Direction currentDirection;
     int verticalDirection;
     int score;
@@ -66,7 +66,11 @@ public:
     GameState getPreviousState() const { return previousState; }
     const std::vector<HighScore>& getHighScores() const { return highScores; }
     const std::string& getPlayerName() const { return playerName; }
-
+    void handleNameInput(int key);
+    void setNameInputActive(bool active) { nameInputActive = active; }
+    bool isNameInputActive() const { return nameInputActive; }
+    void addCharacterToName(char c);
+    void removeLastCharacterFromName();
     // ДОБАВЛЕНО: Геттер для времени игры
     int getGameDuration() const { return gameDuration; }
 

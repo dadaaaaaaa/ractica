@@ -38,7 +38,7 @@ bool NetworkManager::parseJsonResponse(const std::string& jsonStr, Json::Value& 
     bool parsingSuccessful = reader->parse(jsonStr.c_str(), jsonStr.c_str() + jsonStr.length(), &root, &errors);
 
     if (!parsingSuccessful) {
-        std::cerr << "❌ JSON parsing failed: " << errors << std::endl;
+        std::cerr << " JSON parsing failed: " << errors << std::endl;
         return false;
     }
 
@@ -50,7 +50,7 @@ bool NetworkManager::submitHighScore(const std::string& playerName, int score,
 
     std::string ipAddress = getLocalIPAddress();
 
-    std::cout << "📡 Sending high score to server..." << std::endl;
+    std::cout << " Sending high score to server..." << std::endl;
     std::cout << "Player: " << playerName << ", Score: " << score
         << ", Speed: " << gameSpeed << "x, Length: " << snakeLength
         << ", Time: " << gameDuration << "s, IP: " << ipAddress << std::endl;
@@ -75,28 +75,28 @@ bool NetworkManager::submitHighScore(const std::string& playerName, int score,
         if (parseJsonResponse(response, responseRoot)) {
             bool success = responseRoot.get("success", false).asBool();
             if (success) {
-                std::cout << "✅ High score submitted successfully!" << std::endl;
+                std::cout << "High score submitted successfully!" << std::endl;
                 std::cout << "Server response: " << responseRoot["message"].asString() << std::endl;
                 return true;
             }
             else {
-                std::cerr << "❌ Server rejected high score: " << responseRoot["message"].asString() << std::endl;
+                std::cerr << " Server rejected high score: " << responseRoot["message"].asString() << std::endl;
                 return false;
             }
         }
         else {
-            std::cerr << "❌ Failed to parse server response" << std::endl;
+            std::cerr << " Failed to parse server response" << std::endl;
             return false;
         }
     }
     catch (const std::exception& e) {
-        std::cerr << "❌ Failed to submit high score: " << e.what() << std::endl;
+        std::cerr << " Failed to submit high score: " << e.what() << std::endl;
         return false;
     }
 }
 
 std::vector<HighScore> NetworkManager::getTopScores() {
-    std::cout << "📡 Fetching top scores from server..." << std::endl;
+    std::cout << " Fetching top scores from server..." << std::endl;
 
     try {
         std::string response = httpGet("/api/scores/top");
@@ -175,13 +175,13 @@ std::vector<HighScore> NetworkManager::getTopScores() {
                 }
             }
             else {
-                std::cerr << "❌ Unexpected JSON format from server" << std::endl;
+                std::cerr << " Unexpected JSON format from server" << std::endl;
                 std::cout << "Response: " << response << std::endl;
                 return std::vector<HighScore>();
             }
 
             std::sort(scores.begin(), scores.end());
-            std::cout << "✅ Loaded " << scores.size() << " scores from server" << std::endl;
+            std::cout << " Loaded " << scores.size() << " scores from server" << std::endl;
 
             // Выведем для отладки что получили
             for (const auto& score : scores) {
@@ -193,13 +193,13 @@ std::vector<HighScore> NetworkManager::getTopScores() {
             return scores;
         }
         else {
-            std::cerr << "❌ Failed to parse server response as JSON" << std::endl;
+            std::cerr << " Failed to parse server response as JSON" << std::endl;
             std::cout << "Raw response: " << response << std::endl;
             return std::vector<HighScore>();
         }
     }
     catch (const std::exception& e) {
-        std::cerr << "❌ Failed to fetch scores: " << e.what() << std::endl;
+        std::cerr << " Failed to fetch scores: " << e.what() << std::endl;
         return std::vector<HighScore>();
     }
 }
@@ -217,16 +217,16 @@ bool NetworkManager::testConnection() {
         if (parseJsonResponse(response, root)) {
             bool online = root.get("online", false).asBool();
             if (online) {
-                std::cout << "✅ Server is online and responding" << std::endl;
+                std::cout << " Server is online and responding" << std::endl;
                 return true;
             }
         }
 
-        std::cerr << "❌ Server is not responding properly" << std::endl;
+        std::cerr << " Server is not responding properly" << std::endl;
         return false;
     }
     catch (const std::exception& e) {
-        std::cerr << "❌ Server connection test failed: " << e.what() << std::endl;
+        std::cerr << " Server connection test failed: " << e.what() << std::endl;
         return false;
     }
 }
@@ -263,7 +263,7 @@ std::string NetworkManager::httpPost(const std::string& endpoint, const std::str
         CURLcode res = curl_easy_perform(curl);
 
         if (res != CURLE_OK) {
-            std::cerr << "❌ curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+            std::cerr << " curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
             throw std::runtime_error(curl_easy_strerror(res));
         }
 
@@ -272,7 +272,7 @@ std::string NetworkManager::httpPost(const std::string& endpoint, const std::str
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
         if (http_code != 200) {
-            std::cerr << "❌ HTTP Error: " << http_code << std::endl;
+            std::cerr << " HTTP Error: " << http_code << std::endl;
         }
 
         curl_slist_free_all(headers);
@@ -304,7 +304,7 @@ std::string NetworkManager::httpGet(const std::string& endpoint) {
         CURLcode res = curl_easy_perform(curl);
 
         if (res != CURLE_OK) {
-            std::cerr << "❌ curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+            std::cerr << " curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
             throw std::runtime_error(curl_easy_strerror(res));
         }
 
@@ -313,7 +313,7 @@ std::string NetworkManager::httpGet(const std::string& endpoint) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
         if (http_code != 200) {
-            std::cerr << "❌ HTTP Error: " << http_code << std::endl;
+            std::cerr << " HTTP Error: " << http_code << std::endl;
         }
 
         curl_easy_cleanup(curl);
@@ -325,67 +325,6 @@ std::string NetworkManager::httpGet(const std::string& endpoint) {
     }
 }
 
-void NetworkManager::testAllEndpoints() {
-    std::cout << "🧪 Testing all server endpoints..." << std::endl;
-
-    // Тест статуса
-    try {
-        std::string statusResponse = httpGet("/api/status");
-        std::cout << "✅ Status endpoint: " << statusResponse.substr(0, 100) << std::endl;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "❌ Status endpoint failed: " << e.what() << std::endl;
-    }
-
-    // Тест получения рекордов
-    try {
-        std::string scoresResponse = httpGet("/api/scores/top");
-        std::cout << "✅ Scores/top endpoint: " << scoresResponse.substr(0, 200) << std::endl;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "❌ Scores/top endpoint failed: " << e.what() << std::endl;
-    }
-
-    // Тест POST эндпоинта для отправки рекордов
-    try {
-        // Тестовые данные для проверки POST
-        Json::Value testData;
-        testData["player_name"] = "TestPlayer";
-        testData["score"] = 100;
-        testData["game_speed"] = 1.0f;
-        testData["game_duration"] = 60;
-        testData["snake_length"] = 5;
-        testData["ip_address"] = "127.0.0.1";
-
-        Json::StreamWriterBuilder writer;
-        std::string testJson = Json::writeString(writer, testData);
-
-        std::string postResponse = httpPost("/api/scores", testJson);
-        std::cout << "✅ POST /api/scores endpoint: " << postResponse << std::endl;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "❌ POST /api/scores endpoint failed: " << e.what() << std::endl;
-    }
-
-    // Попробуем другие возможные эндпоинты
-    std::vector<std::string> possibleEndpoints = {
-        "/api/score",
-        "/api/highscores",
-        "/api/highscore",
-        "/api/record",
-        "/api/records"
-    };
-
-    for (const auto& endpoint : possibleEndpoints) {
-        try {
-            std::string response = httpPost(endpoint, "{}");
-            std::cout << "✅ POST " << endpoint << ": " << response.substr(0, 100) << std::endl;
-        }
-        catch (const std::exception& e) {
-            std::cout << "❌ POST " << endpoint << " failed: " << e.what() << std::endl;
-        }
-    }
-}
 HighScore NetworkManager::parseHighScoreFromJson(const Json::Value& item) {
     HighScore hs;
 

@@ -78,7 +78,8 @@ void Game::render() {
         ui.drawSettingsMenu(objects.getGameSpeed(),
             objects.getPlayerName(),
             objects.getSpeedMultiplier(),
-            objects.getSpeedDisplayText());
+            objects.getSpeedDisplayText(),
+            objects.isNameInputActive()); // Добавляем параметр активности
         break;
     case HIGH_SCORES:
         ui.drawHighScoresMenu(objects.getHighScores());
@@ -98,11 +99,15 @@ void Game::handleKeyPress(int key) {
         // Сохранение по F5
         if (key == GLFW_KEY_F5) {
             objects.saveGame();
-            std::cout << "💾 Game saved!" << std::endl;
+            std::cout << " Game saved!" << std::endl;
         }
-
+        break;
     case SETTINGS:
-        objects.handleSettingsKeyPress(key);
+        if (objects.isNameInputActive()) {
+            objects.handleNameInput(key); // Обрабатываем Backspace, Enter, Escape
+        } else {
+            objects.handleSettingsKeyPress(key);
+        }
         break;
     default:
         objects.handleMenuKeyPress(key);
@@ -118,6 +123,10 @@ void Game::handleMouseClick() {
         }
         else if (ui.isSpeedDecreaseButtonClicked(ui.getMouseX(), ui.getMouseY())) {
             objects.decreaseSpeed();
+        }
+        // Проверяем клик на поле имени
+        else if (ui.isNameFieldClicked(ui.getMouseX(), ui.getMouseY())) {
+            objects.setNameInputActive(true);
         }
     }
     ui.handleMouseClick(objects);

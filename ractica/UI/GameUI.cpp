@@ -363,17 +363,25 @@ void GameUI::drawPauseMenu() {
     glDisable(GL_BLEND);
 }
 
-void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName, float speedMultiplier, const std::string& speedDisplayText) {
+void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName,
+    float speedMultiplier, const std::string& speedDisplayText,
+    bool isNameInputActive) {
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.1f, 0.3f, 0.2f, 1.0f);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
     drawCenteredText(550, "SETTINGS", 1.0f, 1.0f, 1.0f);
-    drawCenteredText(450, "SPEED", 1.0f, 1.0f, 1.0f);
 
-    float multiplierY = getScaledY(350);
-    drawCenteredText(350, speedDisplayText, 1.0f, 1.0f, 1.0f);
+    // Поле ввода имени ПЕРЕД настройкой скорости - ПОДНЯЛИ ЕЩЕ ВЫШЕ
+    drawNameInputField(playerName, isNameInputActive);
+
+    // Настройка скорости теперь еще ниже
+    drawCenteredText(300, "SPEED", 1.0f, 1.0f, 1.0f); // Было 350
+
+    float multiplierY = getScaledY(250); // Было 250 - ПОДНЯЛИ ВЫШЕ
+    drawCenteredText(250, speedDisplayText, 1.0f, 1.0f, 1.0f); // Было 250
 
     float centerX = windowWidth / 2.0f;
     bool minusHover = isSpeedDecreaseButtonClicked(mouseX, mouseY);
@@ -384,7 +392,8 @@ void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName, fl
     drawText(centerX + getScaledX(100), multiplierY, "+",
         0.0f, plusHover ? 1.0f : 0.7f, 0.0f);
 
-    drawCenteredText(250, "Use +/- buttons or keyboard", 0.7f, 0.7f, 0.7f);
+    drawCenteredText(100, "Use +/- buttons or keyboard", 0.7f, 0.7f, 0.7f); // Было 150
+    drawCenteredText(70, "Click on name field to change player name", 0.7f, 0.7f, 0.7f); // Было 120
 
     for (auto& button : settingsButtons) {
         button.hovered = button.contains(mouseX, mouseY);
@@ -398,7 +407,7 @@ void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName, fl
 bool GameUI::isSpeedIncreaseButtonClicked(double mouseX, double mouseY) {
     float centerX = windowWidth / 2.0f;
     float buttonX = centerX + getScaledX(100);
-    float buttonY = getScaledY(350);
+    float buttonY = getScaledY(250); // Обновили Y-координату
     return (mouseX >= buttonX - getScaledX(20) && mouseX <= buttonX + getScaledX(20) &&
         mouseY >= buttonY - getScaledY(20) && mouseY <= buttonY + getScaledY(20));
 }
@@ -406,7 +415,7 @@ bool GameUI::isSpeedIncreaseButtonClicked(double mouseX, double mouseY) {
 bool GameUI::isSpeedDecreaseButtonClicked(double mouseX, double mouseY) {
     float centerX = windowWidth / 2.0f;
     float buttonX = centerX - getScaledX(120);
-    float buttonY = getScaledY(350);
+    float buttonY = getScaledY(250); // Обновили Y-координату
     return (mouseX >= buttonX - getScaledX(20) && mouseX <= buttonX + getScaledX(20) &&
         mouseY >= buttonY - getScaledY(20) && mouseY <= buttonY + getScaledY(20));
 }
@@ -729,5 +738,63 @@ void GameUI::handleMouseClick(GameObjects& objects) {
             }
         }
         break;
+    }
+}
+bool GameUI::isNameFieldClicked(double mouseX, double mouseY) const {
+    float centerX = windowWidth / 2.0f;
+    float fieldX = centerX - getScaledX(150);
+    float fieldY = getScaledY(400); // Такая же Y-координата как в drawNameInputField
+    float fieldWidth = getScaledWidth(300);
+    float fieldHeight = getScaledHeight(40);
+
+    return (mouseX >= fieldX && mouseX <= fieldX + fieldWidth &&
+        mouseY >= fieldY && mouseY <= fieldY + fieldHeight);
+}
+
+void GameUI::drawNameInputField(const std::string& playerName, bool isActive) {
+    float centerX = windowWidth / 2.0f;
+    float fieldX = centerX - getScaledX(150);
+    float fieldY = getScaledY(400); // Было 350 - ПОДНЯЛИ ВЫШЕ
+    float fieldWidth = getScaledWidth(300);
+    float fieldHeight = getScaledHeight(40);
+
+    // Рисуем фон поля ввода
+    glm::vec3 fieldColor = isActive ? glm::vec3(0.3f, 0.5f, 0.3f) : glm::vec3(0.2f, 0.2f, 0.2f);
+    drawQuad(fieldX, fieldY, fieldWidth, fieldHeight, fieldColor, 1.0f);
+
+    // Рисуем рамку
+    drawQuad(fieldX - 2, fieldY - 2, fieldWidth + 4, 2, glm::vec3(0.5f, 0.5f, 0.5f), 1.0f); // верх
+    drawQuad(fieldX - 2, fieldY + fieldHeight, fieldWidth + 4, 2, glm::vec3(0.5f, 0.5f, 0.5f), 1.0f); // низ
+    drawQuad(fieldX - 2, fieldY - 2, 2, fieldHeight + 4, glm::vec3(0.5f, 0.5f, 0.5f), 1.0f); // лево
+    drawQuad(fieldX + fieldWidth, fieldY - 2, 2, fieldHeight + 4, glm::vec3(0.5f, 0.5f, 0.5f), 1.0f); // право
+
+    // Рисуем текст имени
+    std::string displayName = playerName;
+    if (isActive) {
+        displayName += "|"; // Курсор
+    }
+    if (displayName.empty()) {
+        displayName = "Click to enter name...";
+        drawText(fieldX + getScaledX(10), fieldY + getScaledY(12), displayName, 0.7f, 0.7f, 0.7f);
+    }
+    else {
+        drawText(fieldX + getScaledX(10), fieldY + getScaledY(12), displayName, 1.0f, 1.0f, 1.0f);
+    }
+
+    // Подпись и информация о максимальной длине
+    drawCenteredText(450, "PLAYER NAME", 0.8f, 0.8f, 1.0f); // Было 320 - ПОДНЯЛИ ВЫШЕ
+
+    // Информация о максимальной длине (под полем ввода)
+    std::string lengthInfo = "(max 15 characters)";
+    float infoX = fieldX + fieldWidth - getTextWidth(lengthInfo);
+    float infoY = fieldY - getScaledY(25);
+    drawText(infoX, infoY, lengthInfo, 0.6f, 0.6f, 0.6f);
+
+    // Также показываем текущую длину имени
+    if (!playerName.empty()) {
+        std::string currentLength = std::to_string(playerName.length()) + "/15";
+        float lengthX = fieldX + getScaledX(5);
+        float lengthY = fieldY - getScaledY(25);
+        drawText(lengthX, lengthY, currentLength, 0.6f, 0.6f, 0.6f);
     }
 }

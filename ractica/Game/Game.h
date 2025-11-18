@@ -40,7 +40,10 @@ public:
     void setGameSpeed(float speed) { objects.setGameSpeed(speed); }
     void setPlayerName(const std::string& name) { objects.setPlayerName(name); }
     void setWindowSize(int width, int height) { ui.setWindowSize(width, height); }
-
+    bool isNameInputActive() const { return objects.isNameInputActive(); }
+    void handleNameInput(int key) { objects.handleNameInput(key); }
+    void setNameInputActive(bool active) { objects.setNameInputActive(active); }
+    void addCharacterToName(char c) { objects.addCharacterToName(c); }
     // Обработка ввода
     void handleKeyPress(int key);
     void handleMouseClick();

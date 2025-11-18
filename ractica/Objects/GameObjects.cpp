@@ -73,12 +73,12 @@ void GameObjects::saveOnExit() {
     // Сохраняем игру если она активна и не завершена
     if (gameState == PLAYING && !gameOver) {
         saveGame();
-        std::cout << "💾 Game saved on exit" << std::endl;
+        std::cout << " Game saved on exit" << std::endl;
     }
 
     // Сохраняем настройки при выходе
     saveSettings();
-    std::cout << "💾 Settings saved on exit" << std::endl;
+    std::cout << " Settings saved on exit" << std::endl;
 }
 
 void GameObjects::setPlayerName(const std::string& name) {
@@ -107,7 +107,7 @@ void GameObjects::saveSettings() {
     file.write(reinterpret_cast<char*>(&settings), sizeof(SettingsData));
     file.close();
 
-    std::cout << "✅ Settings saved" << std::endl;
+    std::cout << "Settings saved" << std::endl;
 }
 
 void GameObjects::loadSettings() {
@@ -122,7 +122,7 @@ void GameObjects::loadSettings() {
         gameSpeed = settings.gameSpeed;
         currentSpeedIndex = settings.currentSpeedIndex;
         playerName = std::string(settings.playerName);
-        std::cout << "✅ Settings loaded" << std::endl;
+        std::cout << " Settings loaded" << std::endl;
     }
 }
 
@@ -139,7 +139,7 @@ void GameObjects::returnToMainMenu() {
     // Сохраняем игру только при возврате в меню из активной игры
     if (gameState == PLAYING && !gameOver) {
         saveGame();
-        std::cout << "💾 Game saved when returning to main menu" << std::endl;
+        std::cout << " Game saved when returning to main menu" << std::endl;
     }
     gameState = MAIN_MENU;
 }
@@ -264,20 +264,18 @@ void GameObjects::initGame() {
     g_camera.setTargetDistance(5.0f);
 }
 
-// НОВАЯ ФУНКЦИЯ: Загрузка рекордов из файла
-// В методе loadHighScores():
-void GameObjects::loadHighScores() {
-    std::cout << "🔄 Loading high scores from server..." << std::endl;
 
-    // Загружаем только с сервера
+void GameObjects::loadHighScores() {
+    std::cout << "Loading high scores from server..." << std::endl;
+
+ 
     highScores = networkManager.getTopScores();
 
-    // Если сервер недоступен - таблица будет пустой
     if (highScores.empty()) {
-        std::cout << "❌ No high scores available (server unavailable)" << std::endl;
+        std::cout << " No high scores available (server unavailable)" << std::endl;
     }
     else {
-        std::cout << "✅ Loaded " << highScores.size() << " high scores from server" << std::endl;
+        std::cout << " Loaded " << highScores.size() << " high scores from server" << std::endl;
     }
 }
 
@@ -318,26 +316,22 @@ void GameObjects::addHighScore(const std::string& playerName, int score) {
 
 }
 
-// НОВАЯ ФУНКЦИЯ: Обновление таблицы рекордов
 void GameObjects::updateHighScores() {
-    // НЕ отправляем рекорд если счет 0 или игра сразу завершилась
     if (score <= 0) {
-        std::cout << "⚠️  Score is 0, not submitting to server" << std::endl;
+        std::cout << "Score is 0, not submitting to server" << std::endl;
         return;
     }
 
     if (isNewHighScore(score)) {
-        std::cout << "🎉 NEW HIGH SCORE! " << playerName << ": " << score << " points!" << std::endl;
+        std::cout << "NEW HIGH SCORE! " << playerName << ": " << score << " points!" << std::endl;
 
-        // Отправляем на сервер
         if (networkManager.submitHighScore(playerName, score, gameSpeed, gameDuration, snake.size())) {
-            std::cout << "✅ High score sent to server successfully!" << std::endl;
+            std::cout << " High score sent to server successfully!" << std::endl;
 
-            // Перезагружаем рекорды с сервера
             loadHighScores();
         }
         else {
-            std::cout << "❌ Failed to send high score to server" << std::endl;
+            std::cout << "Failed to send high score to server" << std::endl;
         }
     }
 }
@@ -685,11 +679,9 @@ void GameObjects::handleGameKeyPress(int key) {
         break;
     case GLFW_KEY_Q:
         g_camera.rotate(-10.0f);
-        std::cout << "Camera rotated left (Q pressed)" << std::endl;
         break;
     case GLFW_KEY_E:
         g_camera.rotate(10.0f);
-        std::cout << "Camera rotated right (E pressed)" << std::endl;
         break;
     }
 }
@@ -818,7 +810,7 @@ struct SaveData {
 bool GameObjects::saveGame() {
     std::ofstream file(saveFileName, std::ios::binary);
     if (!file.is_open()) {
-        std::cout << "❌ Failed to save game" << std::endl;
+        std::cout << " Failed to save game" << std::endl;
         return false;
     }
 
@@ -879,7 +871,7 @@ bool GameObjects::saveGame() {
     file.write(reinterpret_cast<char*>(&save), sizeof(SaveData));
     file.close();
 
-    std::cout << "✅ Game saved successfully! ("
+    std::cout << " Game saved successfully! ("
         << save.snakeLength << " snake segments, "
         << save.foodCount << " food, "
         << save.obstaclesCount << " obstacles, "
@@ -892,7 +884,7 @@ bool GameObjects::saveGame() {
 bool GameObjects::loadGame() {
     std::ifstream file(saveFileName, std::ios::binary);
     if (!file.is_open()) {
-        std::cout << "❌ No save game found" << std::endl;
+        std::cout << " No save game found" << std::endl;
         return false;
     }
 
@@ -901,7 +893,7 @@ bool GameObjects::loadGame() {
     file.close();
 
     if (save.version != 1) {
-        std::cout << "❌ Invalid save game version" << std::endl;
+        std::cout << " Invalid save game version" << std::endl;
         return false;
     }
 
@@ -966,7 +958,7 @@ bool GameObjects::loadGame() {
         flowerSprites.push_back(flower);
     }
 
-    std::cout << "✅ Game loaded successfully! ("
+    std::cout << " Game loaded successfully! ("
         << save.snakeLength << " snake segments, "
         << save.foodCount << " food, "
         << save.obstaclesCount << " obstacles, "
@@ -984,5 +976,33 @@ bool GameObjects::hasSaveGame() const {
 
 void GameObjects::deleteSaveGame() {
     std::remove(saveFileName.c_str());
-    std::cout << "✅ Save game deleted" << std::endl;
+    std::cout << " Save game deleted" << std::endl;
+}
+void GameObjects::handleNameInput(int key) {
+    if (!nameInputActive) return;
+
+    if (key == GLFW_KEY_BACKSPACE) {
+        removeLastCharacterFromName();
+    }
+    else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_ESCAPE) {
+        setNameInputActive(false);
+        saveSettings(); // Сохраняем настройки при завершении ввода
+    }
+    // Остальные клавиши обрабатываются через charCallback
+}
+
+void GameObjects::addCharacterToName(char c) {
+    // Ограничиваем длину имени
+    if (playerName.length() < 15) {
+        // Разрешаем буквы, цифры, пробелы, дефисы и подчеркивания
+        if (isalnum(c) || c == ' ' || c == '-' || c == '_') {
+            playerName += c;
+        }
+    }
+}
+
+void GameObjects::removeLastCharacterFromName() {
+    if (!playerName.empty()) {
+        playerName.pop_back();
+    }
 }

@@ -32,7 +32,18 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         }
     }
 }
-
+void charCallback(GLFWwindow* window, unsigned int codepoint) {
+    if (g_game.getGameState() == SETTINGS && g_game.isNameInputActive()) {
+        // Конвертируем Unicode в символ и добавляем к имени
+        if (codepoint < 128) {
+            char c = static_cast<char>(codepoint);
+            // Фильтруем только разрешенные символы
+            if (isalnum(c) || c == ' ' || c == '-' || c == '_') {
+                g_game.addCharacterToName(c);
+            }
+        }
+    }
+}
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     g_game.handleMouseScroll(yoffset);
 }
@@ -116,7 +127,7 @@ int main() {
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
-
+    glfwSetCharCallback(window, charCallback);
     glEnable(GL_DEPTH_TEST);
     checkGLError("glEnable");
 
