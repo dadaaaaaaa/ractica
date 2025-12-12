@@ -1,4 +1,5 @@
 #pragma once
+
 #include "../Core/Constants.h"
 #include "../Core/Types.h"
 #include "MenuButton.h"
@@ -95,8 +96,9 @@ public:
 
     // Методы проверки кликов
     bool isNameFieldClicked(double mouseX, double mouseY) const;
-    bool isSpeedIncreaseButtonClicked(double mouseX, double mouseY);
-    bool isSpeedDecreaseButtonClicked(double mouseX, double mouseY);
+    bool isSpeedIncreaseButtonClicked(double mouseX, double mouseY) ;
+    bool isSpeedDecreaseButtonClicked(double mouseX, double mouseY) ;
+    bool isBufferButtonClicked(double mouseX, double mouseY) const;
 
     // Методы отрисовки различных меню
     void drawNameInputField(const std::string& playerName, bool isActive);
@@ -105,7 +107,7 @@ public:
     void drawGameOver(int score);
     void drawSettingsMenu(float gameSpeed, const std::string& playerName,
         float speedMultiplier, const std::string& speedDisplayText,
-        bool isNameInputActive);
+        bool isNameInputActive, bool doubleBufferingEnabled);
     void drawHighScoresMenu(const std::vector<HighScore>& highScores);
     void drawControlsMenu();
 
@@ -116,7 +118,7 @@ public:
     void drawCenteredText(float y, const std::string& text, float r, float g, float b);
 
     // Вспомогательные методы
-    float getTextWidth(const std::string& text);
+    float getTextWidth(const std::string& text) const;
     bool ensureFontInitialized();
     void handleMouseClick(GameObjects& objects);
     void recreateButtons();

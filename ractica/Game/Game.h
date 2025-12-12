@@ -1,4 +1,5 @@
 #pragma once
+
 #include "../Core/Constants.h"
 #include "../Core/Types.h"
 #include "../Objects/GameObjects.h"
@@ -22,6 +23,9 @@ public:
     void initUI();
     void continueGame();
     void startNewGame();
+    void toggleDoubleBuffering();
+    void forceRedraw(); // Добавляем
+
     // Геттеры
     GameState getGameState() const { return objects.getGameState(); }
     int getScore() const { return objects.getScore(); }
@@ -31,6 +35,7 @@ public:
     double getMouseY() const { return ui.getMouseY(); }
     const std::vector<Point>& getSnake() const { return objects.getSnake(); }
     float getGameSpeed() const { return objects.getGameSpeed(); }
+    bool isDoubleBufferingEnabled() const { return renderer.isDoubleBufferingEnabled(); } // Добавляем
 
     // Сеттеры
     void setGameState(GameState state) { objects.setGameState(state); }
@@ -44,6 +49,7 @@ public:
     void handleNameInput(int key) { objects.handleNameInput(key); }
     void setNameInputActive(bool active) { objects.setNameInputActive(active); }
     void addCharacterToName(char c) { objects.addCharacterToName(c); }
+
     // Обработка ввода
     void handleKeyPress(int key);
     void handleMouseClick();

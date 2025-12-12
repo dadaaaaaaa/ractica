@@ -259,7 +259,7 @@ void GameUI::compileTextShaders() {
     glDeleteShader(fragmentShader);
 }
 
-float GameUI::getTextWidth(const std::string& text) {
+float GameUI::getTextWidth(const std::string& text) const{
     if (!fontInitialized || characters.empty()) {
         return text.length() * getScaledWidth(10);
     }
@@ -365,7 +365,7 @@ void GameUI::drawPauseMenu() {
 
 void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName,
     float speedMultiplier, const std::string& speedDisplayText,
-    bool isNameInputActive) {
+    bool isNameInputActive, bool doubleBufferingEnabled) {
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.1f, 0.3f, 0.2f, 1.0f);
@@ -374,14 +374,14 @@ void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName,
 
     drawCenteredText(550, "SETTINGS", 1.0f, 1.0f, 1.0f);
 
-    // Поле ввода имени ПЕРЕД настройкой скорости - ПОДНЯЛИ ЕЩЕ ВЫШЕ
+    // Поле ввода имени
     drawNameInputField(playerName, isNameInputActive);
 
-    // Настройка скорости теперь еще ниже
-    drawCenteredText(300, "SPEED", 1.0f, 1.0f, 1.0f); // Было 350
+    // Настройка скорости
+    drawCenteredText(300, "SPEED", 1.0f, 1.0f, 1.0f);
 
-    float multiplierY = getScaledY(250); // Было 250 - ПОДНЯЛИ ВЫШЕ
-    drawCenteredText(250, speedDisplayText, 1.0f, 1.0f, 1.0f); // Было 250
+    float multiplierY = getScaledY(250);
+    drawCenteredText(250, speedDisplayText, 1.0f, 1.0f, 1.0f);
 
     float centerX = windowWidth / 2.0f;
     bool minusHover = isSpeedDecreaseButtonClicked(mouseX, mouseY);
@@ -392,8 +392,47 @@ void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName,
     drawText(centerX + getScaledX(100), multiplierY, "+",
         0.0f, plusHover ? 1.0f : 0.7f, 0.0f);
 
-    drawCenteredText(100, "Use +/- buttons or keyboard", 0.7f, 0.7f, 0.7f); // Было 150
-    drawCenteredText(70, "Click on name field to change player name", 0.7f, 0.7f, 0.7f); // Было 120
+    // ===== УПРАВЛЕНИЕ БУФЕРИЗАЦИЕЙ =====
+    float bufferY = getScaledY(180);
+    drawCenteredText(180, "DOUBLE BUFFERING", 1.0f, 1.0f, 1.0f);
+
+    std::string bufferText = doubleBufferingEnabled ? "ENABLED" : "DISABLED";
+    glm::vec3 bufferColor = doubleBufferingEnabled ?
+        glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.5f, 0.0f);
+
+    drawCenteredText(150, bufferText, bufferColor.r, bufferColor.g, bufferColor.b);
+
+    // Более точное описание
+    std::string modeInfo = doubleBufferingEnabled ?
+        "(Standard mode)" : "(Experimental mode)";
+    drawCenteredText(125, modeInfo, 0.7f, 0.7f, 0.7f);
+
+    // Кнопка переключения
+    bool bufferButtonHover = isBufferButtonClicked(mouseX, mouseY);
+
+    std::string toggleText = "Toggle";
+    float toggleWidth = getTextWidth(toggleText);
+    float toggleX = centerX - toggleWidth / 2;
+    float toggleY = getScaledY(100);
+
+    // Рисуем кнопку
+    glm::vec3 buttonColor = bufferButtonHover ?
+        glm::vec3(0.3f, 0.6f, 0.3f) : glm::vec3(0.2f, 0.4f, 0.2f);
+    drawQuad(toggleX - getScaledX(10), toggleY - getScaledY(5),
+        toggleWidth + getScaledX(20), getScaledHeight(30),
+        buttonColor, 1.0f);
+
+    drawText(toggleX, toggleY, toggleText,
+        bufferButtonHover ? 1.0f : 0.9f,
+        bufferButtonHover ? 1.0f : 0.9f,
+        bufferButtonHover ? 1.0f : 0.9f);
+
+    // Предупреждение
+    drawCenteredText(70, "Note: Visual effect only", 0.8f, 0.8f, 0.4f);
+    drawCenteredText(45, "Window remains double-buffered", 0.7f, 0.7f, 0.7f);
+    // ===== КОНЕЦ СЕКЦИИ =====
+
+    drawCenteredText(20, "Click on name field to change player name", 0.7f, 0.7f, 0.7f);
 
     for (auto& button : settingsButtons) {
         button.hovered = button.contains(mouseX, mouseY);
@@ -402,6 +441,18 @@ void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName,
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+}
+bool GameUI::isBufferButtonClicked(double mouseX, double mouseY) const {
+    std::string toggleText = "Toggle";
+    float toggleWidth = getTextWidth(toggleText);
+    float centerX = windowWidth / 2.0f;
+    float toggleX = centerX - toggleWidth / 2;
+    float toggleY = getScaledY(100); // Обновленная позиция
+
+    return (mouseX >= toggleX - getScaledX(10) &&
+        mouseX <= toggleX + toggleWidth + getScaledX(10) &&
+        mouseY >= toggleY - getScaledY(5) &&
+        mouseY <= toggleY + getScaledHeight(30));
 }
 
 bool GameUI::isSpeedIncreaseButtonClicked(double mouseX, double mouseY) {

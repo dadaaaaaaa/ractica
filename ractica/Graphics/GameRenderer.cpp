@@ -4,11 +4,15 @@
 #include "../Graphics/Camera.h"
 #include "../Core/Constants.h"
 #include "../Utils/MathUtils.h"
+#include "../Game/Game.h"
 
 // Глобальные экземпляры
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
+extern Game g_game;
 
+// Инициализация статического члена
+bool GameRenderer::doubleBufferingEnabled = true;
 GameRenderer::GameRenderer() {
    
 }
@@ -927,4 +931,189 @@ void GameRenderer::createCheckerboardTexture(std::vector<unsigned char>& data, i
             }
         }
     }
+}
+void GameRenderer::setupGLFWHints() {
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, doubleBufferingEnabled ? GLFW_TRUE : GLFW_FALSE);
+    glfwWindowHint(GLFW_SAMPLES, 4);
+    glfwWindowHint(GLFW_DEPTH_BITS, 24);
+    glfwWindowHint(GLFW_STENCIL_BITS, 8);
+    glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
+}
+
+bool GameRenderer::initGLEW() {
+    glewExperimental = GL_TRUE;
+    GLenum glewError = glewInit();
+    if (glewError != GLEW_OK) {
+        std::cerr << "Failed to initialize GLEW: " << glewGetErrorString(glewError) << std::endl;
+        return false;
+    }
+    glGetError(); // Игнорируем первую ошибку
+    return true;
+}
+
+void GameRenderer::initOpenGLSettings() {
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
+
+    GLint samples;
+    glGetIntegerv(GL_SAMPLES, &samples);
+    if (samples > 0) {
+        glEnable(GL_MULTISAMPLE);
+        std::cout << "MSAA enabled: " << samples << "x samples" << std::endl;
+    }
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+}
+
+void GameRenderer::checkGLError(const char* functionName) {
+    GLenum error;
+    while ((error = glGetError()) != GL_NO_ERROR) {
+        std::cout << "OpenGL error " << error << " in " << functionName << std::endl;
+    }
+}
+
+void GameRenderer::checkDoubleBufferSupport(GLFWwindow* window) {
+    int doubleBuffer = glfwGetWindowAttrib(window, GLFW_DOUBLEBUFFER);
+    if (doubleBuffer) {
+        std::cout << "Double buffering is ENABLED" << std::endl;
+    }
+    else {
+        std::cout << "WARNING: Double buffering is DISABLED" << std::endl;
+    }
+}
+
+void GameRenderer::setupVSync(GLFWwindow* window, bool enabled) {
+    if (enabled) {
+        glfwSwapInterval(1);
+        std::cout << "VSync ENABLED" << std::endl;
+    }
+    else {
+        glfwSwapInterval(0);
+        std::cout << "VSync DISABLED" << std::endl;
+    }
+}
+
+void GameRenderer::printGraphicsInfo() {
+    std::cout << "=== GRAPHICS SYSTEM INFO ===" << std::endl;
+    std::cout << "OpenGL version: " << glGetString(GL_VERSION) << std::endl;
+    std::cout << "GLSL version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+    std::cout << "GLEW version: " << glewGetString(GLEW_VERSION) << std::endl;
+    std::cout << "Vendor: " << glGetString(GL_VENDOR) << std::endl;
+    std::cout << "Renderer: " << glGetString(GL_RENDERER) << std::endl;
+
+    GLint numExtensions;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &numExtensions);
+    bool hasDoubleBuffer = false;
+
+    for (GLint i = 0; i < numExtensions; i++) {
+        const char* extension = (const char*)glGetStringi(GL_EXTENSIONS, i);
+        if (strstr(extension, "double_buffer") != nullptr) {
+            hasDoubleBuffer = true;
+        }
+    }
+    std::cout << "Double buffer support: " << (hasDoubleBuffer ? "YES" : "NO") << std::endl;
+    std::cout << "===========================" << std::endl;
+}
+
+// Метод для переключения двойной буферизации
+void GameRenderer::toggleDoubleBuffering(GLFWwindow* window) {
+    doubleBufferingEnabled = !doubleBufferingEnabled;
+
+    std::cout << "Toggling double buffering: "
+        << (doubleBufferingEnabled ? "ENABLED" : "DISABLED") << std::endl;
+
+    // НЕ пересоздаем окно! Просто меняем флаг.
+    // Реальная смена буферизации требует пересоздания GLFW окна,
+    // что сложно. Вместо этого просто меняем логику отрисовки.
+
+    // Выводим предупреждение
+    if (!doubleBufferingEnabled) {
+        std::cout << "NOTE: Single buffering simulation enabled." << std::endl;
+        std::cout << "The game will continue to use double buffering," << std::endl;
+        std::cout << "but will force immediate display with glFlush()" << std::endl;
+    }
+}
+
+void GameRenderer::updateWindowHints(GLFWwindow* window) {
+    setupGLFWHints();
+}
+
+// Вспомогательные функции-колбэки
+// Колбэки GLFW (добавляем в начало main.cpp или в GameRenderer.cpp)
+namespace {
+    void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+        if (action == GLFW_PRESS) {
+            g_game.handleKeyPress(key);
+
+            // Обработка ESC отдельно
+            if (key == GLFW_KEY_ESCAPE) {
+                GameState currentState = g_game.getGameState();
+                if (currentState == PLAYING) {
+                    g_game.setGameState(PAUSED);
+                }
+                else if (currentState == PAUSED) {
+                    g_game.setGameState(PLAYING);
+                }
+                else if (currentState == MAIN_MENU) {
+                    glfwSetWindowShouldClose(window, GL_TRUE);
+                }
+                else {
+                    g_game.setGameState(MAIN_MENU);
+                }
+            }
+        }
+    }
+
+    void charCallback(GLFWwindow* window, unsigned int codepoint) {
+        if (g_game.getGameState() == SETTINGS && g_game.isNameInputActive()) {
+            if (codepoint < 128) {
+                char c = static_cast<char>(codepoint);
+                if (isalnum(c) || c == ' ' || c == '-' || c == '_') {
+                    g_game.addCharacterToName(c);
+                }
+            }
+        }
+    }
+
+    void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+        g_game.handleMouseScroll(yoffset);
+    }
+
+    void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+            g_game.setMousePressed(true);
+            g_game.handleMouseClick();
+        }
+
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
+            g_game.setMousePressed(false);
+        }
+    }
+
+    void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+        g_game.setMousePosition(xpos, ypos);
+    }
+
+    void windowSizeCallback(GLFWwindow* window, int width, int height) {
+        g_game.setWindowSize(width, height);
+        glViewport(0, 0, width, height);
+    }
+}
+
+void GameRenderer::setupCallbacks(GLFWwindow* window) {
+    glfwSetKeyCallback(window, keyCallback);
+    glfwSetCharCallback(window, charCallback);
+    glfwSetScrollCallback(window, scrollCallback);
+    glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetCursorPosCallback(window, cursorPosCallback);
+    glfwSetWindowSizeCallback(window, windowSizeCallback);
 }

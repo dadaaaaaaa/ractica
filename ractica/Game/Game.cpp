@@ -1,10 +1,14 @@
 ﻿#include "../pch.h"
 #include "Game.h"
+#include "../Graphics/ShaderManager.h"
+#include "../Graphics/Camera.h"
 
-// Глобальные экземпляры
+// Внешние глобальные переменные
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 extern GLuint uiVAO, uiVBO;
+extern bool g_shouldExitGame;
+extern GLFWwindow* g_mainWindow; // ДОБАВЛЕНО
 
 Game::Game() {
     // Инициализация делегируется компонентам
@@ -25,7 +29,6 @@ void Game::initialize() {
     std::cout << "Loading high scores..." << std::endl;
     objects.loadHighScores();
 
-    // НЕ инициализируем игру сразу - ждем выбора в меню
     std::cout << "=== GAME INITIALIZATION COMPLETE ===" << std::endl;
 }
 
@@ -45,7 +48,15 @@ void Game::continueGame() {
     }
 }
 
+void Game::toggleDoubleBuffering() {
+    if (g_mainWindow) {
+        renderer.toggleDoubleBuffering(g_mainWindow);
 
+        std::cout << "Buffering mode toggled. Current: "
+            << (renderer.isDoubleBufferingEnabled() ? "Double" : "Single")
+            << std::endl;
+    }
+}
 
 void Game::update() {
     if (objects.isGameOver() || objects.getGameState() != PLAYING) return;
@@ -79,7 +90,8 @@ void Game::render() {
             objects.getPlayerName(),
             objects.getSpeedMultiplier(),
             objects.getSpeedDisplayText(),
-            objects.isNameInputActive()); // Добавляем параметр активности
+            objects.isNameInputActive(),
+            renderer.isDoubleBufferingEnabled()); // Используем renderer из Game
         break;
     case HIGH_SCORES:
         ui.drawHighScoresMenu(objects.getHighScores());
@@ -89,7 +101,14 @@ void Game::render() {
         break;
     }
 }
-
+void Game::forceRedraw() {
+    // Принудительно перерисовываем текущее состояние
+    if (g_mainWindow) {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        render();
+        glfwSwapBuffers(g_mainWindow);
+    }
+}
 void Game::handleKeyPress(int key) {
     // Делегируем обработку ввода соответствующим компонентам
     switch (objects.getGameState()) {
@@ -105,7 +124,8 @@ void Game::handleKeyPress(int key) {
     case SETTINGS:
         if (objects.isNameInputActive()) {
             objects.handleNameInput(key); // Обрабатываем Backspace, Enter, Escape
-        } else {
+        }
+        else {
             objects.handleSettingsKeyPress(key);
         }
         break;
@@ -117,16 +137,18 @@ void Game::handleKeyPress(int key) {
 
 void Game::handleMouseClick() {
     if (objects.getGameState() == SETTINGS) {
-        // Проверяем клики на кнопки скорости
         if (ui.isSpeedIncreaseButtonClicked(ui.getMouseX(), ui.getMouseY())) {
             objects.increaseSpeed();
         }
         else if (ui.isSpeedDecreaseButtonClicked(ui.getMouseX(), ui.getMouseY())) {
             objects.decreaseSpeed();
         }
-        // Проверяем клик на поле имени
         else if (ui.isNameFieldClicked(ui.getMouseX(), ui.getMouseY())) {
             objects.setNameInputActive(true);
+        }
+        else if (ui.isBufferButtonClicked(ui.getMouseX(), ui.getMouseY())) {
+            toggleDoubleBuffering();
+            forceRedraw(); // ★★ ВАЖНО: принудительная перерисовка ★★
         }
     }
     ui.handleMouseClick(objects);

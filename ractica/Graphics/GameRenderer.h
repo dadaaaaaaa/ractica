@@ -1,4 +1,5 @@
 #pragma once
+
 #include "../Core/Constants.h"
 #include "../Core/Types.h"
 #include "Model.h"
@@ -6,6 +7,7 @@
 #include "Camera.h"
 #include "../Objects/GameObjects.h"
 #include "../UI/GameUI.h"
+#include <GLFW/glfw3.h>
 
 class GameRenderer {
 private:
@@ -27,15 +29,19 @@ private:
     ShaderManager shaderManager;
     Camera camera;
 
+    // === УПРАВЛЕНИЕ БУФЕРИЗАЦИЕЙ ===
+    static bool doubleBufferingEnabled;
+
 public:
     GameRenderer();
     void createSnakeHeadModel(Model& model);
     void createSnakeBodyModel(Model& model);
     void createSnakeTailModel(Model& model);
+
     // === ГЕТТЕРЫ МОДЕЛЕЙ И СИСТЕМ ===
     const Model& getSnakeHeadModel() const { return snakeHeadModel; }
     const Model& getSnakeBodyModel() const { return snakeBodyModel; }
-    const Model& getSnakeTailModel() const { return snakeTailModel; }  
+    const Model& getSnakeTailModel() const { return snakeTailModel; }
     const Model& getFoodModel() const { return foodModel; }
     const Model& getObstacleModel() const { return obstacleModel; }
     const Model& getFloorModel() const { return floorModel; }
@@ -68,6 +74,7 @@ public:
     void drawModelWithRotation(const Model& model, float x, float y, float z, float scale,
         const glm::vec3& color, float rotationAngle);
     float calculateSegmentRotation(const std::vector<Point>& snake, size_t index);
+
     // === СИСТЕМА ЗАГРУЗКИ МОДЕЛЕЙ И ТЕКСТУР ===
     void loadAllModels();                        // Загрузка всех моделей
     bool loadModelFromFile(Model& model, const std::string& modelPath, const std::string& texturePath); // Загрузка модели из файла
@@ -96,4 +103,19 @@ public:
     void createTexturedSphereModel(Model& model); // Текстурированная сфера
     void createTexturedFloorModel(Model& model); // Текстурированный пол
     void createFenceModel(Model& model);         // Модель забора
+
+    // === МЕТОДЫ ГРАФИЧЕСКИХ УТИЛИТ ===
+    static void setupGLFWHints();                        // Настройка GLFW hints
+    static bool initGLEW();                             // Инициализация GLEW
+    static void initOpenGLSettings();                   // Настройка OpenGL
+    static void checkGLError(const char* functionName); // Проверка ошибок OpenGL
+    static void checkDoubleBufferSupport(GLFWwindow* window); // Проверка двойной буферизации
+    static void setupVSync(GLFWwindow* window, bool enabled = true); // Настройка VSync
+    static void printGraphicsInfo();                    // Вывод информации о системе
+    static void setupCallbacks(GLFWwindow* window);     // Установка колбэков GLFW
+
+    // === УПРАВЛЕНИЕ БУФЕРИЗАЦИЕЙ ===
+    static bool isDoubleBufferingEnabled() { return doubleBufferingEnabled; }
+    static void toggleDoubleBuffering(GLFWwindow* window);
+    static void updateWindowHints(GLFWwindow* window);
 };
