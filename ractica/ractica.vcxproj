@@ -149,6 +149,7 @@
     <ClCompile Include="Objects\Obstacle.cpp" />
     <ClCompile Include="Objects\Sprite.cpp" />
     <ClCompile Include="pch.cpp" />
+    <ClCompile Include="ShadowRenderer.cpp" />
     <ClCompile Include="UI\GameUI.cpp" />
     <ClCompile Include="UI\MenuButton.cpp" />
     <ClCompile Include="UI\NetworkManager.cpp" />
@@ -172,6 +173,7 @@
     <ClInclude Include="Objects\Obstacle.h" />
     <ClInclude Include="Objects\Sprite.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="ShadowRenderer.h" />
     <ClInclude Include="UI\GameUI.h" />
     <ClInclude Include="UI\MenuButton.h" />
     <ClInclude Include="UI\NetworkManager.h" />

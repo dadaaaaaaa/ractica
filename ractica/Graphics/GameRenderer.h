@@ -24,7 +24,16 @@ private:
     Model flowerModel;
     Model treeModel;
     Model appleModel;
+    GLuint shadowFBO;
+    GLuint shadowMapTexture;
+    GLuint shadowShaderProgram;
+    glm::mat4 lightSpaceMatrix;
 
+    // Íîâûå ôóíêöèè
+    void initShadowMapping();
+    GLuint compileShadowShader();
+    void drawObjectsForShadowPass(const GameObjects& objects);
+    void createSimpleCubeModelForShadows();
     // === ÑÈÑÒÅÌÛ ĞÅÍÄÅĞÈÍÃÀ ===
     ShaderManager shaderManager;
     Camera camera;

@@ -11,7 +11,10 @@ private:
     // Uniform locations
     GLuint modelLoc, viewLoc, projectionLoc, colorLoc, useTextureLoc;
     GLuint uiProjectionLoc, uiModelLoc, uiColorLoc, uiAlphaLoc;  // днаюбэре uiAlphaLoc
-
+    GLint lightSpaceMatrixLoc;
+    GLint shadowMapLoc;
+    GLint useShadowsLoc;
+    GLint lightPosLoc;
 public:
     ShaderManager();
     ~ShaderManager();
@@ -20,7 +23,10 @@ public:
     void use3DShader() const;
     void useUIShader() const;
     void setUIAlpha(float alpha) const;
-
+    void setLightSpaceMatrix(const glm::mat4& lightSpaceMatrix) const;
+    void setShadowMap(GLuint textureID) const;
+    void setUseShadows(bool useShadows) const;
+    void setLightPosition(const glm::vec3& lightPos) const;
     // Setters for uniforms
     void setModelMatrix(const glm::mat4& model) const;
     void setViewMatrix(const glm::mat4& view) const;
