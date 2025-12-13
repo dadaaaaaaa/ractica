@@ -23,7 +23,6 @@ public:
     void initUI();
     void continueGame();
     void startNewGame();
-    void toggleDoubleBuffering();
     void forceRedraw(); // Добавляем
 
     // Геттеры
@@ -35,7 +34,6 @@ public:
     double getMouseY() const { return ui.getMouseY(); }
     const std::vector<Point>& getSnake() const { return objects.getSnake(); }
     float getGameSpeed() const { return objects.getGameSpeed(); }
-    bool isDoubleBufferingEnabled() const { return renderer.isDoubleBufferingEnabled(); } // Добавляем
 
     // Сеттеры
     void setGameState(GameState state) { objects.setGameState(state); }

@@ -113,9 +113,15 @@ public:
     static void setupVSync(GLFWwindow* window, bool enabled = true); // Настройка VSync
     static void printGraphicsInfo();                    // Вывод информации о системе
     static void setupCallbacks(GLFWwindow* window);     // Установка колбэков GLFW
+    
+    static void resetDepthState();
+    void createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
+        float width, float height, const glm::vec3& color);
+    void createFenceRailHorizontal(std::vector<Vertex>& vertices, float x, float y, float z,
+        float length, float thickness, const glm::vec3& color);
+    void createFenceRailVertical(std::vector<Vertex>& vertices, float x, float y, float z,
+        float length, float thickness, const glm::vec3& color);
+    void createFenceCorner(std::vector<Vertex>& vertices, float x, float y, float z,
+        const glm::vec3& color);
 
-    // === УПРАВЛЕНИЕ БУФЕРИЗАЦИЕЙ ===
-    static bool isDoubleBufferingEnabled() { return doubleBufferingEnabled; }
-    static void toggleDoubleBuffering(GLFWwindow* window);
-    static void updateWindowHints(GLFWwindow* window);
 };

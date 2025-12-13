@@ -11,51 +11,84 @@ extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 extern Game g_game;
 
-// Инициализация статического члена
-bool GameRenderer::doubleBufferingEnabled = true;
 GameRenderer::GameRenderer() {
    
 }
 
 void GameRenderer::initialize() {
     loadAllModels();
+    initOpenGLSettings();
 }
 
 void GameRenderer::renderGame(const GameObjects& objects) {
+    resetDepthState();
+    // Очистка буферов
+    glClearDepth(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
 
+    // Сбрасываем настройки глубины
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDepthMask(GL_TRUE);
+
+    // Отключаем смешивание для 3D объектов
+    glDisable(GL_BLEND);
+
     g_shaderManager.use3DShader();
 
-    glm::mat4 projection = glm::perspective(glm::radians(60.0f), 1200.0f / 800.0f, 0.1f, 100.0f);
-    glm::mat4 view = glm::lookAt(g_camera.getPosition(), g_camera.getPosition() + g_camera.getFront(), g_camera.getUp());
+    // Матрицы проекции и вида
+    glm::mat4 projection = glm::perspective(glm::radians(60.0f),
+        1200.0f / 800.0f,
+        0.2f, // Увеличиваем near plane
+        100.0f);
+
+    glm::mat4 view = glm::lookAt(g_camera.getPosition(),
+        g_camera.getPosition() + g_camera.getFront(),
+        g_camera.getUp());
 
     g_shaderManager.setViewMatrix(view);
     g_shaderManager.setProjectionMatrix(projection);
 
-    drawFloor();
-    drawGroundSprites(objects.getFlowerSprites());
-    drawFence(objects.getFenceBlocks());
-    drawObstaclesAsTrees(objects.getObstacles());
-    drawSnake(objects.getSnake());
-    drawFood(objects.getFood());
+    // Отрисовка в порядке от дальних к ближним
     drawClouds(objects.getCloudSprites());
     drawBirds(objects.getBirds());
+    drawObstaclesAsTrees(objects.getObstacles());
+    drawFence(objects.getFenceBlocks());
+    drawGroundSprites(objects.getFlowerSprites());
+    drawFloor();
+    drawFood(objects.getFood());
+    drawSnake(objects.getSnake());
+
+    // Включаем смешивание для UI
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
-void GameRenderer::drawModel(const Model& model, float x, float y, float z, float scale, const glm::vec3& color) {
+void GameRenderer::drawModel(const Model& model, float x, float y, float z,
+    float scale, const glm::vec3& color) {
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     modelMatrix = glm::translate(modelMatrix, glm::vec3(x, y, z));
     modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
+
+    // Смещение полигонов для предотвращения z-fighting
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.0f, 2.0f);
 
     g_shaderManager.setModelMatrix(modelMatrix);
     g_shaderManager.setColor(color);
     g_shaderManager.setUseTexture(model.hasTexture);
 
     model.draw();
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 
 void GameRenderer::drawFloor() {
+    // Смещение для пола (самый дальний объект)
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(0.5f, 1.0f); // Меньше смещение для пола
+
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::scale(model, glm::vec3(2.0f, 1.0f, 2.0f));
     model = glm::translate(model, glm::vec3(0.0f, -0.5f, 0.0f));
@@ -65,10 +98,16 @@ void GameRenderer::drawFloor() {
     g_shaderManager.setUseTexture(floorModel.hasTexture);
 
     floorModel.draw();
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 
 void GameRenderer::drawSnake(const std::vector<Point>& snake) {
     if (snake.empty()) return;
+
+    // Специальное смещение для змейки (самая ближняя)
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(2.0f, 4.0f); // Больше смещение для змейки
 
     for (size_t i = 0; i < snake.size(); i++) {
         const Point& segment = snake[i];
@@ -76,26 +115,23 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
         float y = segment.y * CELL_SIZE + 0.05f;
         float z = (segment.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
-        // Выбираем модель в зависимости от позиции в змейке
         const Model* modelToDraw = &snakeBodyModel;
-        glm::vec3 color = glm::vec3(0.0f, 0.7f, 0.0f); // Зеленый для тела
+        glm::vec3 color = glm::vec3(0.0f, 0.7f, 0.0f);
 
         if (i == 0) {
-            // Голова
             modelToDraw = &snakeHeadModel;
-            color = glm::vec3(0.0f, 1.0f, 0.0f); // Ярко-зеленый
+            color = glm::vec3(0.0f, 1.0f, 0.0f);
         }
         else if (i == snake.size() - 1) {
-            // Хвост
             modelToDraw = &snakeTailModel;
-            color = glm::vec3(0.0f, 0.5f, 0.0f); // Темно-зеленый
+            color = glm::vec3(0.0f, 0.5f, 0.0f);
         }
 
-        // Определяем направление для вращения модели
         float rotationAngle = calculateSegmentRotation(snake, i);
-
         drawModelWithRotation(*modelToDraw, x, y, z, CELL_SIZE * 0.8f, color, rotationAngle);
     }
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 
 float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, size_t index) {
@@ -123,20 +159,29 @@ float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, si
 }
 
 
-void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, float z, float scale,
-    const glm::vec3& color, float rotationAngle) {
+void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, float z,
+    float scale, const glm::vec3& color, float rotationAngle) {
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     modelMatrix = glm::translate(modelMatrix, glm::vec3(x, y, z));
     modelMatrix = glm::rotate(modelMatrix, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
     modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
+
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.0f, 2.0f);
 
     g_shaderManager.setModelMatrix(modelMatrix);
     g_shaderManager.setColor(color);
     g_shaderManager.setUseTexture(model.hasTexture);
 
     model.draw();
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 void GameRenderer::drawFood(const std::vector<Point>& food) {
+    // Смещение для еды
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.5f, 3.0f);
+
     for (const auto& apple : food) {
         float x = (apple.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
         float y = apple.y * CELL_SIZE + 0.05f;
@@ -144,9 +189,15 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
 
         drawModel(appleModel, x, y, z, CELL_SIZE * 0.8f, glm::vec3(1.0f, 0.8f, 0.2f));
     }
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 
 void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) {
+    // Смещение для деревьев
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.2f, 2.5f);
+
     for (const auto& obstacle : obstacles) {
         for (const auto& block : obstacle.blocks) {
             float x = (block.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
@@ -156,20 +207,110 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
             drawModel(treeModel, x, y, z, CELL_SIZE * 1.5f, glm::vec3(0.1f, 0.4f, 0.1f));
         }
     }
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 
 void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
+    std::vector<Vertex> allFenceVertices;
+
     for (const auto& fenceBlock : fenceBlocks) {
         float x = (fenceBlock.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
         float y = fenceBlock.y * CELL_SIZE;
         float z = (fenceBlock.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
         glm::vec3 fenceColor(0.55f, 0.27f, 0.07f);
-        drawModel(fenceModel, x, y, z, CELL_SIZE * 1.2f, fenceColor);
+        glm::vec3 darkColor(0.45f, 0.17f, 0.05f);
+
+        // Определяем углы
+        bool isCorner = (fenceBlock.x == 0 && fenceBlock.z == 0) ||
+            (fenceBlock.x == GRID_WIDTH - 1 && fenceBlock.z == 0) ||
+            (fenceBlock.x == 0 && fenceBlock.z == GRID_DEPTH - 1) ||
+            (fenceBlock.x == GRID_WIDTH - 1 && fenceBlock.z == GRID_DEPTH - 1);
+
+        // Определяем стороны
+        bool isNorth = (fenceBlock.z == 0);
+        bool isSouth = (fenceBlock.z == GRID_DEPTH - 1);
+        bool isWest = (fenceBlock.x == 0);
+        bool isEast = (fenceBlock.x == GRID_WIDTH - 1);
+
+        if (isCorner) {
+            // Угловой столб - побольше
+            createFencePost(allFenceVertices, x, y, z, 0.1f, 0.28f, fenceColor);
+
+            // Соединительные перекладины
+            if (fenceBlock.x == 0) { // Левый угол
+                // Перекладина вправо
+                createFenceRailHorizontal(allFenceVertices, x + CELL_SIZE / 2.0f, y + 0.2f, z,
+                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+                createFenceRailHorizontal(allFenceVertices, x + CELL_SIZE / 2.0f, y + 0.1f, z,
+                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+            }
+            else { // Правый угол
+                // Перекладина влево
+                createFenceRailHorizontal(allFenceVertices, x - CELL_SIZE / 2.0f, y + 0.2f, z,
+                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+                createFenceRailHorizontal(allFenceVertices, x - CELL_SIZE / 2.0f, y + 0.1f, z,
+                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+            }
+
+            if (fenceBlock.z == 0) { // Верхний угол
+                // Перекладина вниз
+                createFenceRailVertical(allFenceVertices, x, y + 0.2f, z + CELL_SIZE / 2.0f,
+                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+                createFenceRailVertical(allFenceVertices, x, y + 0.1f, z + CELL_SIZE / 2.0f,
+                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+            }
+            else { // Нижний угол
+                // Перекладина вверх
+                createFenceRailVertical(allFenceVertices, x, y + 0.2f, z - CELL_SIZE / 2.0f,
+                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+                createFenceRailVertical(allFenceVertices, x, y + 0.1f, z - CELL_SIZE / 2.0f,
+                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+            }
+        }
+        else if (isNorth || isSouth || isWest || isEast) {
+            // Обычный столбик (меньше для плотного забора)
+            createFencePost(allFenceVertices, x, y, z, 0.06f, 0.25f, fenceColor);
+
+            // Перекладины (теперь короче, так как столбики ближе)
+            if (isNorth || isSouth) {
+                // Горизонтальные перекладины (по X)
+                createFenceRailHorizontal(allFenceVertices, x, y + 0.2f, z,
+                    CELL_SIZE, 0.03f, darkColor);
+                createFenceRailHorizontal(allFenceVertices, x, y + 0.1f, z,
+                    CELL_SIZE, 0.03f, darkColor);
+            }
+            else {
+                // Вертикальные перекладины (по Z)
+                createFenceRailVertical(allFenceVertices, x, y + 0.2f, z,
+                    CELL_SIZE, 0.03f, darkColor);
+                createFenceRailVertical(allFenceVertices, x, y + 0.1f, z,
+                    CELL_SIZE, 0.03f, darkColor);
+            }
+        }
+    }
+
+    // Рисуем весь забор как монолитную структуру
+    if (!allFenceVertices.empty()) {
+        Model monolithicFenceModel;
+        monolithicFenceModel.vertices = allFenceVertices;
+        monolithicFenceModel.hasTexture = false;
+        monolithicFenceModel.setupBuffers();
+
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        g_shaderManager.setModelMatrix(modelMatrix);
+        g_shaderManager.setColor(glm::vec3(0.55f, 0.27f, 0.07f));
+        g_shaderManager.setUseTexture(false);
+
+        monolithicFenceModel.draw();
     }
 }
-
 void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
+    // Смещение для облаков (самые дальние)
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(0.1f, 0.5f); // Минимальное смещение
+
     for (const auto& cloud : cloudSprites) {
         float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
         if (distanceToCenter < 8.0f) continue;
@@ -188,6 +329,8 @@ void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
 
         cloudModel.draw();
     }
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 
 void GameRenderer::drawBird(const Bird& bird) {
@@ -213,12 +356,22 @@ void GameRenderer::drawBird(const Bird& bird) {
 }
 
 void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
+    // Смещение для птиц
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(0.8f, 1.5f);
+
     for (const auto& bird : birds) {
         drawBird(bird);
     }
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 
 void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
+    // Смещение для цветов
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(0.7f, 1.2f);
+
     for (const auto& flower : flowerSprites) {
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, flower.position);
@@ -234,6 +387,8 @@ void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
 
         flowerModel.draw();
     }
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
 }
 void GameRenderer::createSnakeHeadModel(Model& model) {
     // Простая треугольная голова
@@ -937,7 +1092,7 @@ void GameRenderer::setupGLFWHints() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-    glfwWindowHint(GLFW_DOUBLEBUFFER, doubleBufferingEnabled ? GLFW_TRUE : GLFW_FALSE);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE); // Всегда включена
     glfwWindowHint(GLFW_SAMPLES, 4);
     glfwWindowHint(GLFW_DEPTH_BITS, 24);
     glfwWindowHint(GLFW_STENCIL_BITS, 8);
@@ -956,8 +1111,13 @@ bool GameRenderer::initGLEW() {
 }
 
 void GameRenderer::initOpenGLSettings() {
+    // Базовые настройки OpenGL
     glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
+    glDepthFunc(GL_LESS); // Меняем GL_LEQUAL на GL_LESS
+    glClearDepth(1.0f);
+    glDepthRange(0.0, 1.0);
+    glDepthMask(GL_TRUE);
+
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     glFrontFace(GL_CCW);
@@ -1024,29 +1184,6 @@ void GameRenderer::printGraphicsInfo() {
     std::cout << "===========================" << std::endl;
 }
 
-// Метод для переключения двойной буферизации
-void GameRenderer::toggleDoubleBuffering(GLFWwindow* window) {
-    doubleBufferingEnabled = !doubleBufferingEnabled;
-
-    std::cout << "Toggling double buffering: "
-        << (doubleBufferingEnabled ? "ENABLED" : "DISABLED") << std::endl;
-
-    // НЕ пересоздаем окно! Просто меняем флаг.
-    // Реальная смена буферизации требует пересоздания GLFW окна,
-    // что сложно. Вместо этого просто меняем логику отрисовки.
-
-    // Выводим предупреждение
-    if (!doubleBufferingEnabled) {
-        std::cout << "NOTE: Single buffering simulation enabled." << std::endl;
-        std::cout << "The game will continue to use double buffering," << std::endl;
-        std::cout << "but will force immediate display with glFlush()" << std::endl;
-    }
-}
-
-void GameRenderer::updateWindowHints(GLFWwindow* window) {
-    setupGLFWHints();
-}
-
 // Вспомогательные функции-колбэки
 // Колбэки GLFW (добавляем в начало main.cpp или в GameRenderer.cpp)
 namespace {
@@ -1108,7 +1245,16 @@ namespace {
         glViewport(0, 0, width, height);
     }
 }
+void GameRenderer::resetDepthState() {
+    // Сбрасываем состояние глубины между кадрами
+    glDepthMask(GL_TRUE);
+    glClearDepth(1.0f);
+    glDepthFunc(GL_LESS);
+    glEnable(GL_DEPTH_TEST);
 
+    // Отключаем все смещения полигонов
+    glDisable(GL_POLYGON_OFFSET_FILL);
+}
 void GameRenderer::setupCallbacks(GLFWwindow* window) {
     glfwSetKeyCallback(window, keyCallback);
     glfwSetCharCallback(window, charCallback);
@@ -1116,4 +1262,192 @@ void GameRenderer::setupCallbacks(GLFWwindow* window) {
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
+}
+// Создание столба забора (низкого)
+void GameRenderer::createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
+    float width, float height, const glm::vec3& color) {
+    // Создаем низкий вертикальный столб
+    float halfWidth = width / 2.0f;
+    float halfHeight = height / 2.0f;
+
+    // Передняя грань
+    vertices.push_back({ {x - halfWidth, y, z - halfWidth}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x + halfWidth, y, z - halfWidth}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfWidth, y + height, z - halfWidth}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfWidth, y + height, z - halfWidth}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x - halfWidth, y + height, z - halfWidth}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - halfWidth, y, z - halfWidth}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} });
+
+    // Задняя грань
+    vertices.push_back({ {x - halfWidth, y, z + halfWidth}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x + halfWidth, y, z + halfWidth}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfWidth, y + height, z + halfWidth}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfWidth, y + height, z + halfWidth}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x - halfWidth, y + height, z + halfWidth}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - halfWidth, y, z + halfWidth}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f} });
+
+    // Левая грань
+    vertices.push_back({ {x - halfWidth, y + height, z + halfWidth}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x - halfWidth, y + height, z - halfWidth}, {-1.0f, 0.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x - halfWidth, y, z - halfWidth}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - halfWidth, y, z - halfWidth}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - halfWidth, y, z + halfWidth}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - halfWidth, y + height, z + halfWidth}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+
+    // Правая грань
+    vertices.push_back({ {x + halfWidth, y + height, z + halfWidth}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfWidth, y + height, z - halfWidth}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfWidth, y, z - halfWidth}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + halfWidth, y, z - halfWidth}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + halfWidth, y, z + halfWidth}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x + halfWidth, y + height, z + halfWidth}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+
+    // Верхняя грань
+    vertices.push_back({ {x - halfWidth, y + height, z - halfWidth}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + halfWidth, y + height, z - halfWidth}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfWidth, y + height, z + halfWidth}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfWidth, y + height, z + halfWidth}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x - halfWidth, y + height, z + halfWidth}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - halfWidth, y + height, z - halfWidth}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f} });
+
+    // Нижняя грань
+    vertices.push_back({ {x - halfWidth, y, z - halfWidth}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + halfWidth, y, z - halfWidth}, {0.0f, -1.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfWidth, y, z + halfWidth}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfWidth, y, z + halfWidth}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x - halfWidth, y, z + halfWidth}, {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - halfWidth, y, z - halfWidth}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f} });
+}
+
+// Создание горизонтальной перекладины (вытянутой по оси X)
+void GameRenderer::createFenceRailHorizontal(std::vector<Vertex>& vertices, float x, float y, float z,
+    float length, float thickness, const glm::vec3& color) {
+    float halfLength = length / 2.0f;
+    float halfThickness = thickness / 2.0f;
+    float railWidth = 0.04f; // Толщина перекладины по Z
+
+    // Передняя грань (по Z)
+    vertices.push_back({ {x - halfLength, y - halfThickness, z - railWidth}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x + halfLength, y - halfThickness, z - railWidth}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfLength, y + halfThickness, z - railWidth}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfLength, y + halfThickness, z - railWidth}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x - halfLength, y + halfThickness, z - railWidth}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - halfLength, y - halfThickness, z - railWidth}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} });
+
+    // Задняя грань (по Z)
+    vertices.push_back({ {x - halfLength, y - halfThickness, z + railWidth}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x + halfLength, y - halfThickness, z + railWidth}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfLength, y + halfThickness, z + railWidth}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfLength, y + halfThickness, z + railWidth}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x - halfLength, y + halfThickness, z + railWidth}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - halfLength, y - halfThickness, z + railWidth}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f} });
+
+    // Левая грань (по X)
+    vertices.push_back({ {x - halfLength, y + halfThickness, z + railWidth}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x - halfLength, y + halfThickness, z - railWidth}, {-1.0f, 0.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x - halfLength, y - halfThickness, z - railWidth}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - halfLength, y - halfThickness, z - railWidth}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - halfLength, y - halfThickness, z + railWidth}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - halfLength, y + halfThickness, z + railWidth}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+
+    // Правая грань (по X)
+    vertices.push_back({ {x + halfLength, y + halfThickness, z + railWidth}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfLength, y + halfThickness, z - railWidth}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfLength, y - halfThickness, z - railWidth}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + halfLength, y - halfThickness, z - railWidth}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + halfLength, y - halfThickness, z + railWidth}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x + halfLength, y + halfThickness, z + railWidth}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+
+    // Верхняя грань (по Y)
+    vertices.push_back({ {x - halfLength, y + halfThickness, z - railWidth}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + halfLength, y + halfThickness, z - railWidth}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfLength, y + halfThickness, z + railWidth}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfLength, y + halfThickness, z + railWidth}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x - halfLength, y + halfThickness, z + railWidth}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - halfLength, y + halfThickness, z - railWidth}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f} });
+
+    // Нижняя грань (по Y)
+    vertices.push_back({ {x - halfLength, y - halfThickness, z - railWidth}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + halfLength, y - halfThickness, z - railWidth}, {0.0f, -1.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + halfLength, y - halfThickness, z + railWidth}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + halfLength, y - halfThickness, z + railWidth}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x - halfLength, y - halfThickness, z + railWidth}, {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - halfLength, y - halfThickness, z - railWidth}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f} });
+}
+
+// Создание вертикальной перекладины (вытянутой по оси Z)
+void GameRenderer::createFenceRailVertical(std::vector<Vertex>& vertices, float x, float y, float z,
+    float length, float thickness, const glm::vec3& color) {
+    float halfLength = length / 2.0f;
+    float halfThickness = thickness / 2.0f;
+    float railWidth = 0.04f; // Толщина перекладины по X
+
+    // Левая грань (по X)
+    vertices.push_back({ {x - railWidth, y - halfThickness, z - halfLength}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - railWidth, y - halfThickness, z + halfLength}, {-1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x - railWidth, y + halfThickness, z + halfLength}, {-1.0f, 0.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x - railWidth, y + halfThickness, z + halfLength}, {-1.0f, 0.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x - railWidth, y + halfThickness, z - halfLength}, {-1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - railWidth, y - halfThickness, z - halfLength}, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f} });
+
+    // Правая грань (по X)
+    vertices.push_back({ {x + railWidth, y - halfThickness, z - halfLength}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x + railWidth, y - halfThickness, z + halfLength}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + railWidth, y + halfThickness, z + halfLength}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y + halfThickness, z + halfLength}, {1.0f, 0.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y + halfThickness, z - halfLength}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y - halfThickness, z - halfLength}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f} });
+
+    // Передняя грань (по Z)
+    vertices.push_back({ {x - railWidth, y + halfThickness, z - halfLength}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + railWidth, y + halfThickness, z - halfLength}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y - halfThickness, z - halfLength}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y - halfThickness, z - halfLength}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - railWidth, y - halfThickness, z - halfLength}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - railWidth, y + halfThickness, z - halfLength}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f} });
+
+    // Задняя грань (по Z)
+    vertices.push_back({ {x - railWidth, y + halfThickness, z + halfLength}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + railWidth, y + halfThickness, z + halfLength}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y - halfThickness, z + halfLength}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y - halfThickness, z + halfLength}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x - railWidth, y - halfThickness, z + halfLength}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - railWidth, y + halfThickness, z + halfLength}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f} });
+
+    // Верхняя грань (по Y)
+    vertices.push_back({ {x - railWidth, y + halfThickness, z - halfLength}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y + halfThickness, z - halfLength}, {0.0f, 1.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y + halfThickness, z + halfLength}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + railWidth, y + halfThickness, z + halfLength}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x - railWidth, y + halfThickness, z + halfLength}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - railWidth, y + halfThickness, z - halfLength}, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f} });
+
+    // Нижняя грань (по Y)
+    vertices.push_back({ {x - railWidth, y - halfThickness, z - halfLength}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y - halfThickness, z - halfLength}, {0.0f, -1.0f, 0.0f}, {1.0f, 1.0f} });
+    vertices.push_back({ {x + railWidth, y - halfThickness, z + halfLength}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x + railWidth, y - halfThickness, z + halfLength}, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f} });
+    vertices.push_back({ {x - railWidth, y - halfThickness, z + halfLength}, {0.0f, -1.0f, 0.0f}, {0.0f, 0.0f} });
+    vertices.push_back({ {x - railWidth, y - halfThickness, z - halfLength}, {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f} });
+}
+
+
+// Создание углового столба (просто квадратный столб)
+void GameRenderer::createFenceCorner(std::vector<Vertex>& vertices, float x, float y, float z,
+    const glm::vec3& color) {
+    // Угловой столб - такой же как обычный, но немного шире (0.1 ширины, 0.3 высоты)
+    createFencePost(vertices, x, y, z, 0.1f, 0.3f, color);
+
+    // Добавляем соединительные перекладины без зазоров
+    // Горизонтальная перекладина (влево/вправо)
+    createFenceRailHorizontal(vertices, x + CELL_SIZE / 2.0f, y + 0.25f, z,
+        CELL_SIZE, 0.04f, color);
+    createFenceRailHorizontal(vertices, x - CELL_SIZE / 2.0f, y + 0.25f, z,
+        CELL_SIZE, 0.04f, color);
+
+    // Вертикальная перекладина (вперед/назад)
+    createFenceRailVertical(vertices, x, y + 0.25f, z + CELL_SIZE / 2.0f,
+        CELL_SIZE, 0.04f, color);
+    createFenceRailVertical(vertices, x, y + 0.25f, z - CELL_SIZE / 2.0f,
+        CELL_SIZE, 0.04f, color);
 }

@@ -336,18 +336,33 @@ void GameObjects::updateHighScores() {
     }
 }
 
+
 void GameObjects::generateFence() {
     fenceBlocks.clear();
-    for (int x = 0; x < GRID_WIDTH; x += 2) {
+
+    // Углы (4 штуки)
+    fenceBlocks.push_back(Point(0, 0, 0));                     // Левый верхний
+    fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, 0));        // Правый верхний
+    fenceBlocks.push_back(Point(0, 0, GRID_DEPTH - 1));        // Левый нижний
+    fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, GRID_DEPTH - 1)); // Правый нижний
+
+    // Северная сторона (без углов)
+    for (int x = 1; x < GRID_WIDTH - 1; x++) {
         fenceBlocks.push_back(Point(x, 0, 0));
     }
-    for (int x = 0; x < GRID_WIDTH; x += 2) {
+
+    // Южная сторона (без углов)
+    for (int x = 1; x < GRID_WIDTH - 1; x++) {
         fenceBlocks.push_back(Point(x, 0, GRID_DEPTH - 1));
     }
-    for (int z = 2; z < GRID_DEPTH - 2; z += 2) {
+
+    // Западная сторона (без углов)
+    for (int z = 1; z < GRID_DEPTH - 1; z++) {
         fenceBlocks.push_back(Point(0, 0, z));
     }
-    for (int z = 2; z < GRID_DEPTH - 2; z += 2) {
+
+    // Восточная сторона (без углов)
+    for (int z = 1; z < GRID_DEPTH - 1; z++) {
         fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, z));
     }
 }

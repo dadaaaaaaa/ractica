@@ -391,48 +391,7 @@ void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName,
         minusHover ? 1.0f : 0.7f, 0.3f, 0.0f);
     drawText(centerX + getScaledX(100), multiplierY, "+",
         0.0f, plusHover ? 1.0f : 0.7f, 0.0f);
-
-    // ===== ÓÏÐÀÂËÅÍÈÅ ÁÓÔÅÐÈÇÀÖÈÅÉ =====
-    float bufferY = getScaledY(180);
-    drawCenteredText(180, "DOUBLE BUFFERING", 1.0f, 1.0f, 1.0f);
-
-    std::string bufferText = doubleBufferingEnabled ? "ENABLED" : "DISABLED";
-    glm::vec3 bufferColor = doubleBufferingEnabled ?
-        glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.5f, 0.0f);
-
-    drawCenteredText(150, bufferText, bufferColor.r, bufferColor.g, bufferColor.b);
-
-    // Áîëåå òî÷íîå îïèñàíèå
-    std::string modeInfo = doubleBufferingEnabled ?
-        "(Standard mode)" : "(Experimental mode)";
-    drawCenteredText(125, modeInfo, 0.7f, 0.7f, 0.7f);
-
-    // Êíîïêà ïåðåêëþ÷åíèÿ
-    bool bufferButtonHover = isBufferButtonClicked(mouseX, mouseY);
-
-    std::string toggleText = "Toggle";
-    float toggleWidth = getTextWidth(toggleText);
-    float toggleX = centerX - toggleWidth / 2;
-    float toggleY = getScaledY(100);
-
-    // Ðèñóåì êíîïêó
-    glm::vec3 buttonColor = bufferButtonHover ?
-        glm::vec3(0.3f, 0.6f, 0.3f) : glm::vec3(0.2f, 0.4f, 0.2f);
-    drawQuad(toggleX - getScaledX(10), toggleY - getScaledY(5),
-        toggleWidth + getScaledX(20), getScaledHeight(30),
-        buttonColor, 1.0f);
-
-    drawText(toggleX, toggleY, toggleText,
-        bufferButtonHover ? 1.0f : 0.9f,
-        bufferButtonHover ? 1.0f : 0.9f,
-        bufferButtonHover ? 1.0f : 0.9f);
-
-    // Ïðåäóïðåæäåíèå
-    drawCenteredText(70, "Note: Visual effect only", 0.8f, 0.8f, 0.4f);
-    drawCenteredText(45, "Window remains double-buffered", 0.7f, 0.7f, 0.7f);
-    // ===== ÊÎÍÅÖ ÑÅÊÖÈÈ =====
-
-    drawCenteredText(20, "Click on name field to change player name", 0.7f, 0.7f, 0.7f);
+       drawCenteredText(20, "Click on name field to change player name", 0.7f, 0.7f, 0.7f);
 
     for (auto& button : settingsButtons) {
         button.hovered = button.contains(mouseX, mouseY);
@@ -441,18 +400,6 @@ void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName,
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
-}
-bool GameUI::isBufferButtonClicked(double mouseX, double mouseY) const {
-    std::string toggleText = "Toggle";
-    float toggleWidth = getTextWidth(toggleText);
-    float centerX = windowWidth / 2.0f;
-    float toggleX = centerX - toggleWidth / 2;
-    float toggleY = getScaledY(100); // Îáíîâëåííàÿ ïîçèöèÿ
-
-    return (mouseX >= toggleX - getScaledX(10) &&
-        mouseX <= toggleX + toggleWidth + getScaledX(10) &&
-        mouseY >= toggleY - getScaledY(5) &&
-        mouseY <= toggleY + getScaledHeight(30));
 }
 
 bool GameUI::isSpeedIncreaseButtonClicked(double mouseX, double mouseY) {

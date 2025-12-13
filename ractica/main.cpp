@@ -143,23 +143,12 @@ int main() {
                 title += " | GAME OVER | Score: " + std::to_string(g_game.getScore());
             }
 
-            // ★★ ИСПРАВЛЕНИЕ: Убираем информацию о буферизации из заголовка ★★
-            // Или можно получить через метод в Game, если добавить
-
             glfwSetWindowTitle(window, title.c_str());
         }
 
-        // ★★ КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Всегда очищаем и рисуем заново ★★
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         g_game.render();
-
-        // ★★ ИСПРАВЛЕНИЕ: Всегда используем glfwSwapBuffers ★★
         glfwSwapBuffers(window);
-
-        // ★★ ИСПРАВЛЕНИЕ: glFlush не нужен, так как окно всегда создается с двойной буферизацией ★★
-        // if (!renderer.isDoubleBufferingEnabled()) {
-        //     glFlush(); // Убираем это
-        // }
 
         glfwPollEvents();
     }

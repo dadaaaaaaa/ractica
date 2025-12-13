@@ -98,7 +98,6 @@ public:
     bool isNameFieldClicked(double mouseX, double mouseY) const;
     bool isSpeedIncreaseButtonClicked(double mouseX, double mouseY) ;
     bool isSpeedDecreaseButtonClicked(double mouseX, double mouseY) ;
-    bool isBufferButtonClicked(double mouseX, double mouseY) const;
 
     // Методы отрисовки различных меню
     void drawNameInputField(const std::string& playerName, bool isActive);

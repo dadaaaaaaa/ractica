@@ -48,15 +48,6 @@ void Game::continueGame() {
     }
 }
 
-void Game::toggleDoubleBuffering() {
-    if (g_mainWindow) {
-        renderer.toggleDoubleBuffering(g_mainWindow);
-
-        std::cout << "Buffering mode toggled. Current: "
-            << (renderer.isDoubleBufferingEnabled() ? "Double" : "Single")
-            << std::endl;
-    }
-}
 
 void Game::update() {
     if (objects.isGameOver() || objects.getGameState() != PLAYING) return;
@@ -91,7 +82,7 @@ void Game::render() {
             objects.getSpeedMultiplier(),
             objects.getSpeedDisplayText(),
             objects.isNameInputActive(),
-            renderer.isDoubleBufferingEnabled()); // Используем renderer из Game
+            true); // Всегда true, так как теперь только двойная буферизация
         break;
     case HIGH_SCORES:
         ui.drawHighScoresMenu(objects.getHighScores());
@@ -145,10 +136,6 @@ void Game::handleMouseClick() {
         }
         else if (ui.isNameFieldClicked(ui.getMouseX(), ui.getMouseY())) {
             objects.setNameInputActive(true);
-        }
-        else if (ui.isBufferButtonClicked(ui.getMouseX(), ui.getMouseY())) {
-            toggleDoubleBuffering();
-            forceRedraw(); // ★★ ВАЖНО: принудительная перерисовка ★★
         }
     }
     ui.handleMouseClick(objects);
