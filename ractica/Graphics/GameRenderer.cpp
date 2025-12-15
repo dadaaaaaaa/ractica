@@ -5,137 +5,83 @@
 #include "../Core/Constants.h"
 #include "../Utils/MathUtils.h"
 #include "../Game/Game.h"
-
+#include "ShadowRenderer.h"
 // Глобальные экземпляры
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 extern Game g_game;
+extern ShadowRenderer shadowRenderer;
+
 
 GameRenderer::GameRenderer() {
    
 }
+void GameRenderer::renderShadowObjects(const GameObjects& objects) {
+    // Змея
+    if (!objects.getSnake().empty()) {
+        const auto& snake = objects.getSnake();
+        for (size_t i = 0; i < snake.size(); i++) {
+            const Point& segment = snake[i];
+            float x = (segment.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
+            float y = segment.y * CELL_SIZE + 0.05f;
+            float z = (segment.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
-void GameRenderer::initialize() {
-    loadAllModels();
-    initOpenGLSettings();
-    initShadowMapping();
-}
-void GameRenderer::initShadowMapping() {
-    // Создание FBO для теней
-    glGenFramebuffers(1, &shadowFBO);
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, y, z));
+            model = glm::scale(model, glm::vec3(CELL_SIZE * 0.8f));
 
-    // Создание текстуры глубины
-    glGenTextures(1, &shadowMapTexture);
-    glBindTexture(GL_TEXTURE_2D, shadowMapTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
-        1024, 1024, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-
-    // Привязка текстуры к FBO
-    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowMapTexture, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    // Компиляция шейдера для теней
-    shadowShaderProgram = compileShadowShader();
-
-    std::cout << "Shadow mapping initialized successfully!" << std::endl;
-}
-GLuint GameRenderer::compileShadowShader() {
-    const char* shadowVertexShaderSource = R"(
-        #version 330 core
-        layout (location = 0) in vec3 aPos;
-        
-        uniform mat4 lightSpaceMatrix;
-        uniform mat4 model;
-        
-        void main() {
-            gl_Position = lightSpaceMatrix * model * vec4(aPos, 1.0);
+            // Рендерим куб для тени
+            shadowRenderer.renderSimpleCube(model);
         }
-    )";
+    }
 
-    const char* shadowFragmentShaderSource = R"(
-        #version 330 core
-        
-        void main() {
-            // gl_FragDepth = gl_FragCoord.z;
+    // Еда
+    for (const auto& apple : objects.getFood()) {
+        float x = (apple.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
+        float y = apple.y * CELL_SIZE + 0.05f;
+        float z = (apple.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(x, y, z));
+        model = glm::scale(model, glm::vec3(CELL_SIZE * 0.8f));
+
+        shadowRenderer.renderSimpleCube(model);
+    }
+
+    // Деревья
+    for (const auto& obstacle : objects.getObstacles()) {
+        for (const auto& block : obstacle.blocks) {
+            float x = (block.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
+            float y = block.y * CELL_SIZE;
+            float z = (block.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, y, z));
+            model = glm::scale(model, glm::vec3(CELL_SIZE * 1.5f));
+
+            shadowRenderer.renderSimpleCube(model);
         }
-    )";
-
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &shadowVertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &shadowFragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, fragmentShader);
-    glLinkProgram(program);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    return program;
+    }
 }
 void GameRenderer::renderGame(const GameObjects& objects) {
     resetDepthState();
 
-    // 1. РЕНДЕР В КАРТУ ТЕНЕЙ (Shadow Pass)
-    glViewport(0, 0, 1024, 1024);
-    glBindFramebuffer(GL_FRAMEBUFFER, shadowFBO);
-    glClear(GL_DEPTH_BUFFER_BIT);
-
-    // Используем шейдер для теней
-    glUseProgram(shadowShaderProgram);
-
-    // Настройка матрицы света (вид сверху)
-    glm::mat4 lightProjection = glm::ortho(-15.0f, 15.0f, -15.0f, 15.0f, 1.0f, 30.0f);
+    // 1. РЕНДЕР ТЕНЕЙ
     glm::vec3 lightPos = glm::vec3(10.0f, 15.0f, 10.0f);
-    glm::mat4 lightView = glm::lookAt(lightPos,
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f));
-    lightSpaceMatrix = lightProjection * lightView;
 
-    glUniformMatrix4fv(glGetUniformLocation(shadowShaderProgram, "lightSpaceMatrix"),
-        1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
+    shadowRenderer.beginShadowPass(lightPos);
+    renderShadowObjects(objects);
+    shadowRenderer.endShadowPass();
 
-    // Рендерим только объекты, отбрасывающие тени (без пола и UI)
-    drawObjectsForShadowPass(objects);
-
-    // 2. ОСНОВНОЙ РЕНДЕР (Main Pass)
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // 2. ОСНОВНОЙ РЕНДЕР
     glViewport(0, 0, 1200, 800);
-
-    // Очистка буферов
-    glClearDepth(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
 
-    // Сбрасываем настройки глубины
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
-
     g_shaderManager.use3DShader();
 
-    // Матрицы проекции и вида
     glm::mat4 projection = glm::perspective(glm::radians(60.0f),
-        1200.0f / 800.0f,
-        0.2f,
-        100.0f);
-
+        1200.0f / 800.0f, 0.2f, 100.0f);
     glm::mat4 view = glm::lookAt(g_camera.getPosition(),
         g_camera.getPosition() + g_camera.getFront(),
         g_camera.getUp());
@@ -143,27 +89,83 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     g_shaderManager.setViewMatrix(view);
     g_shaderManager.setProjectionMatrix(projection);
 
-    // Передаем параметры теней
-    g_shaderManager.setLightSpaceMatrix(lightSpaceMatrix);
-    g_shaderManager.setShadowMap(shadowMapTexture);
+    // Параметры теней
+    g_shaderManager.setLightSpaceMatrix(shadowRenderer.getLightSpaceMatrix());
+    g_shaderManager.setShadowMap(shadowRenderer.getShadowTexture());
     g_shaderManager.setUseShadows(true);
     g_shaderManager.setLightPosition(lightPos);
 
-    // Отрисовка в порядке от дальних к ближним
+    // Рендерим сцену
     drawClouds(objects.getCloudSprites());
     drawBirds(objects.getBirds());
     drawObstaclesAsTrees(objects.getObstacles());
     drawFence(objects.getFenceBlocks());
     drawGroundSprites(objects.getFlowerSprites());
-    drawFloor(); // Теперь будет клетчатым
+    drawFloor(); // Пол на Y=0
     drawFood(objects.getFood());
     drawSnake(objects.getSnake());
-
-    // Включаем смешивание для UI
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
+// Новая функция для рендера объектов в теневой проход
+void GameRenderer::renderShadowPassObjects(const GameObjects& objects) {
+    glEnable(GL_DEPTH_TEST);
+
+    // Змея
+    if (!objects.getSnake().empty()) {
+        const auto& snake = objects.getSnake();
+        for (size_t i = 0; i < snake.size(); i++) {
+            const Point& segment = snake[i];
+            float x = (segment.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
+            float y = segment.y * CELL_SIZE + 0.05f;
+            float z = (segment.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, y, z));
+            model = glm::scale(model, glm::vec3(CELL_SIZE * 0.8f));
+
+            // Рендерим простой куб для тени
+            shadowRenderer.renderSimpleCube(model);
+        }
+    }
+
+    // Еда
+    for (const auto& apple : objects.getFood()) {
+        float x = (apple.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
+        float y = apple.y * CELL_SIZE + 0.05f;
+        float z = (apple.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(x, y, z));
+        model = glm::scale(model, glm::vec3(CELL_SIZE * 0.8f));
+
+        shadowRenderer.renderSimpleCube(model);
+    }
+
+    // Деревья-препятствия
+    for (const auto& obstacle : objects.getObstacles()) {
+        for (const auto& block : obstacle.blocks) {
+            float x = (block.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
+            float y = block.y * CELL_SIZE;
+            float z = (block.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+
+            glm::mat4 model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(x, y, z));
+            model = glm::scale(model, glm::vec3(CELL_SIZE * 1.5f));
+
+            shadowRenderer.renderSimpleCube(model);
+        }
+    }
+}
+
+// В initialize():
+void GameRenderer::initialize() {
+    loadAllModels();
+    initOpenGLSettings();
+
+    if (!shadowRenderer.initialize()) {
+        std::cout << "Warning: Shadows disabled" << std::endl;
+    }
+}
 void GameRenderer::drawModel(const Model& model, float x, float y, float z,
     float scale, const glm::vec3& color) {
     glm::mat4 modelMatrix = glm::mat4(1.0f);
@@ -188,12 +190,12 @@ void GameRenderer::drawFloor() {
     glPolygonOffset(0.5f, 1.0f);
 
     glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // Пол на Y=0
     model = glm::scale(model, glm::vec3(2.0f, 1.0f, 2.0f));
-    model = glm::translate(model, glm::vec3(0.0f, -0.5f, 0.0f));
 
     g_shaderManager.setModelMatrix(model);
-    g_shaderManager.setColor(glm::vec3(0.2f, 0.8f, 0.3f)); // Ярко-зеленый для клеток
-    g_shaderManager.setUseTexture(true); // Включаем текстуры для генерации узора
+    g_shaderManager.setColor(glm::vec3(0.2f, 0.8f, 0.3f)); // Зеленый цвет
+    g_shaderManager.setUseTexture(true);
 
     floorModel.draw();
 
@@ -867,9 +869,11 @@ void GameRenderer::createTexturedSphereModel(Model& model) {
 
 void GameRenderer::createTexturedFloorModel(Model& model) {
     float floorSize = 8.0f;
-    int gridCells = 16; // Количество клеток по каждой оси
+    int gridCells = 16;
 
-    // Создаем пол с большим количеством треугольников для гладкого узора
+    // Очищаем вершины
+    model.vertices.clear();
+
     for (int i = 0; i < gridCells; i++) {
         for (int j = 0; j < gridCells; j++) {
             // Координаты ячейки
@@ -879,15 +883,15 @@ void GameRenderer::createTexturedFloorModel(Model& model) {
             float z2 = -floorSize + (float)(j + 1) * (2.0f * floorSize / gridCells);
 
             Vertex v1, v2, v3, v4;
-            v1.position = glm::vec3(x1, -0.1f, z1);
-            v2.position = glm::vec3(x1, -0.1f, z2);
-            v3.position = glm::vec3(x2, -0.1f, z1);
-            v4.position = glm::vec3(x2, -0.1f, z2);
+            v1.position = glm::vec3(x1, 0.0f, z1); // Меняем Y с -0.1f на 0.0f
+            v2.position = glm::vec3(x1, 0.0f, z2);
+            v3.position = glm::vec3(x2, 0.0f, z1);
+            v4.position = glm::vec3(x2, 0.0f, z2);
 
             glm::vec3 normal(0.0f, 1.0f, 0.0f);
             v1.normal = v2.normal = v3.normal = v4.normal = normal;
 
-            // Текстурные координаты для генерации узора
+            // Текстурные координаты
             v1.texCoords = glm::vec2((float)i / gridCells, (float)j / gridCells);
             v2.texCoords = glm::vec2((float)i / gridCells, (float)(j + 1) / gridCells);
             v3.texCoords = glm::vec2((float)(i + 1) / gridCells, (float)j / gridCells);
@@ -1565,100 +1569,16 @@ void GameRenderer::createFenceCorner(std::vector<Vertex>& vertices, float x, flo
         CELL_SIZE, 0.04f, color);
 }
 
-void GameRenderer::drawObjectsForShadowPass(const GameObjects& objects) {
-    // Рендерим все объекты, которые отбрасывают тени
-    // Пропускаем пол, облака и другие фоновые объекты
 
-    // Змея
-    if (!objects.getSnake().empty()) {
-        const auto& snake = objects.getSnake();
-        for (size_t i = 0; i < snake.size(); i++) {
-            const Point& segment = snake[i];
-            float x = (segment.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-            float y = segment.y * CELL_SIZE + 0.05f;
-            float z = (segment.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+// В функции renderShadowObject исправляем:
+void GameRenderer::renderShadowObject(const glm::mat4& modelMatrix) {
+    // Используем shadowRenderer для установки матрицы модели
+    shadowRenderer.renderObjectForShadows(modelMatrix);
 
-            glm::mat4 model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(x, y, z));
-            model = glm::scale(model, glm::vec3(CELL_SIZE * 0.8f));
+    // Рендерим объект (используем простую геометрию)
+    static GLuint simpleCubeVAO = 0;
 
-            // Для головы змеи - отдельная логика поворота
-            if (i == 0) {
-                float rotationAngle = calculateSegmentRotation(snake, i);
-                model = glm::rotate(model, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
-            }
-
-            glUniformMatrix4fv(glGetUniformLocation(shadowShaderProgram, "model"),
-                1, GL_FALSE, glm::value_ptr(model));
-
-            // Для теней рисуем только геометрию, без текстур
-            Model* modelToDraw = &snakeBodyModel;
-            if (i == 0) modelToDraw = &snakeHeadModel;
-            else if (i == snake.size() - 1) modelToDraw = &snakeTailModel;
-
-            modelToDraw->draw();
-        }
-    }
-
-    // Еда
-    for (const auto& apple : objects.getFood()) {
-        float x = (apple.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = apple.y * CELL_SIZE + 0.05f;
-        float z = (apple.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
-
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(x, y, z));
-        model = glm::scale(model, glm::vec3(CELL_SIZE * 0.8f));
-
-        glUniformMatrix4fv(glGetUniformLocation(shadowShaderProgram, "model"),
-            1, GL_FALSE, glm::value_ptr(model));
-
-        appleModel.draw();
-    }
-
-    // Деревья-препятствия
-    for (const auto& obstacle : objects.getObstacles()) {
-        for (const auto& block : obstacle.blocks) {
-            float x = (block.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-            float y = block.y * CELL_SIZE;
-            float z = (block.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
-
-            glm::mat4 model = glm::mat4(1.0f);
-            model = glm::translate(model, glm::vec3(x, y, z));
-            model = glm::scale(model, glm::vec3(CELL_SIZE * 1.5f));
-
-            glUniformMatrix4fv(glGetUniformLocation(shadowShaderProgram, "model"),
-                1, GL_FALSE, glm::value_ptr(model));
-
-            treeModel.draw();
-        }
-    }
-
-    // Забор
-    for (const auto& fenceBlock : objects.getFenceBlocks()) {
-        float x = (fenceBlock.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = fenceBlock.y * CELL_SIZE;
-        float z = (fenceBlock.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
-
-        // Для забора используем упрощенную модель
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(x, y, z));
-        model = glm::scale(model, glm::vec3(0.5f, 0.25f, 0.5f)); // Упрощенный столб
-
-        glUniformMatrix4fv(glGetUniformLocation(shadowShaderProgram, "model"),
-            1, GL_FALSE, glm::value_ptr(model));
-
-        // Рисуем простой куб для тени от забора
-        createSimpleCubeModelForShadows();
-    }
-}
-
-void GameRenderer::createSimpleCubeModelForShadows() {
-    // Простой куб для рендера в карту теней
-    static GLuint cubeVAO = 0;
-    static GLuint cubeVBO = 0;
-
-    if (cubeVAO == 0) {
+    if (simpleCubeVAO == 0) {
         float vertices[] = {
             // back face
             -0.5f, -0.5f, -0.5f,
@@ -1709,20 +1629,23 @@ void GameRenderer::createSimpleCubeModelForShadows() {
              -0.5f,  0.5f, -0.5f,
         };
 
-        glGenVertexArrays(1, &cubeVAO);
-        glGenBuffers(1, &cubeVBO);
+        GLuint VBO;
+        glGenVertexArrays(1, &simpleCubeVAO);
+        glGenBuffers(1, &VBO);
 
-        glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO);
         glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-        glBindVertexArray(cubeVAO);
-        glEnableVertexAttribArray(0);
+        glBindVertexArray(simpleCubeVAO);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
     }
 
-    glBindVertexArray(cubeVAO);
+    // Рендерим
+    glBindVertexArray(simpleCubeVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
 }

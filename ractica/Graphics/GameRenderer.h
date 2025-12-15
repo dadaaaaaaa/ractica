@@ -8,6 +8,7 @@
 #include "../Objects/GameObjects.h"
 #include "../UI/GameUI.h"
 #include <GLFW/glfw3.h>
+#include "../ShadowRenderer.h"
 
 class GameRenderer {
 private:
@@ -24,10 +25,9 @@ private:
     Model flowerModel;
     Model treeModel;
     Model appleModel;
-    GLuint shadowFBO;
-    GLuint shadowMapTexture;
-    GLuint shadowShaderProgram;
     glm::mat4 lightSpaceMatrix;
+    ShadowRenderer shadowRenderer;
+
 
     // Новые функции
     void initShadowMapping();
@@ -132,5 +132,7 @@ public:
         float length, float thickness, const glm::vec3& color);
     void createFenceCorner(std::vector<Vertex>& vertices, float x, float y, float z,
         const glm::vec3& color);
-
+    void renderShadowPassObjects(const GameObjects& objects);
+    void renderShadowObjects(const GameObjects& objects);
+    void renderShadowObject(const glm::mat4& modelMatrix);
 };
