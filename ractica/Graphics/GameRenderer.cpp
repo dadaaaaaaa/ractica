@@ -85,19 +85,30 @@ void GameRenderer::drawModel(const Model& model, float x, float y, float z,
 }
 
 void GameRenderer::drawFloor() {
-    // Поднимаем пол выше
+    // МАКСИМАЛЬНЫЙ polygon offset для полного устранения мерцания
     glEnable(GL_POLYGON_OFFSET_FILL);
-    glPolygonOffset(0.5f, 1.0f); // Меньше смещение для пола
+    glPolygonOffset(5.0f, 10.0f); // Очень большие значения
 
+    // Опускаем пол НИЖЕ всех остальных объектов
     glm::mat4 model = glm::mat4(1.0f);
-    model = glm::scale(model, glm::vec3(2.0f, 1.0f, 2.0f));
-    model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // Пол на уровне y = 0
+
+    // Пол должен быть достаточно большим
+    float floorScale = GRID_WIDTH * CELL_SIZE * 3.0f; // В 3 раза больше игрового поля
+    model = glm::scale(model, glm::vec3(floorScale, 1.0f, floorScale));
+
+    // ОПУСКАЕМ на 0.05 единиц
+    model = glm::translate(model, glm::vec3(0.0f, -0.05f, 0.0f));
 
     g_shaderManager.setModelMatrix(model);
     g_shaderManager.setColor(glm::vec3(0.3f, 0.6f, 0.2f));
-    g_shaderManager.setUseTexture(floorModel.hasTexture);
+    g_shaderManager.setUseTexture(false); // Отключаем текстуру для пола
+
+    g_shaderManager.setIsFloor(true);
+    g_shaderManager.setCellSize(CELL_SIZE);
 
     floorModel.draw();
+
+    g_shaderManager.setIsFloor(false);
 
     glDisable(GL_POLYGON_OFFSET_FILL);
 }

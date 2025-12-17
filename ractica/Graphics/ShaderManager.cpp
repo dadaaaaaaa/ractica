@@ -35,11 +35,60 @@ const char* fragmentShaderSource = R"(
     
     uniform vec3 color;
     uniform bool useTexture;
+    uniform bool isFloor;
+    uniform float cellSize;
     
     void main() {
         vec3 result;
         
-        if (useTexture) {
+        if (isFloor) {
+            // ПИКСЕЛЬНО-ЧЕТКАЯ СЕТКА БЕЗ МЕРЦАНИЯ И "ПЛЫВУЩЕСТИ"
+            
+            // 1. Вычисляем координаты клетки в целых числах
+            int cellX = int(floor(FragPos.x / cellSize));
+            int cellZ = int(floor(FragPos.z / cellSize));
+            
+            // 2. Вычисляем позицию внутри клетки от 0.0 до 1.0
+            float posX = fract(FragPos.x / cellSize);
+            float posZ = fract(FragPos.z / cellSize);
+            
+            // 3. ТОЛСТЫЕ линии сетки - 8% от размера клетки
+            float gridWidth = 0.08; // Фиксированная толщина (не зависит от расстояния)
+            
+            // 4. Определяем, находимся ли мы на линии сетки
+            // Используем step() для абсолютно четких границ
+            float isGridX = step(1.0 - gridWidth, posX) + step(1.0 - gridWidth, 1.0 - posX);
+            float isGridZ = step(1.0 - gridWidth, posZ) + step(1.0 - gridWidth, 1.0 - posZ);
+            float isGrid = min(1.0, isGridX + isGridZ);
+            
+            // 5. ЯРКИЕ контрастные цвета для лучшей видимости
+            vec3 lightCellColor = vec3(0.4f, 0.75f, 0.35f);   // Ярко-зеленый
+            vec3 darkCellColor = vec3(0.3f, 0.65f, 0.25f);    // Темно-зеленый
+            vec3 gridColor = vec3(0.15f, 0.45f, 0.1f);        // Очень темный для линий
+            
+            // 6. Шахматный паттерн - проверяем четность суммы координат
+            bool isDarkCell = ((cellX + cellZ) & 1) == 0; // Битовая операция для четности
+            
+            // 7. Выбираем цвет клетки
+            vec3 cellColor = isDarkCell ? darkCellColor : lightCellColor;
+            
+            // 8. Финальный цвет - либо цвет линии, либо цвет клетки
+            result = mix(cellColor, gridColor, isGrid);
+            
+            // 9. ОЧЕНЬ простое освещение без сложных вычислений
+            // Используем фиксированное значение для устранения мерцания
+            float lightFactor = 0.85 + 0.15 * max(0.0, Normal.y);
+            result *= lightFactor;
+            
+            // 10. Добавляем небольшой градиент для объема (опционально)
+            // Только для клеток, не для линий
+            if (isGrid < 0.5) {
+                float gradient = 0.95 + 0.05 * (posX * posZ);
+                result *= gradient;
+            }
+            
+        } else if (useTexture) {
+            // Существующая логика для текстурных объектов
             if (color.r > 0.8 && color.g < 0.2) {
                 float woodPattern = sin(TexCoords.x * 30.0) * 0.3 + 0.7;
                 float ringPattern = sin(TexCoords.y * 15.0) * 0.2 + 0.8;
@@ -70,10 +119,13 @@ const char* fragmentShaderSource = R"(
                 result = color * pattern;
             }
             
+            // Освещение для текстурных объектов
             vec3 lightDir = vec3(0.0, -1.0, 0.0);
             float diff = max(dot(normalize(Normal), -lightDir), 0.3);
             result = result * (0.7 + 0.3 * diff);
+            
         } else {
+            // Для нетекстурных объектов
             vec3 lightDir = vec3(0.0, -1.0, 0.0);
             float diff = max(dot(normalize(Normal), -lightDir), 0.2);
             vec3 ambient = 0.6 * color;
@@ -112,7 +164,31 @@ const char* uiFragmentShaderSource = R"(
 )";
 
 ShaderManager::ShaderManager() : shaderProgram(0), uiShaderProgram(0) {}
+void ShaderManager::setIsFloor(bool isFloor) const {
+    GLint isFloorLoc = glGetUniformLocation(shaderProgram, "isFloor");
+    if (isFloorLoc != -1) {
+        glUniform1i(isFloorLoc, isFloor);
+    }
+}
+void ShaderManager::setGridWidth(float width) const {
+    GLint gridWidthLoc = glGetUniformLocation(shaderProgram, "gridWidth");
+    if (gridWidthLoc != -1) {
+        glUniform1f(gridWidthLoc, width);
+    }
+}
 
+void ShaderManager::setGridDepth(float depth) const {
+    GLint gridDepthLoc = glGetUniformLocation(shaderProgram, "gridDepth");
+    if (gridDepthLoc != -1) {
+        glUniform1f(gridDepthLoc, depth);
+    }
+}
+void ShaderManager::setCellSize(float cellSize) const {
+    GLint cellSizeLoc = glGetUniformLocation(shaderProgram, "cellSize");
+    if (cellSizeLoc != -1) {
+        glUniform1f(cellSizeLoc, cellSize);
+    }
+}
 ShaderManager::~ShaderManager() {
     if (shaderProgram) glDeleteProgram(shaderProgram);
     if (uiShaderProgram) glDeleteProgram(uiShaderProgram);
