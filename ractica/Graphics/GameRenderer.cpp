@@ -85,13 +85,13 @@ void GameRenderer::drawModel(const Model& model, float x, float y, float z,
 }
 
 void GameRenderer::drawFloor() {
-    // Смещение для пола (самый дальний объект)
+    // Поднимаем пол выше
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(0.5f, 1.0f); // Меньше смещение для пола
 
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::scale(model, glm::vec3(2.0f, 1.0f, 2.0f));
-    model = glm::translate(model, glm::vec3(0.0f, -0.5f, 0.0f));
+    model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // Пол на уровне y = 0
 
     g_shaderManager.setModelMatrix(model);
     g_shaderManager.setColor(glm::vec3(0.3f, 0.6f, 0.2f));
@@ -112,7 +112,7 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
     for (size_t i = 0; i < snake.size(); i++) {
         const Point& segment = snake[i];
         float x = (segment.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = segment.y * CELL_SIZE + 0.05f;
+        float y = segment.y * CELL_SIZE + 0.1f; // Поднимаем выше на 0.1f
         float z = (segment.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
         const Model* modelToDraw = &snakeBodyModel;
@@ -184,7 +184,7 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
 
     for (const auto& apple : food) {
         float x = (apple.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = apple.y * CELL_SIZE + 0.05f;
+        float y = apple.y * CELL_SIZE + 0.1f; // Поднимаем на уровень пола
         float z = (apple.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
         drawModel(appleModel, x, y, z, CELL_SIZE * 0.8f, glm::vec3(1.0f, 0.8f, 0.2f));
@@ -201,7 +201,7 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
     for (const auto& obstacle : obstacles) {
         for (const auto& block : obstacle.blocks) {
             float x = (block.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-            float y = block.y * CELL_SIZE;
+            float y = block.y * CELL_SIZE; // Деревья на уровне пола
             float z = (block.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
             drawModel(treeModel, x, y, z, CELL_SIZE * 1.5f, glm::vec3(0.1f, 0.4f, 0.1f));
@@ -216,7 +216,7 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
 
     for (const auto& fenceBlock : fenceBlocks) {
         float x = (fenceBlock.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = fenceBlock.y * CELL_SIZE;
+        float y = fenceBlock.y * CELL_SIZE + 0.05f; // Поднимаем забор немного над полом
         float z = (fenceBlock.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
         glm::vec3 fenceColor(0.55f, 0.27f, 0.07f);
@@ -305,8 +305,7 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
 
         monolithicFenceModel.draw();
     }
-}
-void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
+}void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
     // Смещение для облаков (самые дальние)
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(0.1f, 0.5f); // Минимальное смещение
@@ -374,10 +373,13 @@ void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
 
     for (const auto& flower : flowerSprites) {
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, flower.position);
+        // Поднимаем цветы на уровень пола
+        glm::vec3 position = flower.position;
+        position.y += 0.05f; // Немного поднимаем над полом
+        model = glm::translate(model, position);
         model = glm::scale(model, glm::vec3(flower.size));
 
-        glm::vec3 toCamera = glm::normalize(g_camera.getPosition() - flower.position);
+        glm::vec3 toCamera = glm::normalize(g_camera.getPosition() - position);
         float angle = atan2f(toCamera.x, toCamera.z);
         model = glm::rotate(model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
 
@@ -771,10 +773,10 @@ void GameRenderer::createTexturedFloorModel(Model& model) {
     float floorSize = 8.0f;
 
     Vertex v1, v2, v3, v4;
-    v1.position = glm::vec3(-floorSize, -0.1f, -floorSize);
-    v2.position = glm::vec3(-floorSize, -0.1f, floorSize);
-    v3.position = glm::vec3(floorSize, -0.1f, -floorSize);
-    v4.position = glm::vec3(floorSize, -0.1f, floorSize);
+    v1.position = glm::vec3(-floorSize, 0.0f, -floorSize); // y = 0
+    v2.position = glm::vec3(-floorSize, 0.0f, floorSize);  // y = 0
+    v3.position = glm::vec3(floorSize, 0.0f, -floorSize);  // y = 0
+    v4.position = glm::vec3(floorSize, 0.0f, floorSize);   // y = 0
 
     glm::vec3 normal(0.0f, 1.0f, 0.0f);
     v1.normal = v2.normal = v3.normal = v4.normal = normal;
