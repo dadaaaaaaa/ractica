@@ -366,18 +366,13 @@ void GameUI::drawPauseMenu() {
 void GameUI::drawSettingsMenu(float gameSpeed, const std::string& playerName,
     float speedMultiplier, const std::string& speedDisplayText,
     bool isNameInputActive, bool doubleBufferingEnabled) {
-
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearColor(0.1f, 0.3f, 0.2f, 1.0f);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
     drawCenteredText(550, "SETTINGS", 1.0f, 1.0f, 1.0f);
-
-    // Поле ввода имени
     drawNameInputField(playerName, isNameInputActive);
-
-    // Настройка скорости
     drawCenteredText(300, "SPEED", 1.0f, 1.0f, 1.0f);
 
     float multiplierY = getScaledY(250);
@@ -545,7 +540,6 @@ void GameUI::drawControlsMenu() {
     drawCenteredText(yPos, "ESC - Pause/Menu", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
     drawCenteredText(yPos, "P - Toggle pause", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
     drawCenteredText(yPos, "R - Restart game", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
-    drawCenteredText(yPos, "D - Debug info", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
 
     for (auto& button : controlsButtons) {
         button.hovered = button.contains(mouseX, mouseY);

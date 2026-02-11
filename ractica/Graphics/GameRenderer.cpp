@@ -127,15 +127,15 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
         float z = (segment.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
         const Model* modelToDraw = &snakeBodyModel;
-        glm::vec3 color = glm::vec3(0.0f, 0.7f, 0.0f);
+        glm::vec3 color = glm::vec3(0.0f, 0.0f, 0.0f);
 
         if (i == 0) {
             modelToDraw = &snakeHeadModel;
-            color = glm::vec3(0.0f, 1.0f, 0.0f);
+            color = glm::vec3(0.0f,0.0f, 0.0f);
         }
         else if (i == snake.size() - 1) {
             modelToDraw = &snakeTailModel;
-            color = glm::vec3(0.0f, 0.5f, 0.0f);
+            color = glm::vec3(0.0f, 0.0f, 0.0f);
         }
 
         float rotationAngle = calculateSegmentRotation(snake, i);
@@ -226,8 +226,10 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
     std::vector<Vertex> allFenceVertices;
 
     for (const auto& fenceBlock : fenceBlocks) {
+        // ВАЖНО: Используем ТОЧНО ТЕ ЖЕ координаты, что и для других объектов
+        // Как в drawSnake(), drawFood() и т.д.
         float x = (fenceBlock.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = fenceBlock.y * CELL_SIZE + 0.05f; // Поднимаем забор немного над полом
+        float y = fenceBlock.y * CELL_SIZE;
         float z = (fenceBlock.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
 
         glm::vec3 fenceColor(0.55f, 0.27f, 0.07f);
@@ -239,61 +241,74 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
             (fenceBlock.x == 0 && fenceBlock.z == GRID_DEPTH - 1) ||
             (fenceBlock.x == GRID_WIDTH - 1 && fenceBlock.z == GRID_DEPTH - 1);
 
-        // Определяем стороны
+        // Определяем стороны (забор занимает клетки на границе)
         bool isNorth = (fenceBlock.z == 0);
         bool isSouth = (fenceBlock.z == GRID_DEPTH - 1);
         bool isWest = (fenceBlock.x == 0);
         bool isEast = (fenceBlock.x == GRID_WIDTH - 1);
 
         if (isCorner) {
-            // Угловой столб - побольше
-            createFencePost(allFenceVertices, x, y, z, 0.1f, 0.28f, fenceColor);
+            // Угловая клетка - делаем столб в ЦЕНТРЕ клетки
+            // Столб занимает 80% клетки
+            float postSize = CELL_SIZE * 0.8f;
+            createFencePost(allFenceVertices, x, y, z,
+                postSize, 0.28f, fenceColor);
 
-            // Соединительные перекладины
+            // Перекладины ОТ центра клетки
             if (fenceBlock.x == 0) { // Левый угол
-                // Перекладина вправо
-                createFenceRailHorizontal(allFenceVertices, x + CELL_SIZE / 2.0f, y + 0.2f, z,
-                    CELL_SIZE / 2.0f, 0.03f, darkColor);
-                createFenceRailHorizontal(allFenceVertices, x + CELL_SIZE / 2.0f, y + 0.1f, z,
+                // Перекладина вправо от центра
+                createFenceRailHorizontal(allFenceVertices,
+                    x + CELL_SIZE / 2.0f, y + 0.2f, z,
                     CELL_SIZE / 2.0f, 0.03f, darkColor);
             }
             else { // Правый угол
-                // Перекладина влево
-                createFenceRailHorizontal(allFenceVertices, x - CELL_SIZE / 2.0f, y + 0.2f, z,
-                    CELL_SIZE / 2.0f, 0.03f, darkColor);
-                createFenceRailHorizontal(allFenceVertices, x - CELL_SIZE / 2.0f, y + 0.1f, z,
+                // Перекладина влево от центра
+                createFenceRailHorizontal(allFenceVertices,
+                    x - CELL_SIZE / 2.0f, y + 0.2f, z,
                     CELL_SIZE / 2.0f, 0.03f, darkColor);
             }
 
             if (fenceBlock.z == 0) { // Верхний угол
-                // Перекладина вниз
-                createFenceRailVertical(allFenceVertices, x, y + 0.2f, z + CELL_SIZE / 2.0f,
-                    CELL_SIZE / 2.0f, 0.03f, darkColor);
-                createFenceRailVertical(allFenceVertices, x, y + 0.1f, z + CELL_SIZE / 2.0f,
+                // Перекладина вниз от центра
+                createFenceRailVertical(allFenceVertices,
+                    x, y + 0.2f, z + CELL_SIZE / 2.0f,
                     CELL_SIZE / 2.0f, 0.03f, darkColor);
             }
             else { // Нижний угол
-                // Перекладина вверх
-                createFenceRailVertical(allFenceVertices, x, y + 0.2f, z - CELL_SIZE / 2.0f,
-                    CELL_SIZE / 2.0f, 0.03f, darkColor);
-                createFenceRailVertical(allFenceVertices, x, y + 0.1f, z - CELL_SIZE / 2.0f,
+                // Перекладина вверх от центра
+                createFenceRailVertical(allFenceVertices,
+                    x, y + 0.2f, z - CELL_SIZE / 2.0f,
                     CELL_SIZE / 2.0f, 0.03f, darkColor);
             }
+
         }
         else if (isNorth || isSouth || isWest || isEast) {
-            // Обычный столбик (меньше для плотного забора)
-            createFencePost(allFenceVertices, x, y, z, 0.06f, 0.25f, fenceColor);
+            // Граничная клетка - столб в центре
+            float postSize = CELL_SIZE * 0.6f;
+            createFencePost(allFenceVertices, x, y, z,
+                postSize, 0.25f, fenceColor);
 
-            // Перекладины (теперь короче, так как столбики ближе)
-            if (isNorth || isSouth) {
-                // Горизонтальные перекладины (по X)
+            // Перекладины ВДОЛЬ границы
+            if (isNorth) {
+                // Горизонтальная перекладина через центр клетки
                 createFenceRailHorizontal(allFenceVertices, x, y + 0.2f, z,
                     CELL_SIZE, 0.03f, darkColor);
                 createFenceRailHorizontal(allFenceVertices, x, y + 0.1f, z,
                     CELL_SIZE, 0.03f, darkColor);
             }
-            else {
-                // Вертикальные перекладины (по Z)
+            else if (isSouth) {
+                createFenceRailHorizontal(allFenceVertices, x, y + 0.2f, z,
+                    CELL_SIZE, 0.03f, darkColor);
+                createFenceRailHorizontal(allFenceVertices, x, y + 0.1f, z,
+                    CELL_SIZE, 0.03f, darkColor);
+            }
+            else if (isWest) {
+                createFenceRailVertical(allFenceVertices, x, y + 0.2f, z,
+                    CELL_SIZE, 0.03f, darkColor);
+                createFenceRailVertical(allFenceVertices, x, y + 0.1f, z,
+                    CELL_SIZE, 0.03f, darkColor);
+            }
+            else if (isEast) {
                 createFenceRailVertical(allFenceVertices, x, y + 0.2f, z,
                     CELL_SIZE, 0.03f, darkColor);
                 createFenceRailVertical(allFenceVertices, x, y + 0.1f, z,
@@ -302,7 +317,7 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
         }
     }
 
-    // Рисуем весь забор как монолитную структуру
+    // Рисуем забор
     if (!allFenceVertices.empty()) {
         Model monolithicFenceModel;
         monolithicFenceModel.vertices = allFenceVertices;
@@ -316,7 +331,8 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
 
         monolithicFenceModel.draw();
     }
-}void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
+}
+void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
     // Смещение для облаков (самые дальние)
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(0.1f, 0.5f); // Минимальное смещение

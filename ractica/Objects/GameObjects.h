@@ -24,7 +24,7 @@ private:
     GameState gameState;
     float gameSpeed;
     GameState previousState;
-
+    bool gameFrozen;
     // ДОБАВЛЕНО: Поля для системы рекордов и времени игры
     std::vector<HighScore> highScores;
     static const int MAX_HIGH_SCORES = 10;
@@ -38,6 +38,8 @@ private:
     std::string settingsFileName = "settings.dat";
     std::string saveFileName = "savegame.dat";
 public:
+    void toggleFreeze() { gameFrozen = !gameFrozen; }
+    bool isFrozen() const { return gameFrozen; }
     GameObjects();
     void saveOnExit();
     void returnToMainMenu();

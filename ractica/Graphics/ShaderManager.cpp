@@ -42,49 +42,76 @@ const char* fragmentShaderSource = R"(
         vec3 result;
         
         if (isFloor) {
-            // ПИКСЕЛЬНО-ЧЕТКАЯ СЕТКА БЕЗ МЕРЦАНИЯ И "ПЛЫВУЩЕСТИ"
+            // АБСОЛЮТНО ЧЕТКАЯ СЕТКА БЕЗ МЕРЦАНИЯ И ПЛЫВУЩЕСТИ
             
-            // 1. Вычисляем координаты клетки в целых числах
-            int cellX = int(floor(FragPos.x / cellSize));
-            int cellZ = int(floor(FragPos.z / cellSize));
+            // 1. Используем МИРОВЫЕ координаты без преобразований
+            // Добавляем небольшое смещение для стабильности
+            float stableX = FragPos.x + 1000.0; // Смещение для стабильности floor()
+            float stableZ = FragPos.z + 1000.0;
             
-            // 2. Вычисляем позицию внутри клетки от 0.0 до 1.0
-            float posX = fract(FragPos.x / cellSize);
-            float posZ = fract(FragPos.z / cellSize);
+            // 2. Вычисляем индексы клеток с высокой точностью
+            // Используем инвариантную относительно погрешности формулу
+            ivec2 cellIdx = ivec2(
+                int(floor((stableX + 0.001) / cellSize)),
+                int(floor((stableZ + 0.001) / cellSize))
+            );
             
-            // 3. ТОЛСТЫЕ линии сетки - 8% от размера клетки
-            float gridWidth = 0.08; // Фиксированная толщина (не зависит от расстояния)
+            // 3. Вычисляем позицию внутри клетки с фиксированной точностью
+            vec2 cellPos = vec2(
+                (stableX - float(cellIdx.x) * cellSize) / cellSize,
+                (stableZ - float(cellIdx.y) * cellSize) / cellSize
+            );
             
-            // 4. Определяем, находимся ли мы на линии сетки
-            // Используем step() для абсолютно четких границ
-            float isGridX = step(1.0 - gridWidth, posX) + step(1.0 - gridWidth, 1.0 - posX);
-            float isGridZ = step(1.0 - gridWidth, posZ) + step(1.0 - gridWidth, 1.0 - posZ);
-            float isGrid = min(1.0, isGridX + isGridZ);
+            // 4. ТОЛСТЫЕ линии сетки - 10% от размера клетки
+            float gridLineWidth = 0.1;
             
-            // 5. ЯРКИЕ контрастные цвета для лучшей видимости
-            vec3 lightCellColor = vec3(0.4f, 0.75f, 0.35f);   // Ярко-зеленый
-            vec3 darkCellColor = vec3(0.3f, 0.65f, 0.25f);    // Темно-зеленый
-            vec3 gridColor = vec3(0.15f, 0.45f, 0.1f);        // Очень темный для линий
+            // 5. Определяем линии сетки с ЗАПАСОМ для устранения погрешности
+            float epsilon = 0.001; // Маленькое значение для устойчивости
             
-            // 6. Шахматный паттерн - проверяем четность суммы координат
-            bool isDarkCell = ((cellX + cellZ) & 1) == 0; // Битовая операция для четности
+            // Расстояние до ближайшей линии
+            float distToVertical = min(cellPos.x, 1.0 - cellPos.x);
+            float distToHorizontal = min(cellPos.y, 1.0 - cellPos.y);
             
-            // 7. Выбираем цвет клетки
+            // Являемся ли мы частью вертикальной линии?
+            float isVerticalLine = step(distToVertical, gridLineWidth + epsilon);
+            
+            // Являемся ли мы частью горизонтальной линии?
+            float isHorizontalLine = step(distToHorizontal, gridLineWidth + epsilon);
+            
+            // Находимся ли мы на любой линии сетки?
+            float isAnyLine = min(1.0, isVerticalLine + isHorizontalLine);
+            
+            // 6. Цвета с ХОРОШИМ КОНТРАСТОМ
+            vec3 lightCellColor = vec3(0.45f, 0.75f, 0.35f);   // Ярче
+            vec3 darkCellColor = vec3(0.35f, 0.65f, 0.25f);    // Темнее
+            vec3 gridColor = vec3(0.2f, 0.5f, 0.15f);          // Контрастный для линий
+            
+            // 7. Шахматный паттерн - используем четность суммы координат
+            // Добавляем большие числа для стабильности при отрицательных координатах
+            int patternX = cellIdx.x + 10000;
+            int patternZ = cellIdx.y + 10000;
+            bool isDarkCell = ((patternX + patternZ) & 1) == 0;
+            
+            // 8. Выбираем цвет клетки
             vec3 cellColor = isDarkCell ? darkCellColor : lightCellColor;
             
-            // 8. Финальный цвет - либо цвет линии, либо цвет клетки
-            result = mix(cellColor, gridColor, isGrid);
+            // 9. Финальный цвет - если на линии, то цвет линии, иначе цвет клетки
+            // Используем smoothstep для небольшого сглаживания (но не мерцания)
+            float lineBlend = smoothstep(gridLineWidth - 0.005, gridLineWidth + 0.005, 
+                                        min(distToVertical, distToHorizontal));
+            result = mix(gridColor, cellColor, lineBlend);
             
-            // 9. ОЧЕНЬ простое освещение без сложных вычислений
+            // 10. ПРОСТОЕ И СТАБИЛЬНОЕ ОСВЕЩЕНИЕ
             // Используем фиксированное значение для устранения мерцания
-            float lightFactor = 0.85 + 0.15 * max(0.0, Normal.y);
+            float lightFactor = 0.9 + 0.1 * clamp(Normal.y, 0.0, 1.0);
             result *= lightFactor;
             
-            // 10. Добавляем небольшой градиент для объема (опционально)
-            // Только для клеток, не для линий
-            if (isGrid < 0.5) {
-                float gradient = 0.95 + 0.05 * (posX * posZ);
-                result *= gradient;
+            // 11. Добавляем очень слабую текстуру для клеток (не для линий)
+            if (isAnyLine < 0.1) {
+                // Детерминированный паттерн без тригонометрии
+                float texturePattern = 0.95 + 0.05 * 
+                    fract(sin(float(cellIdx.x) * 12.9898 + float(cellIdx.y) * 78.233) * 43758.5453);
+                result *= texturePattern;
             }
             
         } else if (useTexture) {

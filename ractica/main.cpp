@@ -17,7 +17,7 @@ static bool g_useDoubleBuffer = true;
 int main() {
     // Инициализация GLFW
     if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW" << std::endl;
+        
         return -1;
     }
 
@@ -26,7 +26,6 @@ int main() {
     GLFWwindow* window = glfwCreateWindow(1200, 800, "3D Snake Game", NULL, NULL);
     g_mainWindow = window; // Сохраняем ссылку на окно
     if (!window) {
-        std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
         return -1;
     }
@@ -46,7 +45,6 @@ int main() {
 
     // Проверка поддержки OpenGL
     if (!GLEW_VERSION_3_3 || !glGenVertexArrays) {
-        std::cerr << "OpenGL 3.3 or required functions not supported!" << std::endl;
         glfwTerminate();
         return -1;
     }
@@ -62,25 +60,15 @@ int main() {
     srand(static_cast<unsigned int>(time(0)));
 
     // Инициализация шейдеров
-    std::cout << "Initializing shaders..." << std::endl;
     if (!g_shaderManager.initialize()) {
-        std::cerr << "Failed to initialize shaders!" << std::endl;
         glfwTerminate();
         return -1;
     }
-
-    // Инициализация игры
-    std::cout << "Initializing game..." << std::endl;
     g_game.initialize();
 
-    // Первый кадр
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     g_game.render();
     glfwSwapBuffers(window);
-
-    std::cout << "Game started successfully!" << std::endl;
-
-    // ★ ГЛАВНЫЙ ЦИКЛ ИГРЫ ★
     double lastUpdateTime = glfwGetTime();
     double lastFrameTime = glfwGetTime();
     int frameCount = 0;

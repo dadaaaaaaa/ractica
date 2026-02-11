@@ -9,7 +9,7 @@ extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 
 GameObjects::GameObjects()
-    : currentDirection(FORWARD),
+    : gameFrozen(false),currentDirection(FORWARD),
     verticalDirection(0),
     score(0),
     gameOver(false),
@@ -160,40 +160,41 @@ void GameObjects::handleSettingsKeyPress(int key) {
 void GameObjects::update() {
     if (gameOver || gameState != PLAYING) return;
 
-    // Контроль времени для движения змейки
     static float lastMoveTime = 0;
     float currentTime = glfwGetTime();
 
     if (currentTime - lastMoveTime < gameSpeed) {
-        // Обновляем только облака и птиц (они могут двигаться каждый кадр)
         updateClouds();
         updateBirds();
-        return; // Ждем пока не пройдет достаточно времени для движения змейки
+        return;
     }
     lastMoveTime = currentTime;
 
-    // Обновление времени игры (только когда змейка двигается)
+    // Обновление времени игры
     gameTimer += gameSpeed;
     if (gameTimer >= 1.0f) {
         gameDuration++;
         gameTimer = 0.0f;
     }
 
-    // ДВИЖЕНИЕ ЗМЕЙКИ (выполняется только с интервалом gameSpeed)
     Point newHead = snake[0];
-
+    if (gameFrozen) {
+        // Можно обновлять только анимации (облака, птицы) для красивого скриншота
+        updateClouds();
+        updateBirds();
+        return;
+    }
     switch (currentDirection) {
     case FORWARD: newHead.z++; break;
     case BACKWARD: newHead.z--; break;
     case RIGHT: newHead.x--; break;
     case LEFT: newHead.x++; break;
     }
-
     newHead.y = 0;
 
     // Проверка столкновения со стенками
-    if (newHead.x < 0 || newHead.x >= GRID_WIDTH ||
-        newHead.z < 0 || newHead.z >= GRID_DEPTH) {
+    if (newHead.x <= 0 || newHead.x >= GRID_WIDTH - 1 ||
+        newHead.z <= 0 || newHead.z >= GRID_DEPTH - 1) {
         gameOver = true;
         gameState = GAME_OVER;
         updateHighScores();
@@ -220,10 +221,8 @@ void GameObjects::update() {
         }
     }
 
-    // Двигаем змейку
     snake.insert(snake.begin(), newHead);
 
-    // Проверка съедания еды
     auto foodIt = std::find(food.begin(), food.end(), newHead);
     if (foodIt != food.end()) {
         score++;
@@ -234,7 +233,6 @@ void GameObjects::update() {
         snake.pop_back();
     }
 
-    // Обновляем облака и птиц (после движения змейки)
     updateClouds();
     updateBirds();
 }
@@ -256,8 +254,6 @@ void GameObjects::initGame() {
     verticalDirection = 0;
     score = 0;
     gameOver = false;
-
-    // ДОБАВЛЕНО: Сброс времени игры
     gameDuration = 0;
     gameTimer = 0.0f;
 
@@ -671,15 +667,17 @@ void GameObjects::updateBirds() {
 
 void GameObjects::handleGameKeyPress(int key) {
     switch (key) {
+    case GLFW_KEY_S:  
+        gameFrozen = !gameFrozen;
+        std::cout << "Game " << (gameFrozen ? "FROZEN" : "UNFROZEN") << std::endl;
+        break;
     case GLFW_KEY_LEFT:
-        // Только поворот змейки
         if (currentDirection == FORWARD) currentDirection = LEFT;
         else if (currentDirection == LEFT) currentDirection = BACKWARD;
         else if (currentDirection == BACKWARD) currentDirection = RIGHT;
         else if (currentDirection == RIGHT) currentDirection = FORWARD;
         break;
     case GLFW_KEY_RIGHT:
-        // Только поворот змейки
         if (currentDirection == FORWARD) currentDirection = RIGHT;
         else if (currentDirection == RIGHT) currentDirection = BACKWARD;
         else if (currentDirection == BACKWARD) currentDirection = LEFT;
