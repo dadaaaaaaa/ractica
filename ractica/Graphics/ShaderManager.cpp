@@ -1,12 +1,8 @@
-п»ї#include "../pch.h"
+#include "../pch.h"
 #include "ShaderManager.h"
 #include <iostream>
 
-// ============================================================================
-// 3D РЁР•Р™Р”Р•Р Р« Р”Р›РЇ РћРЎРќРћР’РќРћР™ Р“Р РђР¤РРљР
-// ============================================================================
-
-// Р’РµСЂС€РёРЅРЅС‹Р№ С€РµР№РґРµСЂ РґР»СЏ 3D РѕР±СЉРµРєС‚РѕРІ
+// Шейдеры для 3D (оставьте без изменений)
 const char* vertexShaderSource = R"(
     #version 330 core
     layout (location = 0) in vec3 aPos;
@@ -29,7 +25,6 @@ const char* vertexShaderSource = R"(
     }
 )";
 
-// Р¤СЂР°РіРјРµРЅС‚РЅС‹Р№ С€РµР№РґРµСЂ РґР»СЏ 3D РѕР±СЉРµРєС‚РѕРІ СЃ РїСЂРѕС†РµРґСѓСЂРЅС‹РјРё С‚РµРєСЃС‚СѓСЂР°РјРё
 const char* fragmentShaderSource = R"(
     #version 330 core
     out vec4 FragColor;
@@ -40,55 +35,124 @@ const char* fragmentShaderSource = R"(
     
     uniform vec3 color;
     uniform bool useTexture;
+    uniform bool isFloor;
+    uniform float cellSize;
     
     void main() {
         vec3 result;
         
-        if (useTexture) {
-            // РџСЂРѕС†РµРґСѓСЂРЅС‹Рµ С‚РµРєСЃС‚СѓСЂС‹ РґР»СЏ СЂР°Р·РЅС‹С… С‚РёРїРѕРІ РѕР±СЉРµРєС‚РѕРІ
+        if (isFloor) {
+            // АБСОЛЮТНО ЧЕТКАЯ СЕТКА БЕЗ МЕРЦАНИЯ И ПЛЫВУЩЕСТИ
+            
+            // 1. Используем МИРОВЫЕ координаты без преобразований
+            // Добавляем небольшое смещение для стабильности
+            float stableX = FragPos.x + 1000.0; // Смещение для стабильности floor()
+            float stableZ = FragPos.z + 1000.0;
+            
+            // 2. Вычисляем индексы клеток с высокой точностью
+            // Используем инвариантную относительно погрешности формулу
+            ivec2 cellIdx = ivec2(
+                int(floor((stableX + 0.001) / cellSize)),
+                int(floor((stableZ + 0.001) / cellSize))
+            );
+            
+            // 3. Вычисляем позицию внутри клетки с фиксированной точностью
+            vec2 cellPos = vec2(
+                (stableX - float(cellIdx.x) * cellSize) / cellSize,
+                (stableZ - float(cellIdx.y) * cellSize) / cellSize
+            );
+            
+            // 4. ТОЛСТЫЕ линии сетки - 10% от размера клетки
+            float gridLineWidth = 0.1;
+            
+            // 5. Определяем линии сетки с ЗАПАСОМ для устранения погрешности
+            float epsilon = 0.001; // Маленькое значение для устойчивости
+            
+            // Расстояние до ближайшей линии
+            float distToVertical = min(cellPos.x, 1.0 - cellPos.x);
+            float distToHorizontal = min(cellPos.y, 1.0 - cellPos.y);
+            
+            // Являемся ли мы частью вертикальной линии?
+            float isVerticalLine = step(distToVertical, gridLineWidth + epsilon);
+            
+            // Являемся ли мы частью горизонтальной линии?
+            float isHorizontalLine = step(distToHorizontal, gridLineWidth + epsilon);
+            
+            // Находимся ли мы на любой линии сетки?
+            float isAnyLine = min(1.0, isVerticalLine + isHorizontalLine);
+            
+            // 6. Цвета с ХОРОШИМ КОНТРАСТОМ
+            vec3 lightCellColor = vec3(0.45f, 0.75f, 0.35f);   // Ярче
+            vec3 darkCellColor = vec3(0.35f, 0.65f, 0.25f);    // Темнее
+            vec3 gridColor = vec3(0.2f, 0.5f, 0.15f);          // Контрастный для линий
+            
+            // 7. Шахматный паттерн - используем четность суммы координат
+            // Добавляем большие числа для стабильности при отрицательных координатах
+            int patternX = cellIdx.x + 10000;
+            int patternZ = cellIdx.y + 10000;
+            bool isDarkCell = ((patternX + patternZ) & 1) == 0;
+            
+            // 8. Выбираем цвет клетки
+            vec3 cellColor = isDarkCell ? darkCellColor : lightCellColor;
+            
+            // 9. Финальный цвет - если на линии, то цвет линии, иначе цвет клетки
+            // Используем smoothstep для небольшого сглаживания (но не мерцания)
+            float lineBlend = smoothstep(gridLineWidth - 0.005, gridLineWidth + 0.005, 
+                                        min(distToVertical, distToHorizontal));
+            result = mix(gridColor, cellColor, lineBlend);
+            
+            // 10. ПРОСТОЕ И СТАБИЛЬНОЕ ОСВЕЩЕНИЕ
+            // Используем фиксированное значение для устранения мерцания
+            float lightFactor = 0.9 + 0.1 * clamp(Normal.y, 0.0, 1.0);
+            result *= lightFactor;
+            
+            // 11. Добавляем очень слабую текстуру для клеток (не для линий)
+            if (isAnyLine < 0.1) {
+                // Детерминированный паттерн без тригонометрии
+                float texturePattern = 0.95 + 0.05 * 
+                    fract(sin(float(cellIdx.x) * 12.9898 + float(cellIdx.y) * 78.233) * 43758.5453);
+                result *= texturePattern;
+            }
+            
+        } else if (useTexture) {
+            // Существующая логика для текстурных объектов
             if (color.r > 0.8 && color.g < 0.2) {
-                // РўРµРєСЃС‚СѓСЂР° РґРµСЂРµРІР°
                 float woodPattern = sin(TexCoords.x * 30.0) * 0.3 + 0.7;
                 float ringPattern = sin(TexCoords.y * 15.0) * 0.2 + 0.8;
                 result = color * woodPattern * ringPattern;
             }
             else if (color.g > 0.8 && color.b < 0.3) {
-                // РўРµРєСЃС‚СѓСЂР° С‚СЂР°РІС‹
                 float grassPattern = sin(TexCoords.x * 50.0) * sin(TexCoords.y * 50.0) * 0.4 + 0.6;
                 result = color * grassPattern;
             }
             else if (color.r > 0.8 && color.g > 0.8) {
-                // РўРµРєСЃС‚СѓСЂР° СЃ РїСЏС‚РЅР°РјРё
                 float spots = step(0.8, sin(TexCoords.x * 40.0) * sin(TexCoords.y * 40.0));
                 result = color * (0.8 + spots * 0.2);
             }
             else if (color.r > 0.9 && color.g > 0.9 && color.b > 0.9) {
-                // РўРµРєСЃС‚СѓСЂР° РѕР±Р»Р°РєРѕРІ
                 float cloud = sin(TexCoords.x * 25.0) * sin(TexCoords.y * 25.0) * 0.5 + 0.5;
                 result = color * cloud;
             }
             else if (color.b > 0.8) {
-                // РўРµРєСЃС‚СѓСЂР° РїС‚РёС†
                 float birdPattern = sin(TexCoords.x * 60.0) * 0.4 + 0.6;
                 result = color * birdPattern;
             }
             else if (color.r > 0.8 || color.g > 0.8 || color.b > 0.8) {
-                // РўРµРєСЃС‚СѓСЂР° С†РІРµС‚РѕРІ
                 float flowerPattern = sin(TexCoords.x * 35.0) * cos(TexCoords.y * 35.0) * 0.3 + 0.7;
                 result = color * flowerPattern;
             }
             else {
-                // РћР±С‰Р°СЏ РїСЂРѕС†РµРґСѓСЂРЅР°СЏ С‚РµРєСЃС‚СѓСЂР°
                 float pattern = sin(TexCoords.x * 20.0) * sin(TexCoords.y * 20.0) * 0.3 + 0.7;
                 result = color * pattern;
             }
             
-            // РџСЂРѕСЃС‚РѕРµ РѕСЃРІРµС‰РµРЅРёРµ
+            // Освещение для текстурных объектов
             vec3 lightDir = vec3(0.0, -1.0, 0.0);
             float diff = max(dot(normalize(Normal), -lightDir), 0.3);
             result = result * (0.7 + 0.3 * diff);
+            
         } else {
-            // Р‘РµР· С‚РµРєСЃС‚СѓСЂС‹ - РїСЂРѕСЃС‚РѕРµ РѕСЃРІРµС‰РµРЅРёРµ
+            // Для нетекстурных объектов
             vec3 lightDir = vec3(0.0, -1.0, 0.0);
             float diff = max(dot(normalize(Normal), -lightDir), 0.2);
             vec3 ambient = 0.6 * color;
@@ -100,25 +164,20 @@ const char* fragmentShaderSource = R"(
     }
 )";
 
-// ============================================================================
-// 2D РЁР•Р™Р”Р•Р Р« Р”Р›РЇ РџРћР›Р¬Р—РћР’РђРўР•Р›Р¬РЎРљРћР“Рћ РРќРўР•Р Р¤Р•Р™РЎРђ
-// ============================================================================
-
-// Р’РµСЂС€РёРЅРЅС‹Р№ С€РµР№РґРµСЂ РґР»СЏ UI СЌР»РµРјРµРЅС‚РѕРІ
+// Шейдеры для 2D интерфейса - ИСПРАВЬТЕ ИМЕНА UNIFORM ПЕРЕМЕННЫХ
 const char* uiVertexShaderSource = R"(
     #version 330 core
-    layout (location = 0) in vec2 aPos;
+layout (location = 0) in vec2 aPos;
 
-    uniform mat4 projection;
-    uniform mat4 model;
+uniform mat4 projection;
+uniform mat4 model;
 
-    void main() {
-        // Р”Р»СЏ 2D РёСЃРїРѕР»СЊР·СѓРµРј С‚РѕР»СЊРєРѕ projection * model
-        gl_Position = projection * model * vec4(aPos, 0.0, 1.0);
-    }
+void main() {
+    // Для 2D используем только projection * model
+    gl_Position = projection * model * vec4(aPos, 0.0, 1.0);
+}
 )";
 
-// Р¤СЂР°РіРјРµРЅС‚РЅС‹Р№ С€РµР№РґРµСЂ РґР»СЏ UI СЌР»РµРјРµРЅС‚РѕРІ СЃ РїРѕРґРґРµСЂР¶РєРѕР№ РїСЂРѕР·СЂР°С‡РЅРѕСЃС‚Рё
 const char* uiFragmentShaderSource = R"(
     #version 330 core
     out vec4 FragColor;
@@ -131,273 +190,188 @@ const char* uiFragmentShaderSource = R"(
     }
 )";
 
-// ============================================================================
-// Р Р•РђР›РР—РђР¦РРЇ РљР›РђРЎРЎРђ SHADERMANAGER
-// ============================================================================
-
-// РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ - РёРЅРёС†РёР°Р»РёР·РёСЂСѓРµС‚ С€РµР№РґРµСЂРЅС‹Рµ РїСЂРѕРіСЂР°РјРјС‹ РЅСѓР»РµРІС‹РјРё Р·РЅР°С‡РµРЅРёСЏРјРё
-ShaderManager::ShaderManager()
-    : shaderProgram(0), uiShaderProgram(0),
-    modelLoc(-1), viewLoc(-1), projectionLoc(-1), colorLoc(-1), useTextureLoc(-1),
-    uiProjectionLoc(-1), uiModelLoc(-1), uiColorLoc(-1), uiAlphaLoc(-1) {
+ShaderManager::ShaderManager() : shaderProgram(0), uiShaderProgram(0) {}
+void ShaderManager::setIsFloor(bool isFloor) const {
+    GLint isFloorLoc = glGetUniformLocation(shaderProgram, "isFloor");
+    if (isFloorLoc != -1) {
+        glUniform1i(isFloorLoc, isFloor);
+    }
+}
+void ShaderManager::setGridWidth(float width) const {
+    GLint gridWidthLoc = glGetUniformLocation(shaderProgram, "gridWidth");
+    if (gridWidthLoc != -1) {
+        glUniform1f(gridWidthLoc, width);
+    }
 }
 
-// Р”РµСЃС‚СЂСѓРєС‚РѕСЂ - РѕС‡РёС‰Р°РµС‚ С€РµР№РґРµСЂРЅС‹Рµ РїСЂРѕРіСЂР°РјРјС‹
+void ShaderManager::setGridDepth(float depth) const {
+    GLint gridDepthLoc = glGetUniformLocation(shaderProgram, "gridDepth");
+    if (gridDepthLoc != -1) {
+        glUniform1f(gridDepthLoc, depth);
+    }
+}
+void ShaderManager::setCellSize(float cellSize) const {
+    GLint cellSizeLoc = glGetUniformLocation(shaderProgram, "cellSize");
+    if (cellSizeLoc != -1) {
+        glUniform1f(cellSizeLoc, cellSize);
+    }
+}
 ShaderManager::~ShaderManager() {
-    cleanup();
+    if (shaderProgram) glDeleteProgram(shaderProgram);
+    if (uiShaderProgram) glDeleteProgram(uiShaderProgram);
 }
 
-// РРЅРёС†РёР°Р»РёР·РёСЂСѓРµС‚ РІСЃРµ С€РµР№РґРµСЂРЅС‹Рµ РїСЂРѕРіСЂР°РјРјС‹
 bool ShaderManager::initialize() {
-    std::cout << "рџЋ® Initializing shader manager..." << std::endl;
-
-    bool success = createShaderProgram() && createUIShaderProgram();
-
-    if (success) {
-        std::cout << "вњ… Shader manager initialized successfully" << std::endl;
-    }
-    else {
-        std::cerr << "вќЊ Failed to initialize shader manager" << std::endl;
-    }
-
-    return success;
+    return createShaderProgram() && createUIShaderProgram();
 }
 
-// РћС‡РёС‰Р°РµС‚ РІСЃРµ С€РµР№РґРµСЂРЅС‹Рµ СЂРµСЃСѓСЂСЃС‹
-void ShaderManager::cleanup() {
-    if (shaderProgram) {
-        glDeleteProgram(shaderProgram);
-        shaderProgram = 0;
-        std::cout << "рџ—‘пёЏ  Deleted 3D shader program" << std::endl;
-    }
-
-    if (uiShaderProgram) {
-        glDeleteProgram(uiShaderProgram);
-        uiShaderProgram = 0;
-        std::cout << "рџ—‘пёЏ  Deleted UI shader program" << std::endl;
-    }
-}
-
-// РђРєС‚РёРІРёСЂСѓРµС‚ 3D С€РµР№РґРµСЂ РґР»СЏ СЂРµРЅРґРµСЂРёРЅРіР° РёРіСЂРѕРІС‹С… РѕР±СЉРµРєС‚РѕРІ
 void ShaderManager::use3DShader() const {
-    if (shaderProgram) {
-        glUseProgram(shaderProgram);
-    }
+    glUseProgram(shaderProgram);
 }
 
-// РђРєС‚РёРІРёСЂСѓРµС‚ UI С€РµР№РґРµСЂ РґР»СЏ СЂРµРЅРґРµСЂРёРЅРіР° РёРЅС‚РµСЂС„РµР№СЃР°
 void ShaderManager::useUIShader() const {
-    if (uiShaderProgram) {
-        glUseProgram(uiShaderProgram);
-    }
+    glUseProgram(uiShaderProgram);
 }
 
-// ============================================================================
-// РњР•РўРћР”Р« Р”Р›РЇ 3D РЁР•Р™Р”Р•Р Рђ
-// ============================================================================
-
-// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РјР°С‚СЂРёС†Сѓ РјРѕРґРµР»Рё РґР»СЏ 3D РѕР±СЉРµРєС‚РѕРІ
 void ShaderManager::setModelMatrix(const glm::mat4& model) const {
-    if (modelLoc != -1) {
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-    }
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 }
 
-// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РјР°С‚СЂРёС†Сѓ РІРёРґР° РґР»СЏ 3D СЃС†РµРЅС‹
 void ShaderManager::setViewMatrix(const glm::mat4& view) const {
-    if (viewLoc != -1) {
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-    }
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 }
 
-// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РјР°С‚СЂРёС†Сѓ РїСЂРѕРµРєС†РёРё РґР»СЏ 3D СЃС†РµРЅС‹
 void ShaderManager::setProjectionMatrix(const glm::mat4& projection) const {
-    if (projectionLoc != -1) {
-        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-    }
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 }
 
-// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ С†РІРµС‚ РґР»СЏ 3D РѕР±СЉРµРєС‚РѕРІ
 void ShaderManager::setColor(const glm::vec3& color) const {
-    if (colorLoc != -1) {
-        glUniform3fv(colorLoc, 1, glm::value_ptr(color));
-    }
+    glUniform3fv(colorLoc, 1, &color[0]);
 }
 
-// Р’РєР»СЋС‡Р°РµС‚/РІС‹РєР»СЋС‡Р°РµС‚ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёРµ С‚РµРєСЃС‚СѓСЂ РґР»СЏ 3D РѕР±СЉРµРєС‚РѕРІ
 void ShaderManager::setUseTexture(bool useTexture) const {
-    if (useTextureLoc != -1) {
-        glUniform1i(useTextureLoc, useTexture);
-    }
+    glUniform1i(useTextureLoc, useTexture);
 }
 
-// ============================================================================
-// РњР•РўРћР”Р« Р”Р›РЇ UI РЁР•Р™Р”Р•Р Рђ
-// ============================================================================
-
-// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РјР°С‚СЂРёС†Сѓ РїСЂРѕРµРєС†РёРё РґР»СЏ UI СЌР»РµРјРµРЅС‚РѕРІ
-void ShaderManager::setUIProjectionMatrix(const glm::mat4& projection) const {
-    if (uiProjectionLoc != -1) {
-        glUniformMatrix4fv(uiProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-    }
+void ShaderManager::setUIProjection(const glm::mat4& projection) const {
+    glUniformMatrix4fv(uiProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 }
 
-// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РјР°С‚СЂРёС†Сѓ РјРѕРґРµР»Рё РґР»СЏ UI СЌР»РµРјРµРЅС‚РѕРІ
-void ShaderManager::setUIModelMatrix(const glm::mat4& model) const {
-    if (uiModelLoc != -1) {
-        glUniformMatrix4fv(uiModelLoc, 1, GL_FALSE, glm::value_ptr(model));
-    }
+void ShaderManager::setUIModel(const glm::mat4& model) const {
+    glUniformMatrix4fv(uiModelLoc, 1, GL_FALSE, glm::value_ptr(model));
 }
 
-// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ С†РІРµС‚ РґР»СЏ UI СЌР»РµРјРµРЅС‚РѕРІ
 void ShaderManager::setUIColor(const glm::vec3& color) const {
-    if (uiColorLoc != -1) {
-        glUniform3fv(uiColorLoc, 1, glm::value_ptr(color));
-    }
+    glUniform3fv(uiColorLoc, 1, glm::value_ptr(color));
 }
 
-// РЈСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ РїСЂРѕР·СЂР°С‡РЅРѕСЃС‚СЊ РґР»СЏ UI СЌР»РµРјРµРЅС‚РѕРІ
 void ShaderManager::setUIAlpha(float alpha) const {
-    if (uiAlphaLoc != -1) {
-        glUniform1f(uiAlphaLoc, alpha);
-    }
+    // ИСПРАВЛЕНО: используем сохраненный uiAlphaLoc вместо поиска каждый раз
+    glUniform1f(uiAlphaLoc, alpha);
 }
 
-// ============================================================================
-// РџР РР’РђРўРќР«Р• Р’РЎРџРћРњРћР“РђРўР•Р›Р¬РќР«Р• РњР•РўРћР”Р«
-// ============================================================================
-
-// РљРѕРјРїРёР»РёСЂСѓРµС‚ С€РµР№РґРµСЂ РёР· РёСЃС…РѕРґРЅРѕРіРѕ РєРѕРґР°
 GLuint ShaderManager::compileShader(GLenum type, const char* source) {
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &source, NULL);
     glCompileShader(shader);
 
-    // РџСЂРѕРІРµСЂСЏРµРј СѓСЃРїРµС€РЅРѕСЃС‚СЊ РєРѕРјРїРёР»СЏС†РёРё
     GLint success;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
     if (!success) {
         char infoLog[512];
         glGetShaderInfoLog(shader, 512, NULL, infoLog);
-        std::cerr << "вќЊ Shader compilation error ("
-            << (type == GL_VERTEX_SHADER ? "Vertex" : "Fragment") << "):\n"
-            << infoLog << std::endl;
-        glDeleteShader(shader);
-        return 0;
+        std::cerr << "Shader compilation error:\n" << infoLog << std::endl;
     }
-
     return shader;
 }
 
-// РЎРѕР·РґР°РµС‚ С€РµР№РґРµСЂРЅСѓСЋ РїСЂРѕРіСЂР°РјРјСѓ РґР»СЏ 3D РіСЂР°С„РёРєРё
 bool ShaderManager::createShaderProgram() {
-    std::cout << "рџ”§ Creating 3D shader program..." << std::endl;
-
     GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource);
     GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
 
-    if (!vertexShader || !fragmentShader) {
-        std::cerr << "вќЊ Failed to compile 3D shaders" << std::endl;
-        return false;
-    }
-
-    // РЎРѕР·РґР°РµРј Рё Р»РёРЅРєСѓРµРј С€РµР№РґРµСЂРЅСѓСЋ РїСЂРѕРіСЂР°РјРјСѓ
     shaderProgram = glCreateProgram();
     glAttachShader(shaderProgram, vertexShader);
     glAttachShader(shaderProgram, fragmentShader);
     glLinkProgram(shaderProgram);
 
-    // РџСЂРѕРІРµСЂСЏРµРј СѓСЃРїРµС€РЅРѕСЃС‚СЊ Р»РёРЅРєРѕРІРєРё
     GLint success;
     glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
     if (!success) {
         char infoLog[512];
         glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-        std::cerr << "вќЊ 3D Shader program linking error:\n" << infoLog << std::endl;
-
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
+        std::cerr << "Shader program linking error:\n" << infoLog << std::endl;
         return false;
     }
 
-    // РћС‡РёС‰Р°РµРј СЃРєРѕРјРїРёР»РёСЂРѕРІР°РЅРЅС‹Рµ С€РµР№РґРµСЂС‹ (РѕРЅРё Р±РѕР»СЊС€Рµ РЅРµ РЅСѓР¶РЅС‹)
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    // РџРѕР»СѓС‡Р°РµРј location uniform РїРµСЂРµРјРµРЅРЅС‹С…
     modelLoc = glGetUniformLocation(shaderProgram, "model");
     viewLoc = glGetUniformLocation(shaderProgram, "view");
     projectionLoc = glGetUniformLocation(shaderProgram, "projection");
     colorLoc = glGetUniformLocation(shaderProgram, "color");
     useTextureLoc = glGetUniformLocation(shaderProgram, "useTexture");
 
-    // РџСЂРѕРІРµСЂСЏРµРј С‡С‚Рѕ РІСЃРµ uniform РЅР°Р№РґРµРЅС‹
-    if (modelLoc == -1 || viewLoc == -1 || projectionLoc == -1 ||
-        colorLoc == -1 || useTextureLoc == -1) {
-        std::cerr << "вќЊ Failed to find some 3D shader uniforms" << std::endl;
-        return false;
-    }
-
-    std::cout << "вњ… 3D shader program created successfully" << std::endl;
     return true;
 }
 
-// РЎРѕР·РґР°РµС‚ С€РµР№РґРµСЂРЅСѓСЋ РїСЂРѕРіСЂР°РјРјСѓ РґР»СЏ UI СЌР»РµРјРµРЅС‚РѕРІ
 bool ShaderManager::createUIShaderProgram() {
-    std::cout << "рџ”§ Creating UI shader program..." << std::endl;
-
     GLuint uiVertexShader = compileShader(GL_VERTEX_SHADER, uiVertexShaderSource);
     GLuint uiFragmentShader = compileShader(GL_FRAGMENT_SHADER, uiFragmentShaderSource);
 
-    if (!uiVertexShader || !uiFragmentShader) {
-        std::cerr << "вќЊ Failed to compile UI shaders" << std::endl;
+    // Проверка компиляции шейдеров
+    GLint success;
+    glGetShaderiv(uiVertexShader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(uiVertexShader, 512, NULL, infoLog);
+        std::cerr << "UI Vertex Shader compilation error:\n" << infoLog << std::endl;
         return false;
     }
 
-    // РЎРѕР·РґР°РµРј Рё Р»РёРЅРєСѓРµРј UI С€РµР№РґРµСЂРЅСѓСЋ РїСЂРѕРіСЂР°РјРјСѓ
+    glGetShaderiv(uiFragmentShader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(uiFragmentShader, 512, NULL, infoLog);
+        std::cerr << "UI Fragment Shader compilation error:\n" << infoLog << std::endl;
+        return false;
+    }
+
     uiShaderProgram = glCreateProgram();
     glAttachShader(uiShaderProgram, uiVertexShader);
     glAttachShader(uiShaderProgram, uiFragmentShader);
     glLinkProgram(uiShaderProgram);
 
-    // РџСЂРѕРІРµСЂСЏРµРј СѓСЃРїРµС€РЅРѕСЃС‚СЊ Р»РёРЅРєРѕРІРєРё
-    GLint success;
     glGetProgramiv(uiShaderProgram, GL_LINK_STATUS, &success);
     if (!success) {
         char infoLog[512];
         glGetProgramInfoLog(uiShaderProgram, 512, NULL, infoLog);
-        std::cerr << "вќЊ UI Shader program linking error:\n" << infoLog << std::endl;
-
-        glDeleteShader(uiVertexShader);
-        glDeleteShader(uiFragmentShader);
+        std::cerr << "UI Shader program linking error:\n" << infoLog << std::endl;
         return false;
     }
 
-    // РћС‡РёС‰Р°РµРј СЃРєРѕРјРїРёР»РёСЂРѕРІР°РЅРЅС‹Рµ С€РµР№РґРµСЂС‹
     glDeleteShader(uiVertexShader);
     glDeleteShader(uiFragmentShader);
 
-    // РџРѕР»СѓС‡Р°РµРј location uniform РїРµСЂРµРјРµРЅРЅС‹С… РґР»СЏ UI
+    // Получаем uniform locations с проверкой
     uiProjectionLoc = glGetUniformLocation(uiShaderProgram, "projection");
     uiModelLoc = glGetUniformLocation(uiShaderProgram, "model");
     uiColorLoc = glGetUniformLocation(uiShaderProgram, "color");
     uiAlphaLoc = glGetUniformLocation(uiShaderProgram, "alpha");
 
-    // РџСЂРѕРІРµСЂСЏРµРј С‡С‚Рѕ РІСЃРµ UI uniform РЅР°Р№РґРµРЅС‹
+    // Проверяем что все uniform найдены
     if (uiProjectionLoc == -1 || uiModelLoc == -1 || uiColorLoc == -1 || uiAlphaLoc == -1) {
-        std::cerr << "вќЊ Failed to find some UI shader uniforms!" << std::endl;
-        std::cerr << "Projection: " << uiProjectionLoc
-            << ", Model: " << uiModelLoc
-            << ", Color: " << uiColorLoc
-            << ", Alpha: " << uiAlphaLoc << std::endl;
+        std::cerr << "Error: Failed to find some UI shader uniforms!" << std::endl;
+        std::cerr << "Projection: " << uiProjectionLoc << ", Model: " << uiModelLoc
+            << ", Color: " << uiColorLoc << ", Alpha: " << uiAlphaLoc << std::endl;
         return false;
     }
 
-    std::cout << "вњ… UI shader program created successfully" << std::endl;
-    std::cout << "рџ“Љ UI Uniform Locations - Projection: " << uiProjectionLoc
-        << ", Model: " << uiModelLoc
-        << ", Color: " << uiColorLoc
-        << ", Alpha: " << uiAlphaLoc << std::endl;
+    std::cout << "UI Shader Uniform Locations (all found):" << std::endl;
+    std::cout << "projection: " << uiProjectionLoc << std::endl;
+    std::cout << "model: " << uiModelLoc << std::endl;
+    std::cout << "color: " << uiColorLoc << std::endl;
+    std::cout << "alpha: " << uiAlphaLoc << std::endl;
 
     return true;
 }

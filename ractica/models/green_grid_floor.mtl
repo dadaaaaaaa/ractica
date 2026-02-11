@@ -1,0 +1,11 @@
+# Material for green grid floor
+newmtl GridMaterial
+Ka 1.0 1.0 1.0    # Ambient color
+Kd 1.0 1.0 1.0    # Diffuse color (полная яркость для текстуры)
+Ks 0.0 0.0 0.0    # Specular color (без бликов)
+Ns 1.0            # Минимальная блескость
+d 1.0             # Полная непрозрачность
+illum 1           # Простая модель освещения (только diffuse)
+
+# Текстура - будет создана procedural в GameRenderer
+map_Kd floor_grid.png

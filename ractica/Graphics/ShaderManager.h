@@ -1,133 +1,59 @@
-#pragma once
+#ifndef SHADER_MANAGER_H
+#define SHADER_MANAGER_H
+
 #include <GL/glew.h>
 #include <glm/glm.hpp>
-#include <string>
 
-// Менеджер шейдеров для управления 3D и UI шейдерами
 class ShaderManager {
-private:
-    // ============================================================================
-    // ШЕЙДЕРНЫЕ ПРОГРАММЫ
-    // ============================================================================
-
-    GLuint shaderProgram;      // Шейдерная программа для 3D объектов
-    GLuint uiShaderProgram;    // Шейдерная программа для UI элементов
-
-    // ============================================================================
-    // UNIFORM LOCATIONS ДЛЯ 3D ШЕЙДЕРА
-    // ============================================================================
-
-    GLuint modelLoc;           // Location для матрицы модели
-    GLuint viewLoc;            // Location для матрицы вида  
-    GLuint projectionLoc;      // Location для матрицы проекции
-    GLuint colorLoc;           // Location для цвета объекта
-    GLuint useTextureLoc;      // Location для флага использования текстуры
-
-    // ============================================================================
-    // UNIFORM LOCATIONS ДЛЯ UI ШЕЙДЕРА
-    // ============================================================================
-
-    GLuint uiProjectionLoc;    // Location для матрицы проекции UI
-    GLuint uiModelLoc;         // Location для матрицы модели UI
-    GLuint uiColorLoc;         // Location для цвета UI
-    GLuint uiAlphaLoc;         // Location для прозрачности UI
-
 public:
-    // ============================================================================
-    // КОНСТРУКТОР И ДЕСТРУКТОР
-    // ============================================================================
-
-    // Создает менеджер шейдеров
     ShaderManager();
-
-    // Очищает шейдерные ресурсы
     ~ShaderManager();
 
-    // ============================================================================
-    // ОСНОВНЫЕ МЕТОДЫ УПРАВЛЕНИЯ
-    // ============================================================================
-
-    // Инициализирует все шейдерные программы
     bool initialize();
 
-    // Очищает все шейдерные ресурсы
-    void cleanup();
-
-    // ============================================================================
-    // МЕТОДЫ АКТИВАЦИИ ШЕЙДЕРОВ
-    // ============================================================================
-
-    // Активирует 3D шейдер для рендеринга игровых объектов
     void use3DShader() const;
-
-    // Активирует UI шейдер для рендеринга интерфейса
     void useUIShader() const;
 
-    // ============================================================================
-    // МЕТОДЫ ДЛЯ 3D ШЕЙДЕРА
-    // ============================================================================
-
-    // Устанавливает матрицу модели для 3D объектов
+    // Методы для установки uniform переменных 3D шейдера
     void setModelMatrix(const glm::mat4& model) const;
-
-    // Устанавливает матрицу вида для 3D сцены
     void setViewMatrix(const glm::mat4& view) const;
-
-    // Устанавливает матрицу проекции для 3D сцены
     void setProjectionMatrix(const glm::mat4& projection) const;
-
-    // Устанавливает цвет для 3D объектов
     void setColor(const glm::vec3& color) const;
-
-    // Включает/выключает использование текстур для 3D объектов
     void setUseTexture(bool useTexture) const;
 
-    // ============================================================================
-    // МЕТОДЫ ДЛЯ UI ШЕЙДЕРА
-    // ============================================================================
-
-    // Устанавливает матрицу проекции для UI элементов
-    void setUIProjectionMatrix(const glm::mat4& projection) const;
-
-    // Устанавливает матрицу модели для UI элементов
-    void setUIModelMatrix(const glm::mat4& model) const;
-
-    // Устанавливает цвет для UI элементов
-    void setUIColor(const glm::vec3& color) const;
-
-    // Устанавливает прозрачность для UI элементов
-    void setUIAlpha(float alpha) const;
-
-    // ============================================================================
-    // ИНФОРМАЦИОННЫЕ МЕТОДЫ
-    // ============================================================================
-
-    // Проверяет, инициализирован ли менеджер шейдеров
-    bool isInitialized() const { return shaderProgram != 0 && uiShaderProgram != 0; }
-
-    // Возвращает ID 3D шейдерной программы
-    GLuint get3DShaderProgram() const { return shaderProgram; }
-
-    // Возвращает ID UI шейдерной программы
+    // Новый метод для получения ID шейдерной программы
+    GLuint getShaderProgram() const { return shaderProgram; }
     GLuint getUIShaderProgram() const { return uiShaderProgram; }
 
+    // Методы для установки uniform переменных UI шейдера
+    void setUIProjection(const glm::mat4& projection) const;
+    void setUIModel(const glm::mat4& model) const;
+    void setUIColor(const glm::vec3& color) const;
+    void setUIAlpha(float alpha) const;
+    void setIsFloor(bool isFloor) const;
+    void setCellSize(float cellSize) const;
+    void setGridWidth(float width) const;
+    void setGridDepth(float depth) const;
 private:
-    // ============================================================================
-    // ПРИВАТНЫЕ ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
-    // ============================================================================
+    GLuint shaderProgram;
+    GLuint uiShaderProgram;
 
-    // Компилирует шейдер из исходного кода
+    // Uniform locations для 3D шейдера
+    GLint modelLoc;
+    GLint viewLoc;
+    GLint projectionLoc;
+    GLint colorLoc;
+    GLint useTextureLoc;
+
+    // Uniform locations для UI шейдера
+    GLint uiProjectionLoc;
+    GLint uiModelLoc;
+    GLint uiColorLoc;
+    GLint uiAlphaLoc;
+
     GLuint compileShader(GLenum type, const char* source);
-
-    // Создает шейдерную программу для 3D графики
     bool createShaderProgram();
-
-    // Создает шейдерную программу для UI элементов
     bool createUIShaderProgram();
-
-    // Проверяет успешность компиляции шейдера
-    bool checkShaderCompileStatus(GLuint shader, const std::string& type) const;
-
-    // Проверяет успешность линковки шейдерной программы
-    bool checkProgramLinkStatus(GLuint program, const std::string& name) const;
 };
+
+#endif // SHADER_MANAGER_H
