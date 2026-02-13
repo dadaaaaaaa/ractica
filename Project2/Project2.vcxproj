@@ -21,8 +21,8 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{8c343cd1-0922-439b-94ec-7238320fadbf}</ProjectGuid>
-    <RootNamespace>ractica</RootNamespace>
+    <ProjectGuid>{82aec732-9e48-41ab-a833-07d6d0c8aa09}</ProjectGuid>
+    <RootNamespace>Project2</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -65,26 +65,25 @@
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="PropertySheet.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\Libs;$(LibraryPath)</LibraryPath>
-  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\ractica;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GL;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLFW;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\release static\vs2015-2022\win64;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\Libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>freetype.lib;glfw3.lib;glew32s.lib;opengl32.lib;glut.lib;glut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -95,27 +94,29 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\ractica;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GL;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLFW;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\release static\vs2015-2022\win64;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\Libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>freetype.lib;glfw3.lib;glew32s.lib;opengl32.lib;glut.lib;glut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>GLEW_STATIC_DEBUG;_CONSOLE;%(PreprocessorDefinitions);GLEW_STATIC</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Влад\source\repos\ractica\includes\GLEW;C:\Users\Влад\source\repos\ractica\includes\GLFW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\ractica;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GL;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLFW;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\release static\vs2015-2022\win64;C:\Users\Влад\source\repos\ractica\Libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\release static\vs2015-2022\win64;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\Libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>freetype.lib;glfw3.lib;glew32s.lib;opengl32.lib;glut.lib;glut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -125,74 +126,30 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>GLEW_STATICNDEBUG;_CONSOLE;%(PreprocessorDefinitions);GLEW_STATIC</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\Влад\source\repos\ractica\includes\GLEW;C:\Users\Влад\source\repos\ractica\includes\GLFW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\ractica;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GL;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLFW;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>C:\Users\Влад\source\repos\ractica\Libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>glfw3.lib;glew32s.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\release static\vs2015-2022\win64;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\Libs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>freetype.lib;glfw3.lib;glew32s.lib;opengl32.lib;glut.lib;glut32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Game\Game.cpp" />
-    <ClCompile Include="Graphics\Camera.cpp" />
-    <ClCompile Include="Graphics\GameRenderer.cpp" />
-    <ClCompile Include="Graphics\Model.cpp" />
-    <ClCompile Include="Graphics\ShaderManager.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="Objects\Bird.cpp" />
-    <ClCompile Include="Objects\GameObjects.cpp" />
-    <ClCompile Include="Objects\Obstacle.cpp" />
-    <ClCompile Include="Objects\Sprite.cpp" />
-    <ClCompile Include="pch.cpp" />
-    <ClCompile Include="UI\GameUI.cpp" />
-    <ClCompile Include="UI\MenuButton.cpp" />
-    <ClCompile Include="UI\NetworkManager.cpp" />
-    <ClCompile Include="Utils\MathUtils.cpp" />
+    <ClCompile Include="..\ractica\ConfigEditor\ConfigEditor.cpp" />
+    <ClCompile Include="..\ractica\ConfigEditor\ConfigManager.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="struct.txt" />
+    <ClInclude Include="..\ractica\ConfigEditor\ConfigManager.h" />
+    <ClInclude Include="..\ractica\Shared\ConfigTypes.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Core\Constants.h" />
-    <ClInclude Include="Core\GameConfig.h" />
-    <ClInclude Include="Core\MathUtils.h" />
-    <ClInclude Include="Core\Types.h" />
-    <ClInclude Include="Game\Game.h" />
-    <ClInclude Include="Graphics\Camera.h" />
-    <ClInclude Include="Graphics\GameRenderer.h" />
-    <ClInclude Include="Graphics\Model.h" />
-    <ClInclude Include="Graphics\ShaderManager.h" />
-    <ClInclude Include="Objects\Bird.h" />
-    <ClInclude Include="Objects\GameObjects.h" />
-    <ClInclude Include="Objects\Obstacle.h" />
-    <ClInclude Include="Objects\Sprite.h" />
-    <ClInclude Include="pch.h" />
-    <ClInclude Include="UI\GameUI.h" />
-    <ClInclude Include="UI\MenuButton.h" />
-    <ClInclude Include="UI\NetworkManager.h" />
-    <ClInclude Include="Utils\MathUtils.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="text.fs" />
-    <None Include="text.vs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Object Include="models\snake_body.obj">
-      <DeploymentContent>true</DeploymentContent>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </Object>
-    <Object Include="models\snake_head.obj">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </Object>
-    <Object Include="models\snake_tail.obj">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </Object>
+    <ProjectReference Include="..\ractica\ractica.vcxproj">
+      <Project>{8c343cd1-0922-439b-94ec-7238320fadbf}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

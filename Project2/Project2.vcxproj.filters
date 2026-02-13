@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="..\ractica\ConfigEditor\ConfigEditor.cpp" />
+    <ClCompile Include="..\ractica\ConfigEditor\ConfigManager.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\ractica\ConfigEditor\ConfigManager.h" />
+    <ClInclude Include="..\ractica\Shared\ConfigTypes.h" />
+  </ItemGroup>
+</Project>
