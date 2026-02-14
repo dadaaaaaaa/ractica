@@ -4,6 +4,16 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+
+// Добавляем Assimp для FBX
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
+// Добавляем stb_image для текстур
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include <iostream>
 #include <string>
 #include <vector>
@@ -14,6 +24,7 @@
 #include <commdlg.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
+
 #include "ConfigManager.h"
 #include "../Shared/ConfigTypes.h"
 
@@ -25,10 +36,21 @@ struct Character {
     unsigned int Advance;
 };
 
-// Простая структура для модели
+// Структура для текстуры
+struct Texture {
+    unsigned int id;
+    int width;
+    int height;
+    std::string path;
+
+    Texture() : id(0), width(0), height(0) {}
+};
+
+// Структура для модели (Assimp)
 struct ModelData {
     std::vector<float> vertices;
     std::vector<float> normals;
+    std::vector<float> texCoords;
     bool loaded;
 
     ModelData() : loaded(false) {}
@@ -53,6 +75,7 @@ GameConfig currentConfig;
 // Пути
 std::string basePath;
 std::string modelsPath;
+std::string texturesPath;
 std::string configPath;
 
 // FreeType
@@ -95,6 +118,10 @@ int cloudCount = 20;
 int birdCount = 15;
 int flowerCount = 25;
 
+// Текстуры
+Texture floorTexture;
+std::vector<std::string> availableTextures;
+
 // Для UI
 bool mousePressed = false;
 bool mousePressedLast = false;
@@ -121,19 +148,22 @@ void drawInfoBox(int x, int y, int w, int h, const std::string& label, const std
 void drawCube();
 void drawGrid();
 void reset2DProjection();
-bool loadObjModel(const std::string& filename, ModelData& model, const std::string& subFolder = "");
+bool loadModel(const std::string& filename, ModelData& model, const std::string& subFolder = "");
+bool loadTexture(const std::string& filename, Texture& texture);
+void drawTexturedFloor();
 void saveConfig();
 void initPaths();
 void initObstacles();
+void loadAvailableTextures();
+std::string openTextureFileDialog();
 
 // Инициализация препятствий
 void initObstacles() {
     obstacles.clear();
 
-    // Добавляем несколько примеров препятствий
     ObstacleItem tree1;
     tree1.name = "Tree 1";
-    tree1.modelFile = "tree.obj";
+    tree1.modelFile = "tree.fbx";
     tree1.color = glm::vec3(0.1f, 0.4f, 0.1f);
     tree1.scale = 1.5f;
     tree1.posX = 20;
@@ -143,7 +173,7 @@ void initObstacles() {
 
     ObstacleItem tree2;
     tree2.name = "Tree 2";
-    tree2.modelFile = "tree.obj";
+    tree2.modelFile = "tree.fbx";
     tree2.color = glm::vec3(0.1f, 0.4f, 0.1f);
     tree2.scale = 1.5f;
     tree2.posX = 40;
@@ -153,7 +183,7 @@ void initObstacles() {
 
     ObstacleItem rock;
     rock.name = "Rock";
-    rock.modelFile = "rock.obj";
+    rock.modelFile = "rock.fbx";
     rock.color = glm::vec3(0.5f, 0.5f, 0.5f);
     rock.scale = 1.2f;
     rock.posX = 30;
@@ -170,14 +200,11 @@ void initPaths() {
 
     std::cout << "Current directory: " << basePath << std::endl;
 
-    // Ищем корневую папку проекта
     std::string path = basePath;
     bool found = false;
 
     while (true) {
         std::string testModelsPath = path + "\\models";
-        std::string testConfigPath = path + "\\config";
-
         if (std::filesystem::exists(testModelsPath)) {
             basePath = path;
             found = true;
@@ -195,14 +222,19 @@ void initPaths() {
     }
 
     modelsPath = basePath + "\\models\\";
+    texturesPath = basePath + "\\textures\\";
     configPath = basePath + "\\config\\game.cfg";
 
     std::cout << "Base path: " << basePath << std::endl;
     std::cout << "Models path: " << modelsPath << std::endl;
+    std::cout << "Textures path: " << texturesPath << std::endl;
     std::cout << "Config path: " << configPath << std::endl;
 
     if (!std::filesystem::exists(modelsPath)) {
         std::filesystem::create_directories(modelsPath);
+    }
+    if (!std::filesystem::exists(texturesPath)) {
+        std::filesystem::create_directories(texturesPath);
     }
 
     std::string configDir = basePath + "\\config";
@@ -211,19 +243,8 @@ void initPaths() {
     }
 }
 
-// Сохранение конфига
-void saveConfig() {
-    if (ConfigManager::saveGameConfig(configPath, currentConfig)) {
-        std::cout << "Config saved to: " << configPath << std::endl;
-    }
-    else {
-        std::cout << "Failed to save config to: " << configPath << std::endl;
-    }
-}
-
-// Загрузка OBJ файла
-// Загрузка OBJ файла (исправленная версия)
-bool loadObjModel(const std::string& filename, ModelData& model, const std::string& subFolder) {
+// Загрузка модели через Assimp (FBX support)
+bool loadModel(const std::string& filename, ModelData& model, const std::string& subFolder) {
     std::string fullPath;
 
     if (subFolder.empty()) {
@@ -242,148 +263,238 @@ bool loadObjModel(const std::string& filename, ModelData& model, const std::stri
         return false;
     }
 
-    std::ifstream file(fullPath);
-    if (!file.is_open()) {
-        std::cout << "ERROR: Failed to open file!" << std::endl;
+    Assimp::Importer importer;
+    const aiScene* scene = importer.ReadFile(fullPath,
+        aiProcess_Triangulate |
+        aiProcess_GenSmoothNormals |
+        aiProcess_FlipUVs |
+        aiProcess_JoinIdenticalVertices);
+
+    if (!scene || !scene->mRootNode || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
+        std::cout << "ERROR: " << importer.GetErrorString() << std::endl;
         return false;
     }
 
     model.vertices.clear();
     model.normals.clear();
+    model.texCoords.clear();
 
-    std::vector<glm::vec3> tempPositions;
-    std::vector<glm::vec3> tempNormals;
+    // Проходим по всем мешам
+    for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
+        aiMesh* mesh = scene->mMeshes[i];
 
-    std::string line;
-    int lineCount = 0;
-    int vertexCount = 0;
-    int faceCount = 0;
-    int skippedFaces = 0;
+        for (unsigned int j = 0; j < mesh->mNumVertices; j++) {
+            // Вершины
+            model.vertices.push_back(mesh->mVertices[j].x);
+            model.vertices.push_back(mesh->mVertices[j].y);
+            model.vertices.push_back(mesh->mVertices[j].z);
 
-    while (std::getline(file, line)) {
-        lineCount++;
-
-        if (line.empty() || line[0] == '#') continue;
-
-        if (line.substr(0, 2) == "v ") {
-            glm::vec3 pos;
-            if (sscanf_s(line.c_str(), "v %f %f %f", &pos.x, &pos.y, &pos.z) == 3) {
-                tempPositions.push_back(pos);
-                vertexCount++;
-            }
-        }
-        else if (line.substr(0, 2) == "f ") {
-            faceCount++;
-
-            int v1, v2, v3;
-            int t1, t2, t3;
-
-            // Формат: f v1/t1 v2/t2 v3/t3  (ваш формат)
-            if (sscanf_s(line.c_str(), "f %d/%d %d/%d %d/%d",
-                &v1, &t1, &v2, &t2, &v3, &t3) == 6) {
-
-                if (v1 <= tempPositions.size() && v2 <= tempPositions.size() && v3 <= tempPositions.size()) {
-
-                    glm::vec3 p1 = tempPositions[v1 - 1];
-                    glm::vec3 p2 = tempPositions[v2 - 1];
-                    glm::vec3 p3 = tempPositions[v3 - 1];
-
-                    // Вычисляем нормаль для каждого треугольника
-                    glm::vec3 edge1 = p2 - p1;
-                    glm::vec3 edge2 = p3 - p1;
-                    glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
-
-                    // Добавляем вершины
-                    model.vertices.push_back(p1.x); model.vertices.push_back(p1.y); model.vertices.push_back(p1.z);
-                    model.vertices.push_back(p2.x); model.vertices.push_back(p2.y); model.vertices.push_back(p2.z);
-                    model.vertices.push_back(p3.x); model.vertices.push_back(p3.y); model.vertices.push_back(p3.z);
-
-                    // Добавляем нормали (одинаковые для всех вершин треугольника)
-                    model.normals.push_back(normal.x); model.normals.push_back(normal.y); model.normals.push_back(normal.z);
-                    model.normals.push_back(normal.x); model.normals.push_back(normal.y); model.normals.push_back(normal.z);
-                    model.normals.push_back(normal.x); model.normals.push_back(normal.y); model.normals.push_back(normal.z);
-                }
-                else {
-                    skippedFaces++;
-                }
-            }
-            // Формат: f v1 v2 v3 (без текстур)
-            else if (sscanf_s(line.c_str(), "f %d %d %d", &v1, &v2, &v3) == 3) {
-                if (v1 <= tempPositions.size() && v2 <= tempPositions.size() && v3 <= tempPositions.size()) {
-
-                    glm::vec3 p1 = tempPositions[v1 - 1];
-                    glm::vec3 p2 = tempPositions[v2 - 1];
-                    glm::vec3 p3 = tempPositions[v3 - 1];
-
-                    glm::vec3 edge1 = p2 - p1;
-                    glm::vec3 edge2 = p3 - p1;
-                    glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
-
-                    model.vertices.push_back(p1.x); model.vertices.push_back(p1.y); model.vertices.push_back(p1.z);
-                    model.vertices.push_back(p2.x); model.vertices.push_back(p2.y); model.vertices.push_back(p2.z);
-                    model.vertices.push_back(p3.x); model.vertices.push_back(p3.y); model.vertices.push_back(p3.z);
-
-                    model.normals.push_back(normal.x); model.normals.push_back(normal.y); model.normals.push_back(normal.z);
-                    model.normals.push_back(normal.x); model.normals.push_back(normal.y); model.normals.push_back(normal.z);
-                    model.normals.push_back(normal.x); model.normals.push_back(normal.y); model.normals.push_back(normal.z);
-                }
-                else {
-                    skippedFaces++;
-                }
-            }
-            // Формат: f v1//v1 v2//v2 v3//v3
-            else if (sscanf_s(line.c_str(), "f %d//%d %d//%d %d//%d",
-                &v1, &t1, &v2, &t2, &v3, &t3) == 6) {
-
-                if (v1 <= tempPositions.size() && v2 <= tempPositions.size() && v3 <= tempPositions.size()) {
-
-                    glm::vec3 p1 = tempPositions[v1 - 1];
-                    glm::vec3 p2 = tempPositions[v2 - 1];
-                    glm::vec3 p3 = tempPositions[v3 - 1];
-
-                    glm::vec3 edge1 = p2 - p1;
-                    glm::vec3 edge2 = p3 - p1;
-                    glm::vec3 normal = glm::normalize(glm::cross(edge1, edge2));
-
-                    model.vertices.push_back(p1.x); model.vertices.push_back(p1.y); model.vertices.push_back(p1.z);
-                    model.vertices.push_back(p2.x); model.vertices.push_back(p2.y); model.vertices.push_back(p2.z);
-                    model.vertices.push_back(p3.x); model.vertices.push_back(p3.y); model.vertices.push_back(p3.z);
-
-                    model.normals.push_back(normal.x); model.normals.push_back(normal.y); model.normals.push_back(normal.z);
-                    model.normals.push_back(normal.x); model.normals.push_back(normal.y); model.normals.push_back(normal.z);
-                    model.normals.push_back(normal.x); model.normals.push_back(normal.y); model.normals.push_back(normal.z);
-                }
-                else {
-                    skippedFaces++;
-                }
+            // Нормали
+            if (mesh->HasNormals()) {
+                model.normals.push_back(mesh->mNormals[j].x);
+                model.normals.push_back(mesh->mNormals[j].y);
+                model.normals.push_back(mesh->mNormals[j].z);
             }
             else {
-                skippedFaces++;
+                model.normals.push_back(0.0f);
+                model.normals.push_back(1.0f);
+                model.normals.push_back(0.0f);
+            }
+
+            // Текстурные координаты
+            if (mesh->HasTextureCoords(0)) {
+                model.texCoords.push_back(mesh->mTextureCoords[0][j].x);
+                model.texCoords.push_back(mesh->mTextureCoords[0][j].y);
+            }
+            else {
+                model.texCoords.push_back(0.0f);
+                model.texCoords.push_back(0.0f);
             }
         }
     }
 
-    file.close();
+    std::cout << "Loaded " << model.vertices.size() / 3 << " vertices" << std::endl;
+    model.loaded = true;
+    return true;
+}
 
-    std::cout << "\n=== FILE STATISTICS ===" << std::endl;
-    std::cout << "Total lines: " << lineCount << std::endl;
-    std::cout << "Vertices in file: " << vertexCount << std::endl;
-    std::cout << "Faces in file: " << faceCount << std::endl;
-    std::cout << "Skipped faces: " << skippedFaces << std::endl;
-    std::cout << "Loaded vertices: " << model.vertices.size() / 3 << std::endl;
+// Загрузка текстуры
+bool loadTexture(const std::string& filename, Texture& texture) {
+    std::string fullPath = texturesPath + filename;
 
-    model.loaded = (model.vertices.size() > 0);
+    std::cout << "Loading texture: " << fullPath << std::endl;
 
-    if (model.loaded) {
-        std::cout << "SUCCESS: Model loaded with " << model.vertices.size() / 3 << " vertices!" << std::endl;
+    if (!std::filesystem::exists(fullPath)) {
+        std::cout << "Texture file does not exist!" << std::endl;
+        return false;
+    }
+
+    int width, height, channels;
+    unsigned char* data = stbi_load(fullPath.c_str(), &width, &height, &channels, 0);
+
+    if (!data) {
+        std::cout << "Failed to load texture: " << stbi_failure_reason() << std::endl;
+        return false;
+    }
+
+    std::cout << "Texture loaded: " << width << "x" << height << ", channels: " << channels << std::endl;
+
+    if (texture.id != 0) {
+        glDeleteTextures(1, &texture.id);
+    }
+
+    glGenTextures(1, &texture.id);
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
+
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    stbi_image_free(data);
+
+    texture.width = width;
+    texture.height = height;
+    texture.path = filename;
+
+    std::cout << "Texture loaded successfully, ID: " << texture.id << std::endl;
+    return true;
+}
+
+// Загрузка доступных текстур
+void loadAvailableTextures() {
+    availableTextures.clear();
+
+    if (!std::filesystem::exists(texturesPath)) {
+        std::filesystem::create_directories(texturesPath);
+        return;
+    }
+
+    try {
+        for (const auto& entry : std::filesystem::directory_iterator(texturesPath)) {
+            std::string ext = entry.path().extension().string();
+            if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") {
+                availableTextures.push_back(entry.path().filename().string());
+            }
+        }
+    }
+    catch (...) {
+        std::cout << "Could not read textures folder" << std::endl;
+    }
+}
+
+// Диалог выбора текстуры
+std::string openTextureFileDialog() {
+    if (!std::filesystem::exists(texturesPath)) {
+        std::filesystem::create_directories(texturesPath);
+    }
+
+    OPENFILENAMEA ofn;
+    char fileName[MAX_PATH] = "";
+
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = GetActiveWindow();
+    ofn.lpstrFilter = "Image Files\0*.png;*.jpg;*.jpeg;*.bmp;*.tga\0All Files\0*.*\0";
+    ofn.lpstrFile = fileName;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrInitialDir = texturesPath.c_str();
+    ofn.lpstrTitle = "Choose Floor Texture";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+
+    if (GetOpenFileNameA(&ofn)) {
+        std::string fullPath = fileName;
+        return fullPath.substr(fullPath.find_last_of("\\") + 1);
+    }
+
+    return "";
+}
+
+// Создание шахматной текстуры (запасной вариант)
+void createCheckerboardTexture(Texture& texture) {
+    const int size = 64;
+    unsigned char data[size * size * 3];
+
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            int index = (y * size + x) * 3;
+            bool isBlack = ((x / 8) + (y / 8)) % 2 == 0;
+
+            if (isBlack) {
+                data[index] = 100;
+                data[index + 1] = 100;
+                data[index + 2] = 100;
+            }
+            else {
+                data[index] = 200;
+                data[index + 1] = 200;
+                data[index + 2] = 200;
+            }
+        }
+    }
+
+    if (texture.id != 0) {
+        glDeleteTextures(1, &texture.id);
+    }
+
+    glGenTextures(1, &texture.id);
+    glBindTexture(GL_TEXTURE_2D, texture.id);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, size, size, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+
+    texture.width = size;
+    texture.height = size;
+    texture.path = "checkerboard";
+}
+
+// Рисование текстурированного пола
+void drawTexturedFloor() {
+    glEnable(GL_TEXTURE_2D);
+
+    if (floorTexture.id != 0) {
+        glBindTexture(GL_TEXTURE_2D, floorTexture.id);
     }
     else {
-        std::cout << "ERROR: No vertices loaded!" << std::endl;
+        createCheckerboardTexture(floorTexture);
+        glBindTexture(GL_TEXTURE_2D, floorTexture.id);
     }
-    std::cout << "========================\n" << std::endl;
 
-    return model.loaded;
-}// Сброс 2D проекции
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    float size = 5.0f;
+    float repeat = 10.0f;
+
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-size, -0.5f, -size);
+    glTexCoord2f(repeat, 0.0f); glVertex3f(size, -0.5f, -size);
+    glTexCoord2f(repeat, repeat); glVertex3f(size, -0.5f, size);
+    glTexCoord2f(0.0f, repeat); glVertex3f(-size, -0.5f, size);
+    glEnd();
+
+    glDisable(GL_TEXTURE_2D);
+}
+
+// Сохранение конфига
+void saveConfig() {
+    if (ConfigManager::saveGameConfig(configPath, currentConfig)) {
+        std::cout << "Config saved to: " << configPath << std::endl;
+    }
+    else {
+        std::cout << "Failed to save config to: " << configPath << std::endl;
+    }
+}
+
+// Сброс 2D проекции
 void reset2DProjection() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_LIGHTING);
@@ -419,11 +530,11 @@ void openFileDialog() {
     ZeroMemory(&ofn, sizeof(ofn));
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = GetActiveWindow();
-    ofn.lpstrFilter = "OBJ Files\0*.obj\0All Files\0*.*\0";
+    ofn.lpstrFilter = "Model Files\0*.fbx;*.obj;*.dae;*.3ds\0All Files\0*.*\0";
     ofn.lpstrFile = fileName;
     ofn.nMaxFile = MAX_PATH;
     ofn.lpstrInitialDir = folderPath.c_str();
-    ofn.lpstrTitle = "Выберите модель";
+    ofn.lpstrTitle = "Choose Model";
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
     if (GetOpenFileNameA(&ofn)) {
@@ -436,7 +547,7 @@ void openFileDialog() {
             else currentConfig.snakeTailModel = filename;
 
             std::cout << "Selected model: " << filename << std::endl;
-            loadObjModel(filename, currentModelData, subFolder);
+            loadModel(filename, currentModelData, subFolder);
             saveConfig();
         }
     }
@@ -456,11 +567,11 @@ void openObstacleFileDialog() {
     ZeroMemory(&ofn, sizeof(ofn));
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = GetActiveWindow();
-    ofn.lpstrFilter = "OBJ Files\0*.obj\0All Files\0*.*\0";
+    ofn.lpstrFilter = "Model Files\0*.fbx;*.obj;*.dae;*.3ds\0All Files\0*.*\0";
     ofn.lpstrFile = fileName;
     ofn.nMaxFile = MAX_PATH;
     ofn.lpstrInitialDir = folderPath.c_str();
-    ofn.lpstrTitle = "Выберите модель препятствия";
+    ofn.lpstrTitle = "Choose Obstacle Model";
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
     if (GetOpenFileNameA(&ofn)) {
@@ -548,7 +659,7 @@ void drawModel(ModelData& model) {
     }
 }
 
-// Шейдеры для текста
+// Шейдеры для текста (оставляем без изменений)
 const char* textVertexShader = R"(
 #version 330 core
 layout (location = 0) in vec4 vertex;
@@ -866,6 +977,9 @@ void render3DPreview() {
 
     glRotatef(previewRotation, 0.0f, 1.0f, 0.0f);
 
+    // Рисуем пол с текстурой
+    drawTexturedFloor();
+
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
 
@@ -878,16 +992,6 @@ void render3DPreview() {
     GLfloat lightDiffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };
     glLightfv(GL_LIGHT0, GL_DIFFUSE, lightDiffuse);
 
-    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
-
-    GLfloat matAmbient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    GLfloat matSpecular[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-    GLfloat matShininess[] = { 30.0f };
-
-    glMaterialfv(GL_FRONT, GL_AMBIENT, matAmbient);
-    glMaterialfv(GL_FRONT, GL_SPECULAR, matSpecular);
-    glMaterialfv(GL_FRONT, GL_SHININESS, matShininess);
-
     GLfloat matDiffuse[4];
     switch (selectedPart) {
     case 0: matDiffuse[0] = 0.0f; matDiffuse[1] = 1.0f; matDiffuse[2] = 0.0f; break;
@@ -897,9 +1001,6 @@ void render3DPreview() {
     matDiffuse[3] = 1.0f;
     glMaterialfv(GL_FRONT, GL_DIFFUSE, matDiffuse);
 
-    drawGrid();
-
-    glEnable(GL_LIGHTING);
     drawModel(currentModelData);
 
     glMatrixMode(GL_PROJECTION);
@@ -962,6 +1063,8 @@ void renderObstaclePreview() {
     glRotatef(obstaclePreviewRotation, 0.0f, 1.0f, 0.0f);
     glScalef(obstacles[selectedObstacle].scale, obstacles[selectedObstacle].scale, obstacles[selectedObstacle].scale);
 
+    drawTexturedFloor();
+
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
 
@@ -982,10 +1085,8 @@ void renderObstaclePreview() {
     };
     glMaterialfv(GL_FRONT, GL_DIFFUSE, matDiffuse);
 
-    drawGrid();
-
     ModelData tempModel;
-    loadObjModel(obstacles[selectedObstacle].modelFile, tempModel, "obstacles");
+    loadModel(obstacles[selectedObstacle].modelFile, tempModel, "obstacles");
     drawModel(tempModel);
 
     glMatrixMode(GL_PROJECTION);
@@ -1021,17 +1122,17 @@ void renderSnakeEditor() {
     if (drawButton(startX, buttonY, buttonWidth, 40, "Head")) {
         selectedPart = 0;
         std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-        loadObjModel(currentConfig.snakeHeadModel, currentModelData, folder);
+        loadModel(currentConfig.snakeHeadModel, currentModelData, folder);
     }
     if (drawButton(startX + 130, buttonY, buttonWidth, 40, "Body")) {
         selectedPart = 1;
         std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-        loadObjModel(currentConfig.snakeBodyModel, currentModelData, folder);
+        loadModel(currentConfig.snakeBodyModel, currentModelData, folder);
     }
     if (drawButton(startX + 260, buttonY, buttonWidth, 40, "Tail")) {
         selectedPart = 2;
         std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-        loadObjModel(currentConfig.snakeTailModel, currentModelData, folder);
+        loadModel(currentConfig.snakeTailModel, currentModelData, folder);
     }
 
     std::string currentModel;
@@ -1133,7 +1234,6 @@ void renderObstacleEditor() {
 
     renderText("OBSTACLE EDITOR", windowWidth / 2, 50, 0.5f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
 
-    // Список препятствий слева
     int listX = 50;
     int listY = 120;
     int listWidth = 200;
@@ -1154,11 +1254,10 @@ void renderObstacleEditor() {
         }
     }
 
-    // Кнопки управления списком
     if (drawButton(listX, listY + obstacles.size() * (itemHeight + 5) + 10, listWidth, itemHeight, "Add Obstacle")) {
         ObstacleItem newObstacle;
         newObstacle.name = "New Obstacle " + std::to_string(obstacles.size() + 1);
-        newObstacle.modelFile = "tree.obj";
+        newObstacle.modelFile = "tree.fbx";
         newObstacle.color = glm::vec3(0.1f, 0.4f, 0.1f);
         newObstacle.scale = 1.0f;
         newObstacle.posX = 30;
@@ -1169,60 +1268,41 @@ void renderObstacleEditor() {
     }
 
     if (selectedObstacle >= 0 && selectedObstacle < obstacles.size()) {
-        // Редактор свойств выбранного препятствия
         int editX = 300;
         int editY = 120;
         int editWidth = 300;
 
         renderText("Properties:", editX, editY - 20, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
 
-        // Название
         drawInfoBox(editX, editY, editWidth, 60, "Name", obstacles[selectedObstacle].name);
-
-        // Модель
         drawInfoBox(editX, editY + 70, editWidth, 60, "Model", obstacles[selectedObstacle].modelFile);
+
         if (drawButton(editX + editWidth + 10, editY + 80, 80, 40, "Browse")) {
             openObstacleFileDialog();
         }
 
-        // Цвет
         renderText("Color:", editX, editY + 150, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-        if (drawSlider(editX, editY + 170, 150, &obstacles[selectedObstacle].color.r, 0.0f, 1.0f, "R")) {
-            obstacleLastRotationTime = glfwGetTime();
-            obstacleAutoRotate = false;
-        }
-        if (drawSlider(editX, editY + 200, 150, &obstacles[selectedObstacle].color.g, 0.0f, 1.0f, "G")) {
-            obstacleLastRotationTime = glfwGetTime();
-            obstacleAutoRotate = false;
-        }
-        if (drawSlider(editX, editY + 230, 150, &obstacles[selectedObstacle].color.b, 0.0f, 1.0f, "B")) {
-            obstacleLastRotationTime = glfwGetTime();
-            obstacleAutoRotate = false;
-        }
+        drawSlider(editX, editY + 170, 150, &obstacles[selectedObstacle].color.r, 0.0f, 1.0f, "R");
+        drawSlider(editX, editY + 200, 150, &obstacles[selectedObstacle].color.g, 0.0f, 1.0f, "G");
+        drawSlider(editX, editY + 230, 150, &obstacles[selectedObstacle].color.b, 0.0f, 1.0f, "B");
 
-        // Масштаб
         drawSlider(editX, editY + 270, 200, &obstacles[selectedObstacle].scale, 0.5f, 3.0f, "Scale");
 
-        // Позиция
         char posText[50];
         sprintf_s(posText, "Pos X: %d, Z: %d", obstacles[selectedObstacle].posX, obstacles[selectedObstacle].posZ);
         renderText(posText, editX, editY + 310, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
 
-        // Включено/выключено
         if (drawButton(editX, editY + 340, 100, 30, obstacles[selectedObstacle].enabled ? "Disable" : "Enable")) {
             obstacles[selectedObstacle].enabled = !obstacles[selectedObstacle].enabled;
         }
 
-        // Удалить
         if (drawButton(editX + 150, editY + 340, 100, 30, "Delete")) {
             obstacles.erase(obstacles.begin() + selectedObstacle);
             selectedObstacle = -1;
         }
 
-        // 3D предпросмотр
         renderObstaclePreview();
 
-        // Стрелки вращения под preview
         int previewX = 650;
         int previewY = 120;
         int previewW = 500;
@@ -1247,14 +1327,11 @@ void renderObstacleEditor() {
             obstacleAutoRotate = false;
         }
 
-        // Авто-вращение для препятствий
         float currentTime = glfwGetTime();
         float timeSinceLastInput = currentTime - obstacleLastRotationTime;
 
-        if (!obstacleAutoRotate) {
-            if (timeSinceLastInput >= autoRotateDelay) {
-                obstacleAutoRotate = true;
-            }
+        if (!obstacleAutoRotate && timeSinceLastInput >= autoRotateDelay) {
+            obstacleAutoRotate = true;
         }
 
         if (obstacleAutoRotate) {
@@ -1263,7 +1340,6 @@ void renderObstacleEditor() {
         }
     }
 
-    // Кнопки навигации
     if (drawButton(50, 550, 100, 40, "Back")) {
         currentMode = MODE_MAIN;
     }
@@ -1283,49 +1359,94 @@ void renderEnvironmentEditor() {
     int startY = 120;
     int sliderWidth = 250;
 
-    // Цвет неба
     renderText("Sky Color:", startX, startY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
     drawSlider(startX, startY + 20, sliderWidth, &skyColor[0], 0.0f, 1.0f, "R");
     drawSlider(startX, startY + 50, sliderWidth, &skyColor[1], 0.0f, 1.0f, "G");
     drawSlider(startX, startY + 80, sliderWidth, &skyColor[2], 0.0f, 1.0f, "B");
 
-    // Цвет пола
     renderText("Floor Color:", startX, startY + 120, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
     drawSlider(startX, startY + 140, sliderWidth, &floorColor[0], 0.0f, 1.0f, "R");
     drawSlider(startX, startY + 170, sliderWidth, &floorColor[1], 0.0f, 1.0f, "G");
     drawSlider(startX, startY + 200, sliderWidth, &floorColor[2], 0.0f, 1.0f, "B");
 
-    // Цвет сетки
     renderText("Grid Color:", startX, startY + 240, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
     drawSlider(startX, startY + 260, sliderWidth, &gridColor[0], 0.0f, 1.0f, "R");
     drawSlider(startX, startY + 290, sliderWidth, &gridColor[1], 0.0f, 1.0f, "G");
     drawSlider(startX, startY + 320, sliderWidth, &gridColor[2], 0.0f, 1.0f, "B");
 
+    // Текстура пола
+    renderText("Floor Texture:", startX + 400, startY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+    std::string texName = floorTexture.path.empty() ? "None" : floorTexture.path;
+    renderText(texName, startX + 400, startY + 30, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+    if (drawButton(startX + 400, startY + 50, 100, 30, "Load Texture")) {
+        std::string filename = openTextureFileDialog();
+        if (!filename.empty()) {
+            loadTexture(filename, floorTexture);
+        }
+    }
+
+    if (drawButton(startX + 510, startY + 50, 100, 30, "Clear")) {
+        if (floorTexture.id != 0) {
+            glDeleteTextures(1, &floorTexture.id);
+            floorTexture.id = 0;
+            floorTexture.path = "";
+        }
+    }
+
+    // Предпросмотр текстуры
+    int texPreviewX = startX + 400;
+    int texPreviewY = startY + 100;
+    int texPreviewSize = 100;
+
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(texPreviewX, texPreviewY);
+    glVertex2f(texPreviewX + texPreviewSize, texPreviewY);
+    glVertex2f(texPreviewX + texPreviewSize, texPreviewY + texPreviewSize);
+    glVertex2f(texPreviewX, texPreviewY + texPreviewSize);
+    glEnd();
+
+    if (floorTexture.id != 0) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, floorTexture.id);
+        glColor3f(1.0f, 1.0f, 1.0f);
+
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(texPreviewX + 1, texPreviewY + 1);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(texPreviewX + texPreviewSize - 1, texPreviewY + 1);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(texPreviewX + texPreviewSize - 1, texPreviewY + texPreviewSize - 1);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(texPreviewX + 1, texPreviewY + texPreviewSize - 1);
+        glEnd();
+
+        glDisable(GL_TEXTURE_2D);
+    }
+
     // Количество объектов
-    renderText("Objects:", startX + 400, startY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    renderText("Objects:", startX + 400, startY + 220, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
 
     char countText[50];
     sprintf_s(countText, "Clouds: %d", cloudCount);
-    renderText(countText, startX + 400, startY + 30, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    if (drawButton(startX + 500, startY + 20, 40, 30, "+")) cloudCount++;
-    if (drawButton(startX + 550, startY + 20, 40, 30, "-") && cloudCount > 0) cloudCount--;
+    renderText(countText, startX + 400, startY + 250, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    if (drawButton(startX + 500, startY + 240, 40, 30, "+")) cloudCount++;
+    if (drawButton(startX + 550, startY + 240, 40, 30, "-") && cloudCount > 0) cloudCount--;
 
     sprintf_s(countText, "Birds: %d", birdCount);
-    renderText(countText, startX + 400, startY + 70, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    if (drawButton(startX + 500, startY + 60, 40, 30, "+")) birdCount++;
-    if (drawButton(startX + 550, startY + 60, 40, 30, "-") && birdCount > 0) birdCount--;
+    renderText(countText, startX + 400, startY + 290, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    if (drawButton(startX + 500, startY + 280, 40, 30, "+")) birdCount++;
+    if (drawButton(startX + 550, startY + 280, 40, 30, "-") && birdCount > 0) birdCount--;
 
     sprintf_s(countText, "Flowers: %d", flowerCount);
-    renderText(countText, startX + 400, startY + 110, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    if (drawButton(startX + 500, startY + 100, 40, 30, "+")) flowerCount++;
-    if (drawButton(startX + 550, startY + 100, 40, 30, "-") && flowerCount > 0) flowerCount--;
+    renderText(countText, startX + 400, startY + 330, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    if (drawButton(startX + 500, startY + 320, 40, 30, "+")) flowerCount++;
+    if (drawButton(startX + 550, startY + 320, 40, 30, "-") && flowerCount > 0) flowerCount--;
 
     // Предпросмотр цвета
     int previewX = 800;
     int previewY = 300;
     int previewSize = 150;
 
-    // Квадрат с цветом неба
     glColor3f(skyColor[0], skyColor[1], skyColor[2]);
     glBegin(GL_QUADS);
     glVertex2f(previewX, previewY);
@@ -1335,7 +1456,6 @@ void renderEnvironmentEditor() {
     glEnd();
     renderText("Sky", previewX + 5, previewY + 5, 0.2f, glm::vec3(1.0f, 1.0f, 1.0f));
 
-    // Квадрат с цветом пола
     glColor3f(floorColor[0], floorColor[1], floorColor[2]);
     glBegin(GL_QUADS);
     glVertex2f(previewX, previewY + previewSize / 2);
@@ -1345,20 +1465,17 @@ void renderEnvironmentEditor() {
     glEnd();
     renderText("Floor", previewX + 5, previewY + previewSize / 2 + 5, 0.2f, glm::vec3(1.0f, 1.0f, 1.0f));
 
-    // Линия сетки
     glColor3f(gridColor[0], gridColor[1], gridColor[2]);
     glBegin(GL_LINES);
     glVertex2f(previewX, previewY + previewSize / 2);
     glVertex2f(previewX + previewSize, previewY + previewSize / 2);
     glEnd();
 
-    // Кнопки навигации
     if (drawButton(50, 550, 100, 40, "Back")) {
         currentMode = MODE_MAIN;
     }
 
     if (drawButton(170, 550, 100, 40, "Save")) {
-        // Сохраняем настройки окружения
         currentConfig.skyColor = glm::vec3(skyColor[0], skyColor[1], skyColor[2]);
         currentConfig.floorColor = glm::vec3(floorColor[0], floorColor[1], floorColor[2]);
         currentConfig.gridColor = glm::vec3(gridColor[0], gridColor[1], gridColor[2]);
@@ -1383,7 +1500,7 @@ void renderMainMenu() {
     if (drawButton(centerX, startY, buttonWidth, buttonHeight, "1. Snake Editor")) {
         currentMode = MODE_SNAKE_EDITOR;
         std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-        loadObjModel(currentConfig.snakeHeadModel, currentModelData, folder);
+        loadModel(currentConfig.snakeHeadModel, currentModelData, folder);
     }
 
     if (drawButton(centerX, startY + 70, buttonWidth, buttonHeight, "2. Obstacle Editor")) {
@@ -1392,7 +1509,6 @@ void renderMainMenu() {
 
     if (drawButton(centerX, startY + 140, buttonWidth, buttonHeight, "3. Environment Editor")) {
         currentMode = MODE_ENVIRONMENT_EDITOR;
-        // Загружаем текущие настройки
         skyColor[0] = currentConfig.skyColor.r;
         skyColor[1] = currentConfig.skyColor.g;
         skyColor[2] = currentConfig.skyColor.b;
@@ -1525,6 +1641,7 @@ bool initOpenGL() {
     initFreeType();
     initPaths();
     initObstacles();
+    loadAvailableTextures();
 
     return true;
 }
@@ -1539,7 +1656,7 @@ int main() {
     }
 
     std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-    loadObjModel(currentConfig.snakeHeadModel, currentModelData, folder);
+    loadModel(currentConfig.snakeHeadModel, currentModelData, folder);
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
