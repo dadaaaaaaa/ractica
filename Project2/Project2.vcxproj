@@ -76,7 +76,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\ractica;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GL;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLFW;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Shared;$(SolutionDir)ractica\ractica;$(SolutionDir)ractica\includes;$(SolutionDir)FreeType\include;$(SolutionDir)glm-master;$(SolutionDir)includes\GL;$(SolutionDir)includes\GLFW;$(SolutionDir)includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -94,7 +94,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\ractica;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GL;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLFW;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Shared;$(SolutionDir)ractica\ractica;$(SolutionDir)ractica\includes;$(SolutionDir)FreeType\include;$(SolutionDir)glm-master;$(SolutionDir)includes\GL;$(SolutionDir)includes\GLFW;$(SolutionDir)includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -110,7 +110,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\ractica;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GL;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLFW;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Shared;$(SolutionDir)ractica\ractica;$(SolutionDir)ractica\includes;$(SolutionDir)FreeType\include;$(SolutionDir)glm-master;$(SolutionDir)includes\GL;$(SolutionDir)includes\GLFW;$(SolutionDir)includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -128,7 +128,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\ractica;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\glm-master;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GL;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLFW;C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Shared;$(SolutionDir)ractica\ractica;$(SolutionDir)ractica\includes;$(SolutionDir)FreeType\include;$(SolutionDir)glm-master;$(SolutionDir)includes\GL;$(SolutionDir)includes\GLFW;$(SolutionDir)includes\GLEW;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
@@ -144,7 +144,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ractica\ConfigEditor\ConfigManager.h" />
-    <ClInclude Include="..\ractica\Shared\ConfigTypes.h" />
+    <ClInclude Include="..\Shared\ConfigTypes.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ractica\ractica.vcxproj">

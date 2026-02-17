@@ -1,16 +1,16 @@
 ﻿#define GLEW_STATIC
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
+#include <GL/glew.h>           // ДОЛЖЕН БЫТЬ ПЕРВЫМ!
+#include <glfw3.h>        // ПОТОМ GLFW
 
-// Assimp для загрузки FBX
+// Правильные include для GLM
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>  // для perspective, ortho
+#include <glm/gtc/type_ptr.hpp>           // для value_ptr
+
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-// stb_image для загрузки текстур
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -26,7 +26,7 @@
 #include FT_FREETYPE_H
 
 #include "ConfigManager.h"
-#include "../Shared/ConfigTypes.h"
+#include "ConfigTypes.h"
 
 // Структура для символа
 struct Character {

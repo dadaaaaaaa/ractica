@@ -9,7 +9,8 @@ extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 
 GameObjects::GameObjects()
-    : gameFrozen(false),currentDirection(FORWARD),
+    : gameFrozen(false),
+    currentDirection(FORWARD),
     verticalDirection(0),
     score(0),
     gameOver(false),
@@ -18,7 +19,19 @@ GameObjects::GameObjects()
     gameSpeed(0.12f),
     playerName("Player"),
     gameDuration(0),
-    gameTimer(0.0f) {
+    gameTimer(0.0f),
+    nameInputActive(false),
+    // Инициализация полей конфига
+    snakeHeadModel("snake_head.obj"),
+    snakeBodyModel("snake_body.obj"),
+    snakeTailModel("snake_tail.obj"),
+    snakeHeadColor(0.0f, 1.0f, 0.0f),
+    snakeBodyColor(0.0f, 0.7f, 0.0f),
+    snakeTailColor(0.0f, 0.5f, 0.0f),
+    snakeScale(0.8f),
+    cloudCount(20),
+    birdCount(15),
+    flowerCount(25) {
 
     speedMultipliers = { 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f };
     currentSpeedIndex = 3;
@@ -1018,4 +1031,73 @@ void GameObjects::removeLastCharacterFromName() {
     if (!playerName.empty()) {
         playerName.pop_back();
     }
+}
+// Реализация методов для конфига
+void GameObjects::setSnakeModels(const std::string& head, const std::string& body, const std::string& tail) {
+    snakeHeadModel = head;
+    snakeBodyModel = body;
+    snakeTailModel = tail;
+    std::cout << "Snake models set: Head=" << head << ", Body=" << body << ", Tail=" << tail << std::endl;
+}
+
+void GameObjects::setSnakeColors(const glm::vec3& head, const glm::vec3& body, const glm::vec3& tail) {
+    snakeHeadColor = head;
+    snakeBodyColor = body;
+    snakeTailColor = tail;
+}
+
+void GameObjects::setSnakeScale(float scale) {
+    snakeScale = scale;
+}
+
+void GameObjects::setCloudCount(int count) {
+    cloudCount = count;
+}
+
+void GameObjects::setBirdCount(int count) {
+    birdCount = count;
+}
+
+void GameObjects::setFlowerCount(int count) {
+    flowerCount = count;
+}
+
+const std::string& GameObjects::getSnakeHeadModel() const {
+    return snakeHeadModel;
+}
+
+const std::string& GameObjects::getSnakeBodyModel() const {
+    return snakeBodyModel;
+}
+
+const std::string& GameObjects::getSnakeTailModel() const {
+    return snakeTailModel;
+}
+
+const glm::vec3& GameObjects::getSnakeHeadColor() const {
+    return snakeHeadColor;
+}
+
+const glm::vec3& GameObjects::getSnakeBodyColor() const {
+    return snakeBodyColor;
+}
+
+const glm::vec3& GameObjects::getSnakeTailColor() const {
+    return snakeTailColor;
+}
+
+float GameObjects::getSnakeScale() const {
+    return snakeScale;
+}
+
+int GameObjects::getCloudCount() const {
+    return cloudCount;
+}
+
+int GameObjects::getBirdCount() const {
+    return birdCount;
+}
+
+int GameObjects::getFlowerCount() const {
+    return flowerCount;
 }

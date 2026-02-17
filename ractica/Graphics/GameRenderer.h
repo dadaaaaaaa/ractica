@@ -24,7 +24,9 @@ private:
     Model flowerModel;
     Model treeModel;
     Model appleModel;
-
+    glm::vec3 skyColor;
+    glm::vec3 floorColor;
+    glm::vec3 gridColor;
     // === яхярелш пемдепхмцю ===
     ShaderManager shaderManager;
     Camera camera;
@@ -37,7 +39,9 @@ public:
     void createSnakeHeadModel(Model& model);
     void createSnakeBodyModel(Model& model);
     void createSnakeTailModel(Model& model);
-
+    void setSkyColor(const glm::vec3& color);
+    void setFloorColor(const glm::vec3& color);
+    void setGridColor(const glm::vec3& color);
     // === церрепш лндекеи х яхярел ===
     const Model& getSnakeHeadModel() const { return snakeHeadModel; }
     const Model& getSnakeBodyModel() const { return snakeBodyModel; }

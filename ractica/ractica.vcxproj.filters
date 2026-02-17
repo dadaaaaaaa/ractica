@@ -81,6 +81,9 @@
     <ClCompile Include="Objects\Sprite.cpp">
       <Filter>Исходные файлы\Objects</Filter>
     </ClCompile>
+    <ClCompile Include="ConfigEditor\ConfigManager.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="struct.txt" />
@@ -139,6 +142,12 @@
     </ClInclude>
     <ClInclude Include="Objects\Sprite.h">
       <Filter>Исходные файлы\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigEditor\ConfigManager.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Shared\ConfigTypes.h">
+      <Filter>Файлы заголовков</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

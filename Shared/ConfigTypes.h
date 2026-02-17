@@ -2,7 +2,6 @@
 #include <glm/glm.hpp>
 #include <string>
 
-
 // —труктура дл€ основных настроек игры
 struct GameConfig {
     // Game Settings
@@ -21,15 +20,15 @@ struct GameConfig {
     glm::vec3 gridColor = glm::vec3(0.2f, 0.5f, 0.15f);
 
     // Snake
-    std::string snakeHeadModel = "models/snake_head.obj";
+    std::string snakeHeadModel = "snake_head.obj";
     glm::vec3 snakeHeadColor = glm::vec3(0.0f, 1.0f, 0.0f);
     float snakeHeadScale = 0.8f;
 
-    std::string snakeBodyModel = "models/snake_body.obj";
+    std::string snakeBodyModel = "snake_body.obj";
     glm::vec3 snakeBodyColor = glm::vec3(0.0f, 0.7f, 0.0f);
     float snakeBodyScale = 0.8f;
 
-    std::string snakeTailModel = "models/snake_tail.obj";
+    std::string snakeTailModel = "snake_tail.obj";
     glm::vec3 snakeTailColor = glm::vec3(0.0f, 0.5f, 0.0f);
     float snakeTailScale = 0.8f;
 };

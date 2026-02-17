@@ -6,6 +6,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ractica\ConfigEditor\ConfigManager.h" />
-    <ClInclude Include="..\ractica\Shared\ConfigTypes.h" />
+    <ClInclude Include="..\Shared\ConfigTypes.h" />
   </ItemGroup>
 </Project>

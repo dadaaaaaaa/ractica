@@ -30,7 +30,20 @@ private:
     static const int MAX_HIGH_SCORES = 10;
     int gameDuration;
     float gameTimer;
+    // ÏÎËß ÄËß ÊÎÍÔÈÃÀ
+    std::string snakeHeadModel;
+    std::string snakeBodyModel;
+    std::string snakeTailModel;
 
+    glm::vec3 snakeHeadColor;
+    glm::vec3 snakeBodyColor;
+    glm::vec3 snakeTailColor;
+
+    float snakeScale;
+
+    int cloudCount;
+    int birdCount;
+    int flowerCount;
     std::string playerName;
     std::vector<float> speedMultipliers;
     int currentSpeedIndex;
@@ -115,4 +128,23 @@ public:
     void handleGameKeyPress(int key);
     void handleSettingsKeyPress(int key);
     void handleMenuKeyPress(int key);
+    // ÌÅÒÎÄÛ ÄËß ÓÑÒÀÍÎÂÊÈ ÊÎÍÔÈÃÀ
+    void setSnakeModels(const std::string& head, const std::string& body, const std::string& tail);
+    void setSnakeColors(const glm::vec3& head, const glm::vec3& body, const glm::vec3& tail);
+    void setSnakeScale(float scale);
+    void setCloudCount(int count);
+    void setBirdCount(int count);
+    void setFlowerCount(int count);
+
+    // ÃÅÒÒÅĞÛ ÄËß ÊÎÍÔÈÃÀ
+    const std::string& getSnakeHeadModel() const;
+    const std::string& getSnakeBodyModel() const;
+    const std::string& getSnakeTailModel() const;
+    const glm::vec3& getSnakeHeadColor() const;
+    const glm::vec3& getSnakeBodyColor() const;
+    const glm::vec3& getSnakeTailColor() const;
+    float getSnakeScale() const;
+    int getCloudCount() const;
+    int getBirdCount() const;
+    int getFlowerCount() const;
 };

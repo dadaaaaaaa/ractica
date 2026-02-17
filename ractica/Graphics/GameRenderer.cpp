@@ -11,7 +11,9 @@ extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 extern Game g_game;
 
-GameRenderer::GameRenderer() {
+GameRenderer::GameRenderer() : skyColor(0.53f, 0.81f, 0.92f)
+, floorColor(0.3f, 0.6f, 0.2f)
+, gridColor(0.2f, 0.5f, 0.15f) {
    
 }
 
@@ -1479,4 +1481,18 @@ void GameRenderer::createFenceCorner(std::vector<Vertex>& vertices, float x, flo
         CELL_SIZE, 0.04f, color);
     createFenceRailVertical(vertices, x, y + 0.25f, z - CELL_SIZE / 2.0f,
         CELL_SIZE, 0.04f, color);
+}
+void GameRenderer::setSkyColor(const glm::vec3& color) {
+    skyColor = color;
+    std::cout << "Sky color set to: (" << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
+}
+
+void GameRenderer::setFloorColor(const glm::vec3& color) {
+    floorColor = color;
+    std::cout << "Floor color set to: (" << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
+}
+
+void GameRenderer::setGridColor(const glm::vec3& color) {
+    gridColor = color;
+    std::cout << "Grid color set to: (" << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
 }
