@@ -54,6 +54,7 @@ private:
     GLuint compileShader(GLenum type, const char* source);
     bool createShaderProgram();
     bool createUIShaderProgram();
+
 };
 
 #endif // SHADER_MANAGER_H

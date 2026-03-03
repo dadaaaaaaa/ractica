@@ -63,25 +63,37 @@
     <ClCompile Include="UI\GameUI.cpp">
       <Filter>Исходные файлы\UI</Filter>
     </ClCompile>
-    <ClCompile Include="Objects\GameObjects.cpp">
-      <Filter>Исходные файлы\Objects</Filter>
-    </ClCompile>
     <ClCompile Include="Graphics\GameRenderer.cpp">
       <Filter>Исходные файлы\Graphics</Filter>
     </ClCompile>
     <ClCompile Include="UI\NetworkManager.cpp">
       <Filter>Исходные файлы\UI</Filter>
     </ClCompile>
-    <ClCompile Include="Objects\Bird.cpp">
-      <Filter>Исходные файлы\Objects</Filter>
-    </ClCompile>
-    <ClCompile Include="Objects\Obstacle.cpp">
-      <Filter>Исходные файлы\Objects</Filter>
-    </ClCompile>
-    <ClCompile Include="Objects\Sprite.cpp">
-      <Filter>Исходные файлы\Objects</Filter>
-    </ClCompile>
     <ClCompile Include="ConfigEditor\ConfigManager.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Primitives\ApplePrimitive.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Primitives\CloudPrimitive.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Primitives\PrimitiveBase.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Primitives\FencePrimitive.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Primitives\BirdPrimitive.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Primitives\FlowerPrimitive.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Primitives\TreePrimitive.cpp">
+      <Filter>Исходные файлы</Filter>
+    </ClCompile>
+    <ClCompile Include="Objects\GameObjects.cpp">
       <Filter>Исходные файлы</Filter>
     </ClCompile>
   </ItemGroup>
@@ -119,9 +131,6 @@
     <ClInclude Include="UI\GameUI.h">
       <Filter>Исходные файлы\UI</Filter>
     </ClInclude>
-    <ClInclude Include="Objects\GameObjects.h">
-      <Filter>Исходные файлы\Objects</Filter>
-    </ClInclude>
     <ClInclude Include="Graphics\GameRenderer.h">
       <Filter>Исходные файлы\Graphics</Filter>
     </ClInclude>
@@ -147,6 +156,33 @@
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
     <ClInclude Include="..\Shared\ConfigTypes.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Primitives\FencePrimitive.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Primitives\CloudPrimitive.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Primitives\TreePrimitive.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Primitives\FlowerPrimitive.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Primitives\BirdPrimitive.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Primitives\ApplePrimitive.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Primitives\PrimitiveBase.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="Objects\GameObjects.h">
+      <Filter>Файлы заголовков</Filter>
+    </ClInclude>
+    <ClInclude Include="ConfigEditor\ConfigEditor.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
   </ItemGroup>

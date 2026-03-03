@@ -148,11 +148,15 @@
     <ClCompile Include="Graphics\Model.cpp" />
     <ClCompile Include="Graphics\ShaderManager.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="Objects\Bird.cpp" />
     <ClCompile Include="Objects\GameObjects.cpp" />
-    <ClCompile Include="Objects\Obstacle.cpp" />
-    <ClCompile Include="Objects\Sprite.cpp" />
     <ClCompile Include="pch.cpp" />
+    <ClCompile Include="Primitives\ApplePrimitive.cpp" />
+    <ClCompile Include="Primitives\CloudPrimitive.cpp" />
+    <ClCompile Include="Primitives\PrimitiveBase.cpp" />
+    <ClCompile Include="Primitives\FencePrimitive.cpp" />
+    <ClCompile Include="Primitives\BirdPrimitive.cpp" />
+    <ClCompile Include="Primitives\FlowerPrimitive.cpp" />
+    <ClCompile Include="Primitives\TreePrimitive.cpp" />
     <ClCompile Include="UI\GameUI.cpp" />
     <ClCompile Include="UI\MenuButton.cpp" />
     <ClCompile Include="UI\NetworkManager.cpp" />
@@ -163,6 +167,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Shared\ConfigTypes.h" />
+    <ClInclude Include="ConfigEditor\ConfigEditor.h" />
     <ClInclude Include="ConfigEditor\ConfigManager.h" />
     <ClInclude Include="Core\Constants.h" />
     <ClInclude Include="Core\GameConfig.h" />
@@ -178,6 +183,13 @@
     <ClInclude Include="Objects\Obstacle.h" />
     <ClInclude Include="Objects\Sprite.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="Primitives\FencePrimitive.h" />
+    <ClInclude Include="Primitives\CloudPrimitive.h" />
+    <ClInclude Include="Primitives\TreePrimitive.h" />
+    <ClInclude Include="Primitives\FlowerPrimitive.h" />
+    <ClInclude Include="Primitives\BirdPrimitive.h" />
+    <ClInclude Include="Primitives\ApplePrimitive.h" />
+    <ClInclude Include="Primitives\PrimitiveBase.h" />
     <ClInclude Include="UI\GameUI.h" />
     <ClInclude Include="UI\MenuButton.h" />
     <ClInclude Include="UI\NetworkManager.h" />

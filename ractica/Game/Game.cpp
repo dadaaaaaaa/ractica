@@ -24,21 +24,34 @@ void Game::initPaths() {
     GetCurrentDirectoryA(MAX_PATH, currentDir);
     std::string exePath = std::string(currentDir);
 
-    std::cout << "===== PATH DEBUG =====" << std::endl;
+    std::cout << "\n===== GAME PATH DEBUG =====" << std::endl;
     std::cout << "Current directory (exe): " << exePath << std::endl;
 
+    // Находим корень проекта (поднимаемся до папки, где лежит assets)
     std::string rootPath = exePath;
 
+    // Проверяем где находится exe
     size_t pos = rootPath.find("\\x64\\Debug");
     if (pos != std::string::npos) {
         rootPath = rootPath.substr(0, pos);
         std::cout << "Found x64/Debug, root: " << rootPath << std::endl;
     }
-    else {
-        pos = rootPath.find("\\Debug");
-        if (pos != std::string::npos) {
-            rootPath = rootPath.substr(0, pos);
-            std::cout << "Found Debug, root: " << rootPath << std::endl;
+    else if ((pos = rootPath.find("\\Debug")) != std::string::npos) {
+        rootPath = rootPath.substr(0, pos);
+        std::cout << "Found Debug, root: " << rootPath << std::endl;
+    }
+    else if ((pos = rootPath.find("\\Release")) != std::string::npos) {
+        rootPath = rootPath.substr(0, pos);
+        std::cout << "Found Release, root: " << rootPath << std::endl;
+    }
+
+    // Убираем лишний "\ractica" если он есть
+    if (rootPath.find("\\ractica") != std::string::npos) {
+        // Убираем последний сегмент пути
+        size_t lastSlash = rootPath.find_last_of("\\");
+        if (lastSlash != std::string::npos) {
+            rootPath = rootPath.substr(0, lastSlash);
+            std::cout << "Removed extra \\ractica, new root: " << rootPath << std::endl;
         }
     }
 
@@ -47,27 +60,66 @@ void Game::initPaths() {
     g_texturesPath = g_assetsPath + "textures\\";
     g_configPath = g_assetsPath + "config\\game.cfg";
 
+    std::cout << "\n--- FINAL PATHS ---" << std::endl;
     std::cout << "Assets path: " << g_assetsPath << std::endl;
     std::cout << "Models path: " << g_modelsPath << std::endl;
     std::cout << "Textures path: " << g_texturesPath << std::endl;
     std::cout << "Config path: " << g_configPath << std::endl;
-    std::cout << "======================" << std::endl;
+
+    // Проверяем существование
+    DWORD attrib = GetFileAttributesA(g_assetsPath.c_str());
+    std::cout << "\nAssets folder exists: " << ((attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY)) ? "✓ YES" : "✗ NO") << std::endl;
+
+    attrib = GetFileAttributesA(g_configPath.c_str());
+    std::cout << "Config file exists: " << ((attrib != INVALID_FILE_ATTRIBUTES) ? "✓ YES" : "✗ NO") << std::endl;
+
+    std::cout << "===========================\n" << std::endl;
 }
 
 void Game::loadConfig() {
-    std::cout << "===== LOADING CONFIG =====" << std::endl;
+    std::cout << "\n===== LOADING GAME CONFIG =====" << std::endl;
     std::cout << "Attempting to load from: " << g_configPath << std::endl;
 
     GameConfig config;
 
     if (ConfigManager::loadGameConfig(g_configPath, config)) {
-        std::cout << "✓ Config loaded successfully!" << std::endl;
+        std::cout << "✓ CONFIG LOADED SUCCESSFULLY!" << std::endl;
 
+        // Показываем что загрузили
+        std::cout << "\nLoaded values from file:" << std::endl;
+        std::cout << "  Sky color: (" << config.skyColor.r << ", " << config.skyColor.g << ", " << config.skyColor.b << ")" << std::endl;
+        std::cout << "  Floor color: (" << config.floorColor.r << ", " << config.floorColor.g << ", " << config.floorColor.b << ")" << std::endl;
+        std::cout << "  Grid color: (" << config.gridColor.r << ", " << config.gridColor.g << ", " << config.gridColor.b << ")" << std::endl;
+        std::cout << "  Cloud count: " << config.cloudCount << std::endl;
+        std::cout << "  Bird count: " << config.birdCount << std::endl;
+        std::cout << "  Flower count: " << config.flowerCount << std::endl;
+
+        // Модели змейки
+        std::cout << "  Snake Head: " << config.snakeHeadModel << std::endl;
+        std::cout << "  Snake Body: " << config.snakeBodyModel << std::endl;
+        std::cout << "  Snake Tail: " << config.snakeTailModel << std::endl;
+
+        // Модели окружения
+        std::cout << "  Apple Model: " << config.appleModel << std::endl;
+        std::cout << "  Tree Model: " << config.treeModel << std::endl;
+        std::cout << "  Cloud Model: " << config.cloudModel << std::endl;
+        std::cout << "  Bird Model: " << config.birdModel << std::endl;
+        std::cout << "  Flower Model: " << config.flowerModel << std::endl;
+        std::cout << "  Floor Model: " << config.floorModel << std::endl;
+
+        // Применяем к GameObjects
         objects.setSnakeModels(
             config.snakeHeadModel,
             config.snakeBodyModel,
             config.snakeTailModel
         );
+
+        objects.setAppleModel(config.appleModel);
+        objects.setTreeModel(config.treeModel);
+        objects.setCloudModel(config.cloudModel);
+        objects.setBirdModel(config.birdModel);
+        objects.setFlowerModel(config.flowerModel);
+        objects.setFloorModel(config.floorModel);
 
         objects.setSnakeColors(
             config.snakeHeadColor,
@@ -80,20 +132,27 @@ void Game::loadConfig() {
         objects.setBirdCount(config.birdCount);
         objects.setFlowerCount(config.flowerCount);
 
+        // Применяем к Renderer
         renderer.setSkyColor(config.skyColor);
         renderer.setFloorColor(config.floorColor);
         renderer.setGridColor(config.gridColor);
 
-        std::cout << "  Snake Head: " << config.snakeHeadModel << std::endl;
-        std::cout << "  Snake Body: " << config.snakeBodyModel << std::endl;
-        std::cout << "  Snake Tail: " << config.snakeTailModel << std::endl;
+        // Загружаем модели
+        renderer.loadModelsFromConfig(objects);
+
+        if (!config.floorTexture.empty()) {
+            renderer.setFloorTexture(config.floorTexture);
+        }
     }
     else {
-        std::cout << "✗ Failed to load config from: " << g_configPath << std::endl;
-        std::cout << "  Using default values." << std::endl;
+        std::cout << "✗ FAILED TO LOAD CONFIG!" << std::endl;
+        std::cout << "Creating default models..." << std::endl;
+        // Создаем примитивы по умолчанию
+        renderer.createPrimitives();
     }
-    std::cout << "==========================" << std::endl;
+    std::cout << "===============================\n" << std::endl;
 }
+
 void Game::initialize() {
     std::cout << "=== GAME INITIALIZATION START ===" << std::endl;
 

@@ -2,16 +2,35 @@
 
 #include "../Core/Constants.h"
 #include "../Core/Types.h"
+#include "../Shared/ConfigTypes.h"
 #include "Model.h"
 #include "ShaderManager.h"
 #include "Camera.h"
 #include "../Objects/GameObjects.h"
+#include "../Objects/Sprite.h"      // Добавьте это
+#include "../Objects/Bird.h"        // Добавьте это
+#include "../Objects/Obstacle.h"    // Добавьте это
 #include "../UI/GameUI.h"
 #include <GLFW/glfw3.h>
+#include <string>
+#include <functional>
+#include <filesystem>
+
+// Структура для текстуры
+struct Texture {
+    unsigned int id;
+    int width;
+    int height;
+    std::string path;
+
+    Texture() : id(0), width(0), height(0), path("") {}
+};
+
+// Объявление внешних функций (они определены в ConfigEditor.cpp)
+bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder = "");
 
 class GameRenderer {
 private:
-    // === МОДЕЛИ ИГРОВЫХ ОБЪЕКТОВ ===
     Model snakeHeadModel;
     Model snakeBodyModel;
     Model snakeTailModel;
@@ -24,25 +43,46 @@ private:
     Model flowerModel;
     Model treeModel;
     Model appleModel;
-    glm::vec3 skyColor;
-    glm::vec3 floorColor;
-    glm::vec3 gridColor;
-    // === СИСТЕМЫ РЕНДЕРИНГА ===
+
+    // Примитивы (фолбэки)
+    Model cubePrimitive;
+    Model spherePrimitive;
+    Model applePrimitive;
+    Model treePrimitive;
+    Model cloudPrimitive;
+    Model birdPrimitive;
+    Model flowerPrimitive;
+    Model fencePrimitive;
+
     ShaderManager shaderManager;
     Camera camera;
 
-    // === УПРАВЛЕНИЕ БУФЕРИЗАЦИЕЙ ===
     static bool doubleBufferingEnabled;
+
+    // Цвета из конфига
+    glm::vec3 skyColor;
+    glm::vec3 floorColor;
+    glm::vec3 gridColor;
+
+    // Текстура пола
+    Texture floorTexture;
+    bool useFloorTexture;
 
 public:
     GameRenderer();
+
     void createSnakeHeadModel(Model& model);
     void createSnakeBodyModel(Model& model);
     void createSnakeTailModel(Model& model);
-    void setSkyColor(const glm::vec3& color);
-    void setFloorColor(const glm::vec3& color);
-    void setGridColor(const glm::vec3& color);
-    // === ГЕТТЕРЫ МОДЕЛЕЙ И СИСТЕМ ===
+
+    // Методы для установки цветов
+    void setSkyColor(const glm::vec3& color) { skyColor = color; }
+    void setFloorColor(const glm::vec3& color) { floorColor = color; }
+    void setGridColor(const glm::vec3& color) { gridColor = color; }
+
+    // Метод для установки текстуры пола
+    void setFloorTexture(const std::string& texturePath);
+
     const Model& getSnakeHeadModel() const { return snakeHeadModel; }
     const Model& getSnakeBodyModel() const { return snakeBodyModel; }
     const Model& getSnakeTailModel() const { return snakeTailModel; }
@@ -60,64 +100,64 @@ public:
     Camera& getCamera() { return camera; }
     const ShaderManager& getShaderManager() const { return shaderManager; }
 
-    // === ОСНОВНЫЕ МЕТОДЫ РЕНДЕРИНГА ===
-    void initialize();                           // Инициализация рендерера
-    void renderGame(const GameObjects& objects); // Рендеринг игрового мира
+    void initialize();
+    void renderGame(const GameObjects& objects);
 
-    // === МЕТОДЫ ОТРИСОВКИ ОБЪЕКТОВ ===
     void drawModel(const Model& model, float x, float y, float z, float scale, const glm::vec3& color);
-    void drawFloor();                            // Отрисовка пола
-    void drawSnake(const std::vector<Point>& snake); // Отрисовка змейки
-    void drawFood(const std::vector<Point>& food);   // Отрисовка еды
-    void drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles); // Препятствия как деревья
-    void drawFence(const std::vector<Point>& fenceBlocks); // Отрисовка забора
-    void drawClouds(const std::vector<Sprite>& cloudSprites); // Отрисовка облаков
-    void drawBird(const Bird& bird);             // Отрисовка одной птицы
-    void drawBirds(const std::vector<Bird>& birds); // Отрисовка всех птиц
-    void drawGroundSprites(const std::vector<Sprite>& flowerSprites); // Отрисовка цветов на земле
+    void drawFloor();
+    void drawSnake(const std::vector<Point>& snake);
+    void drawFood(const std::vector<Point>& food);
+    void drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles);
+    void drawFence(const std::vector<Point>& fenceBlocks);
+    void drawClouds(const std::vector<Sprite>& cloudSprites);
+    void drawBird(const Bird& bird);
+    void drawBirds(const std::vector<Bird>& birds);
+    void drawGroundSprites(const std::vector<Sprite>& flowerSprites);
     void drawModelWithRotation(const Model& model, float x, float y, float z, float scale,
         const glm::vec3& color, float rotationAngle);
     float calculateSegmentRotation(const std::vector<Point>& snake, size_t index);
 
-    // === СИСТЕМА ЗАГРУЗКИ МОДЕЛЕЙ И ТЕКСТУР ===
-    void loadAllModels();                        // Загрузка всех моделей
-    bool loadModelFromFile(Model& model, const std::string& modelPath, const std::string& texturePath); // Загрузка модели из файла
-    bool loadOBJModel(Model& model, const std::string& path); // Парсинг OBJ файлов
-    bool loadTexture(Model& model, const std::string& path); // Загрузка текстуры
-    bool loadTextureFromFile(Model& model, const std::string& path); // Загрузка текстуры из файла
-    bool createProceduralTexture(Model& model, const std::string& name); // Создание procedural текстуры
+    // НОВЫЕ МЕТОДЫ
+    void createPrimitives();
+    void loadModelsFromConfig(const GameObjects& objects);
+    bool loadModelWithFallback(Model& model, const std::string& modelPath,
+        const std::string& subFolder,
+        std::function<void(Model&)> fallbackCreator);
 
-    // === GENERATIVE ТЕКСТУРЫ ===
-    void createSnakeTexture(std::vector<unsigned char>& data, int size); // Текстура для змейки
-    void createCheckerboardTexture(std::vector<unsigned char>& data, int size); // Шахматная текстура
+    void loadAllModels();
+    bool loadModelFromFile(Model& model, const std::string& modelPath, const std::string& texturePath);
+    bool loadOBJModel(Model& model, const std::string& path);
+    bool loadTexture(Model& model, const std::string& path);
+    bool loadTextureFromFile(Model& model, const std::string& path);
+    bool createProceduralTexture(Model& model, const std::string& name);
 
-    // === МЕТОДЫ СОЗДАНИЯ ГЕОМЕТРИИ (ПРИМИТИВЫ) ===
+    void createSnakeTexture(std::vector<unsigned char>& data, int size);
+    void createCheckerboardTexture(std::vector<unsigned char>& data, int size);
+
     void createCircle(std::vector<Vertex>& vertices, float cx, float cy, float radius, int segments, const glm::vec3& normal = glm::vec3(0.0f, 0.0f, 1.0f));
     void createCylinder(std::vector<Vertex>& vertices, float x, float y, float z, float radius, float height, int segments, const glm::vec3& color);
     void createSpherePart(std::vector<Vertex>& vertices, float cx, float cy, float cz, float radius, int segments, int rings, const glm::vec3& color);
     void createCloudPart(std::vector<Vertex>& vertices, float x, float y, float z, float radius);
 
-    // === МЕТОДЫ СОЗДАНИЯ КОНКРЕТНЫХ МОДЕЛЕЙ ===
-    void createCloudModel(Model& model);         // Модель облака
-    void createAnimatedBirdModel(Model& model);  // Модель птицы с анимацией
-    void createFlowerModel(Model& model);        // Модель цветка
-    void createTreeModel(Model& model);          // Модель дерева
-    void createDetailedAppleModel(Model& model); // Детальная модель яблока
-    void createTexturedCubeModel(Model& model);  // Текстурированный куб
-    void createTexturedSphereModel(Model& model); // Текстурированная сфера
-    void createTexturedFloorModel(Model& model); // Текстурированный пол
-    void createFenceModel(Model& model);         // Модель забора
+    void createCloudModel(Model& model);
+    void createAnimatedBirdModel(Model& model);
+    void createFlowerModel(Model& model);
+    void createTreeModel(Model& model);
+    void createDetailedAppleModel(Model& model);
+    void createTexturedCubeModel(Model& model);
+    void createTexturedSphereModel(Model& model);
+    void createTexturedFloorModel(Model& model);
+    void createFenceModel(Model& model);
 
-    // === МЕТОДЫ ГРАФИЧЕСКИХ УТИЛИТ ===
-    static void setupGLFWHints();                        // Настройка GLFW hints
-    static bool initGLEW();                             // Инициализация GLEW
-    static void initOpenGLSettings();                   // Настройка OpenGL
-    static void checkGLError(const char* functionName); // Проверка ошибок OpenGL
-    static void checkDoubleBufferSupport(GLFWwindow* window); // Проверка двойной буферизации
-    static void setupVSync(GLFWwindow* window, bool enabled = true); // Настройка VSync
-    static void printGraphicsInfo();                    // Вывод информации о системе
-    static void setupCallbacks(GLFWwindow* window);     // Установка колбэков GLFW
-    
+    static void setupGLFWHints();
+    static bool initGLEW();
+    static void initOpenGLSettings();
+    static void checkGLError(const char* functionName);
+    static void checkDoubleBufferSupport(GLFWwindow* window);
+    static void setupVSync(GLFWwindow* window, bool enabled = true);
+    static void printGraphicsInfo();
+    static void setupCallbacks(GLFWwindow* window);
+
     static void resetDepthState();
     void createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
         float width, float height, const glm::vec3& color);
@@ -127,5 +167,4 @@ public:
         float length, float thickness, const glm::vec3& color);
     void createFenceCorner(std::vector<Vertex>& vertices, float x, float y, float z,
         const glm::vec3& color);
-
 };

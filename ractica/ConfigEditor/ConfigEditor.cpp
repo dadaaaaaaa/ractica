@@ -1,6 +1,6 @@
-﻿#define GLEW_STATIC
+﻿
 #include <GL/glew.h>           // ДОЛЖЕН БЫТЬ ПЕРВЫМ!
-#include <glfw3.h>        // ПОТОМ GLFW
+#include "../../ractica/includes/GLFW/glfw3.h"
 
 // Правильные include для GLM
 #include <glm/glm.hpp>
@@ -26,37 +26,17 @@
 #include FT_FREETYPE_H
 
 #include "ConfigManager.h"
-#include "ConfigTypes.h"
-
+#include "../Shared/ConfigTypes.h"  // ИСПРАВЛЕНО: правильный путь
+std::string g_assetsPath;
+std::string g_modelsPath;
+std::string g_texturesPath;
+std::string g_configPath;
 // Структура для символа
 struct Character {
     unsigned int TextureID;
     glm::ivec2 Size;
     glm::ivec2 Bearing;
     unsigned int Advance;
-};
-
-// Структура для материала
-struct Material {
-    glm::vec3 diffuse;
-    glm::vec3 specular;
-    float shininess;
-    std::string texturePath;
-    GLuint textureID;
-
-    Material() : diffuse(1.0f), specular(1.0f), shininess(32.0f), textureID(0) {}
-};
-
-// Структура для модели (Assimp)
-struct ModelData {
-    std::vector<float> vertices;
-    std::vector<float> normals;
-    std::vector<float> texCoords;
-    std::vector<Material> materials;
-    std::vector<int> materialIndices;
-    bool loaded;
-
-    ModelData() : loaded(false) {}
 };
 
 // Структура для текстуры
@@ -170,7 +150,7 @@ void initPaths();
 void initObstacles();
 void loadAvailableTextures();
 std::string openTextureFileDialog();
-
+void openModelFileDialog(const std::string& subFolder, std::string& destVar);
 // Инициализация препятствий
 void initObstacles() {
     obstacles.clear();
@@ -210,51 +190,84 @@ void initObstacles() {
 void initPaths() {
     char currentDir[MAX_PATH];
     GetCurrentDirectoryA(MAX_PATH, currentDir);
-    basePath = std::string(currentDir);
+    std::string exePath = std::string(currentDir);
 
-    std::cout << "Current directory: " << basePath << std::endl;
+    std::cout << "\n=========================================" << std::endl;
+    std::cout << "===== CONFIG EDITOR PATH DEBUG =====" << std::endl;
+    std::cout << "=========================================" << std::endl;
+    std::cout << "1. Current directory (exe): " << exePath << std::endl;
 
-    std::string path = basePath;
-    bool found = false;
+    // Находим корень проекта
+    std::string rootPath = exePath;
 
-    while (true) {
-        std::string testModelsPath = path + "\\models";
-        if (std::filesystem::exists(testModelsPath)) {
-            basePath = path;
-            found = true;
-            std::cout << "Found project root: " << basePath << std::endl;
-            break;
+    size_t pos = rootPath.find("\\Project2");
+    if (pos != std::string::npos) {
+        rootPath = rootPath.substr(0, pos);
+        std::cout << "2. Found Project2 folder, root: " << rootPath << std::endl;
+    }
+    else if ((pos = rootPath.find("\\x64\\Debug")) != std::string::npos) {
+        rootPath = rootPath.substr(0, pos);
+        std::cout << "2. Found x64/Debug, root: " << rootPath << std::endl;
+    }
+    else if ((pos = rootPath.find("\\Debug")) != std::string::npos) {
+        rootPath = rootPath.substr(0, pos);
+        std::cout << "2. Found Debug, root: " << rootPath << std::endl;
+    }
+
+    // Убеждаемся что мы в папке ractica
+    if (rootPath.find("ractica") == std::string::npos) {
+        rootPath += "\\ractica";
+        std::cout << "3. Added '\\ractica', root: " << rootPath << std::endl;
+    }
+
+    g_assetsPath = rootPath + "\\assets\\";
+    g_modelsPath = g_assetsPath + "models\\";
+    g_texturesPath = g_assetsPath + "textures\\";
+    g_configPath = g_assetsPath + "config\\game.cfg";
+
+    std::cout << "\n--- FINAL PATHS ---" << std::endl;
+    std::cout << "Assets path:  " << g_assetsPath << std::endl;
+    std::cout << "Models path:  " << g_modelsPath << std::endl;
+    std::cout << "Textures path: " << g_texturesPath << std::endl;
+    std::cout << "Config path:  " << g_configPath << std::endl;
+
+    // Проверяем существование папок
+    std::cout << "\n--- FOLDER VALIDATION ---" << std::endl;
+
+    DWORD attrib = GetFileAttributesA(g_assetsPath.c_str());
+    std::cout << "Assets folder: " << ((attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY)) ? "✓ EXISTS" : "✗ NOT FOUND") << std::endl;
+
+    std::string modelsFolder = g_modelsPath;
+    attrib = GetFileAttributesA(modelsFolder.c_str());
+    std::cout << "Models folder: " << ((attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY)) ? "✓ EXISTS" : "✗ NOT FOUND") << std::endl;
+
+    std::string configFolder = g_assetsPath + "config\\";
+    attrib = GetFileAttributesA(configFolder.c_str());
+    std::cout << "Config folder: " << ((attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY)) ? "✓ EXISTS" : "✗ NOT FOUND") << std::endl;
+
+    // Создаем папки если их нет
+    std::cout << "\n--- CREATING FOLDERS ---" << std::endl;
+
+    if (CreateDirectoryA(g_assetsPath.c_str(), NULL) || GetLastError() == ERROR_ALREADY_EXISTS) {
+        std::cout << "✓ Assets folder ready" << std::endl;
+    }
+    if (CreateDirectoryA((g_assetsPath + "config").c_str(), NULL) || GetLastError() == ERROR_ALREADY_EXISTS) {
+        std::cout << "✓ Config folder ready" << std::endl;
+    }
+    if (CreateDirectoryA(g_modelsPath.c_str(), NULL) || GetLastError() == ERROR_ALREADY_EXISTS) {
+        std::cout << "✓ Models folder ready" << std::endl;
+    }
+
+    // Создаем подпапки для моделей
+    std::vector<std::string> modelSubfolders = { "snake_head", "snake_body", "snake_tail", "obstacles" };
+    for (const auto& subfolder : modelSubfolders) {
+        std::string path = g_modelsPath + subfolder + "\\";
+        if (CreateDirectoryA(path.c_str(), NULL) || GetLastError() == ERROR_ALREADY_EXISTS) {
+            std::cout << "✓ " << subfolder << " folder ready" << std::endl;
         }
-
-        size_t pos = path.find_last_of("\\");
-        if (pos == std::string::npos) break;
-        path = path.substr(0, pos);
     }
 
-    if (!found) {
-        basePath = currentDir;
-    }
-
-    modelsPath = basePath + "\\models\\";
-    texturesPath = basePath + "\\textures\\";
-    configPath = basePath + "\\config\\game.cfg";
-
-    std::cout << "Base path: " << basePath << std::endl;
-    std::cout << "Models path: " << modelsPath << std::endl;
-    std::cout << "Textures path: " << texturesPath << std::endl;
-    std::cout << "Config path: " << configPath << std::endl;
-
-    if (!std::filesystem::exists(modelsPath)) {
-        std::filesystem::create_directories(modelsPath);
-    }
-    if (!std::filesystem::exists(texturesPath)) {
-        std::filesystem::create_directories(texturesPath);
-    }
-
-    std::string configDir = basePath + "\\config";
-    if (!std::filesystem::exists(configDir)) {
-        std::filesystem::create_directories(configDir);
-    }
+    std::cout << "=========================================\n" << std::endl;
 }
 
 // Загрузка текстуры из файла
@@ -311,112 +324,143 @@ bool loadTexture(const std::string& filename, Texture& texture) {
 
 // Загрузка FBX модели с текстурами (улучшенная версия)
 bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder) {
-    std::string fullPath;
-    std::string modelFolder;
-
-    if (subFolder.empty()) {
-        fullPath = modelsPath + "obstacles\\" + filename;
-        modelFolder = modelsPath + "obstacles\\";
-    }
-    else {
-        fullPath = modelsPath + subFolder + "\\" + filename;
-        modelFolder = modelsPath + subFolder + "\\";
-    }
-
-    std::cout << "\n===== LOADING FBX MODEL =====" << std::endl;
+    std::cout << "\n========== FBX LOADER DEBUG ==========" << std::endl;
+    std::cout << "Loading model for folder: " << subFolder << std::endl;
     std::cout << "Filename: " << filename << std::endl;
-    std::cout << "Full path: " << fullPath << std::endl;
-    std::cout << "Model folder: " << modelFolder << std::endl;
 
+    // Формируем полный путь
+    std::string fullPath = g_modelsPath + subFolder + "\\" + filename;
+    std::cout << "Full path: " << fullPath << std::endl;
+
+    // Проверяем существование файла
     if (!std::filesystem::exists(fullPath)) {
-        std::cout << "ERROR: File does not exist!" << std::endl;
+        std::cout << "❌ ERROR: File does not exist!" << std::endl;
+
+        // Показываем содержимое папки
+        std::string folderPath = g_modelsPath + subFolder + "\\";
+        std::cout << "Contents of " << folderPath << ":" << std::endl;
+        try {
+            int fileCount = 0;
+            for (const auto& entry : std::filesystem::directory_iterator(folderPath)) {
+                std::cout << "  - " << entry.path().filename().string()
+                    << " (" << std::filesystem::file_size(entry.path()) << " bytes)" << std::endl;
+                fileCount++;
+            }
+            if (fileCount == 0) {
+                std::cout << "  📁 Folder is empty!" << std::endl;
+            }
+        }
+        catch (const std::exception& e) {
+            std::cout << "  ❌ Cannot read folder: " << e.what() << std::endl;
+        }
         return false;
     }
 
+    // Проверяем размер файла
+    size_t fileSize = std::filesystem::file_size(fullPath);
+    std::cout << "File size: " << fileSize << " bytes" << std::endl;
+
+    if (fileSize == 0) {
+        std::cout << "❌ ERROR: File is empty!" << std::endl;
+        return false;
+    }
+
+    std::cout << "Initializing Assimp importer..." << std::endl;
     Assimp::Importer importer;
+
+    // Пробуем загрузить с разными флагами
+    std::cout << "Reading file with Assimp..." << std::endl;
     const aiScene* scene = importer.ReadFile(fullPath,
         aiProcess_Triangulate |
         aiProcess_GenSmoothNormals |
         aiProcess_FlipUVs |
-        aiProcess_CalcTangentSpace |
-        aiProcess_FixInfacingNormals);
+        aiProcess_CalcTangentSpace);
 
-    if (!scene || !scene->mRootNode || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) {
-        std::cout << "ERROR: " << importer.GetErrorString() << std::endl;
+    if (!scene) {
+        std::cout << "❌ Assimp error: " << importer.GetErrorString() << std::endl;
+
+        // Пробуем с минимальными флагами
+        std::cout << "Retrying with minimal flags..." << std::endl;
+        scene = importer.ReadFile(fullPath, aiProcess_Triangulate);
+
+        if (!scene) {
+            std::cout << "❌ Still failed: " << importer.GetErrorString() << std::endl;
+            return false;
+        }
+    }
+
+    std::cout << "✓ Scene loaded successfully!" << std::endl;
+    std::cout << "Scene info:" << std::endl;
+    std::cout << "  - Meshes: " << scene->mNumMeshes << std::endl;
+    std::cout << "  - Materials: " << scene->mNumMaterials << std::endl;
+    std::cout << "  - Animations: " << scene->mNumAnimations << std::endl;
+    std::cout << "  - Textures: " << scene->mNumTextures << std::endl;
+
+    if (!scene->mRootNode) {
+        std::cout << "❌ ERROR: Scene has no root node!" << std::endl;
         return false;
     }
 
+    // Очищаем старые данные
     model.vertices.clear();
     model.normals.clear();
     model.texCoords.clear();
     model.materials.clear();
     model.materialIndices.clear();
 
-    // Загружаем материалы и текстуры
+    std::cout << "\n--- Loading Materials ---" << std::endl;
+    // Загружаем материалы
     for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
         aiMaterial* mat = scene->mMaterials[i];
         Material material;
 
-        // Цвета
+        aiString matName;
+        mat->Get(AI_MATKEY_NAME, matName);
+        std::cout << "Material " << i << ": " << matName.C_Str() << std::endl;
+
         aiColor3D color(1.0f, 1.0f, 1.0f);
         mat->Get(AI_MATKEY_COLOR_DIFFUSE, color);
         material.diffuse = glm::vec3(color.r, color.g, color.b);
+        std::cout << "  Diffuse color: (" << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
 
-        mat->Get(AI_MATKEY_COLOR_SPECULAR, color);
-        material.specular = glm::vec3(color.r, color.g, color.b);
-
-        float shininess;
-        mat->Get(AI_MATKEY_SHININESS, shininess);
-        material.shininess = shininess;
-
-        // Текстура
+        // Пытаемся загрузить текстуру
         if (mat->GetTextureCount(aiTextureType_DIFFUSE) > 0) {
             aiString path;
             mat->GetTexture(aiTextureType_DIFFUSE, 0, &path);
+            std::cout << "  Texture: " << path.C_Str() << std::endl;
 
-            // Получаем только имя файла
-            std::string textureFile = path.C_Str();
-            size_t pos = textureFile.find_last_of("\\/");
-            if (pos != std::string::npos) {
-                textureFile = textureFile.substr(pos + 1);
-            }
-
-            material.texturePath = textureFile;
-            std::cout << "Looking for texture: " << textureFile << std::endl;
-
-            // Пытаемся загрузить текстуру из разных мест
-            std::vector<std::string> searchPaths = {
-                texturesPath + textureFile,                    // папка textures
-                modelFolder + textureFile,                      // папка с моделью
-                modelFolder + "textures\\" + textureFile,       // подпапка textures
-                modelsPath + "textures\\" + textureFile         // общая папка textures
-            };
-
-            bool textureLoaded = false;
-            for (const auto& searchPath : searchPaths) {
-                if (std::filesystem::exists(searchPath)) {
-                    std::cout << "Found texture at: " << searchPath << std::endl;
-                    material.textureID = loadTextureFromFile(searchPath);
-                    textureLoaded = true;
-                    break;
-                }
-            }
-
-            if (!textureLoaded) {
-                std::cout << "Texture not found, using diffuse color: ("
-                    << material.diffuse.r << ", "
-                    << material.diffuse.g << ", "
-                    << material.diffuse.b << ")" << std::endl;
-            }
+            // Здесь можно добавить загрузку текстуры
+            material.texturePath = path.C_Str();
         }
 
         model.materials.push_back(material);
     }
 
-    // Проходим по всем мешам
+    // Если нет материалов, создаем дефолтный
+    if (model.materials.empty()) {
+        std::cout << "No materials found, creating default material" << std::endl;
+        Material defaultMat;
+        defaultMat.diffuse = glm::vec3(0.8f, 0.8f, 0.8f);
+        model.materials.push_back(defaultMat);
+    }
+
+    std::cout << "\n--- Loading Meshes ---" << std::endl;
+    int totalVertices = 0;
+    int totalFaces = 0;
+
     for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
         aiMesh* mesh = scene->mMeshes[i];
+        std::cout << "Mesh " << i << ":" << std::endl;
+        std::cout << "  - Vertices: " << mesh->mNumVertices << std::endl;
+        std::cout << "  - Faces: " << mesh->mNumFaces << std::endl;
+        std::cout << "  - Has normals: " << (mesh->HasNormals() ? "YES" : "NO") << std::endl;
+        std::cout << "  - Has texture coords: " << (mesh->HasTextureCoords(0) ? "YES" : "NO") << std::endl;
+
         int materialIndex = mesh->mMaterialIndex;
+        if (materialIndex >= (int)model.materials.size()) {
+            std::cout << "  ⚠ Material index out of range, using 0" << std::endl;
+            materialIndex = 0;
+        }
 
         for (unsigned int j = 0; j < mesh->mNumVertices; j++) {
             // Вершины
@@ -450,17 +494,35 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
         // Индексы материалов для каждого треугольника
         for (unsigned int j = 0; j < mesh->mNumFaces; j++) {
             aiFace face = mesh->mFaces[j];
-            model.materialIndices.push_back(materialIndex);
+            if (face.mNumIndices == 3) {
+                model.materialIndices.push_back(materialIndex);
+                totalFaces++;
+            }
         }
+
+        totalVertices += mesh->mNumVertices;
     }
 
-    std::cout << "Loaded " << model.vertices.size() / 3 << " vertices" << std::endl;
-    std::cout << "Loaded " << model.materials.size() << " materials" << std::endl;
+    std::cout << "\n--- Loading Summary ---" << std::endl;
+    std::cout << "Total vertices loaded: " << totalVertices << std::endl;
+    std::cout << "Total triangles: " << totalFaces << std::endl;
+    std::cout << "Total materials: " << model.materials.size() << std::endl;
 
     model.loaded = (model.vertices.size() > 0);
+
+    if (model.loaded) {
+        std::cout << "✅ MODEL LOADED SUCCESSFULLY!" << std::endl;
+        std::cout << "   Vertex count: " << model.vertices.size() / 3 << std::endl;
+        std::cout << "   Normal count: " << model.normals.size() / 3 << std::endl;
+        std::cout << "   TexCoord count: " << model.texCoords.size() / 2 << std::endl;
+    }
+    else {
+        std::cout << "❌ MODEL LOADING FAILED!" << std::endl;
+    }
+
+    std::cout << "====================================\n" << std::endl;
     return model.loaded;
 }
-
 // Функция рисования загруженной модели с текстурами
 void drawModel(ModelData& model) {
     if (!model.loaded || model.vertices.empty()) {
@@ -581,12 +643,32 @@ std::string openTextureFileDialog() {
 
 // Сохранение конфига
 void saveConfig() {
-    if (ConfigManager::saveGameConfig(configPath, currentConfig)) {
-        std::cout << "Config saved to: " << configPath << std::endl;
+    std::cout << "\n========== SAVING CONFIG ==========" << std::endl;
+    std::cout << "Saving to: " << g_configPath << std::endl;
+
+    // Проверяем существует ли папка config
+    std::string configFolder = g_assetsPath + "config\\";
+    DWORD attrib = GetFileAttributesA(configFolder.c_str());
+    if (attrib == INVALID_FILE_ATTRIBUTES) {
+        std::cout << "Config folder does not exist, creating..." << std::endl;
+        CreateDirectoryA(configFolder.c_str(), NULL);
+    }
+
+    // Сохраняем
+    if (ConfigManager::saveGameConfig(g_configPath, currentConfig)) {
+        std::cout << "✓ Config saved successfully!" << std::endl;
+
+        // Проверяем что файл создался
+        std::ifstream checkFile(g_configPath);
+        if (checkFile.is_open()) {
+            std::cout << "✓ File exists at: " << g_configPath << std::endl;
+            checkFile.close();
+        }
     }
     else {
-        std::cout << "Failed to save config to: " << configPath << std::endl;
+        std::cout << "✗ Failed to save config!" << std::endl;
     }
+    std::cout << "==================================\n" << std::endl;
 }
 
 // Сброс 2D проекции
@@ -613,11 +695,14 @@ void openFileDialog() {
     case 2: subFolder = "snake_tail"; break;
     }
 
-    std::string folderPath = modelsPath + subFolder + "\\";
+    std::string folderPath = g_modelsPath + subFolder + "\\";
 
-    if (!std::filesystem::exists(folderPath)) {
-        std::filesystem::create_directories(folderPath);
-    }
+    std::cout << "\n========== FILE DIALOG DEBUG ==========" << std::endl;
+    std::cout << "Selected part: " << subFolder << std::endl;
+    std::cout << "Opening folder: " << folderPath << std::endl;
+
+    // Создаем папку если нет
+    CreateDirectoryA(folderPath.c_str(), NULL);
 
     OPENFILENAMEA ofn;
     char fileName[MAX_PATH] = "";
@@ -636,18 +721,45 @@ void openFileDialog() {
         std::string fullPath = fileName;
         std::string filename = fullPath.substr(fullPath.find_last_of("\\") + 1);
 
-        if (!filename.empty()) {
-            if (selectedPart == 0) currentConfig.snakeHeadModel = filename;
-            else if (selectedPart == 1) currentConfig.snakeBodyModel = filename;
-            else currentConfig.snakeTailModel = filename;
+        std::cout << "Selected file: " << filename << std::endl;
+        std::cout << "Full path: " << fullPath << std::endl;
 
-            std::cout << "Selected model: " << filename << std::endl;
-            loadFBXModel(filename, currentModelData, subFolder);
-            saveConfig();
+        // Сохраняем в конфиг
+        if (selectedPart == 0) currentConfig.snakeHeadModel = filename;
+        else if (selectedPart == 1) currentConfig.snakeBodyModel = filename;
+        else currentConfig.snakeTailModel = filename;
+
+        // Копируем файл в папку assets если нужно
+        std::string destPath = folderPath + filename;
+        if (fullPath != destPath) {
+            std::cout << "Copying to assets: " << destPath << std::endl;
+            if (CopyFileA(fullPath.c_str(), destPath.c_str(), FALSE)) {
+                std::cout << "✅ File copied successfully" << std::endl;
+            }
+            else {
+                std::cout << "❌ Failed to copy file. Error: " << GetLastError() << std::endl;
+            }
         }
-    }
-}
 
+        // Загружаем модель
+        std::cout << "Loading model..." << std::endl;
+        bool loaded = loadFBXModel(filename, currentModelData, subFolder);
+
+        if (loaded) {
+            std::cout << "✅ Model loaded and ready for preview!" << std::endl;
+        }
+        else {
+            std::cout << "❌ Model loading failed!" << std::endl;
+        }
+
+        // Сохраняем конфиг
+        saveConfig();
+    }
+    else {
+        std::cout << "Dialog cancelled or failed" << std::endl;
+    }
+    std::cout << "======================================\n" << std::endl;
+}
 // Функция открытия диалога для препятствий
 void openObstacleFileDialog() {
     std::string folderPath = modelsPath + "obstacles\\";
@@ -976,22 +1088,36 @@ void drawInfoBox(int x, int y, int w, int h, const std::string& label, const std
 }
 
 // 3D предпросмотр для змейки
+// 3D предпросмотр для змейки
 void render3DPreview() {
     int previewX = 650;
     int previewY = 120;
     int previewW = 500;
     int previewH = 400;
 
+    std::cout << "\n========== 3D PREVIEW DEBUG ==========" << std::endl;
+    std::cout << "Preview area: (" << previewX << ", " << previewY << ") size: " << previewW << "x" << previewH << std::endl;
+    std::cout << "Current rotation: " << previewRotation << "°" << std::endl;
+    std::cout << "Selected part: " << selectedPart << " (0=Head, 1=Body, 2=Tail)" << std::endl;
+
     glPushAttrib(GL_ALL_ATTRIB_BITS);
 
+    // Устанавливаем viewport для области предпросмотра
     glViewport(previewX, windowHeight - previewY - previewH, previewW, previewH);
-    glClear(GL_DEPTH_BUFFER_BIT);
+    std::cout << "Viewport set: " << previewX << ", " << (windowHeight - previewY - previewH) << ", " << previewW << ", " << previewH << std::endl;
 
+    // Очищаем буфер глубины
+    glClear(GL_DEPTH_BUFFER_BIT);
+    std::cout << "Depth buffer cleared" << std::endl;
+
+    // Настройки глубины
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+    std::cout << "Depth test enabled" << std::endl;
 
+    // Настройка 3D проекции
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -999,65 +1125,121 @@ void render3DPreview() {
     float aspect = (float)previewW / previewH;
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     glLoadMatrixf(glm::value_ptr(projection));
+    std::cout << "Projection matrix set (fov=45°, aspect=" << aspect << ")" << std::endl;
 
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
 
+    // Позиция камеры
     glm::vec3 eye(3.0f, 2.0f, 5.0f);
     glm::vec3 center(0.0f);
     glm::vec3 up(0.0f, 1.0f, 0.0f);
     glm::mat4 view = glm::lookAt(eye, center, up);
     glLoadMatrixf(glm::value_ptr(view));
+    std::cout << "View matrix set: camera at (3,2,5) looking at (0,0,0)" << std::endl;
 
+    // Вращение модели
     glRotatef(previewRotation, 0.0f, 1.0f, 0.0f);
+    std::cout << "Rotation applied: " << previewRotation << "° around Y axis" << std::endl;
 
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
+    // Временно отключаем освещение для отладки
+    glDisable(GL_LIGHTING);
+    glDisable(GL_LIGHT0);
+    std::cout << "Lighting disabled for debug" << std::endl;
 
-    GLfloat lightPos[] = { 2.0f, 3.0f, 2.0f, 1.0f };
-    glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
-
-    GLfloat lightAmbient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbient);
-
-    GLfloat lightDiffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, lightDiffuse);
-
-    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
-
-    GLfloat matAmbient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    GLfloat matSpecular[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-    GLfloat matShininess[] = { 30.0f };
-
-    glMaterialfv(GL_FRONT, GL_AMBIENT, matAmbient);
-    glMaterialfv(GL_FRONT, GL_SPECULAR, matSpecular);
-    glMaterialfv(GL_FRONT, GL_SHININESS, matShininess);
-
-    GLfloat matDiffuse[4];
-    switch (selectedPart) {
-    case 0: matDiffuse[0] = 0.0f; matDiffuse[1] = 1.0f; matDiffuse[2] = 0.0f; break;
-    case 1: matDiffuse[0] = 0.0f; matDiffuse[1] = 0.7f; matDiffuse[2] = 0.0f; break;
-    case 2: matDiffuse[0] = 0.0f; matDiffuse[1] = 0.5f; matDiffuse[2] = 0.0f; break;
-    }
-    matDiffuse[3] = 1.0f;
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, matDiffuse);
-
+    // Рисуем сетку
+    std::cout << "Drawing grid..." << std::endl;
     drawGrid();
+
+    // Рисуем пол
+    std::cout << "Drawing floor..." << std::endl;
     drawTexturedFloor();
 
-    glEnable(GL_LIGHTING);
-    drawModel(currentModelData);
+    // Проверяем загружена ли модель
+    if (!currentModelData.loaded) {
+        std::cout << "⚠ WARNING: No model loaded for preview!" << std::endl;
+        std::cout << "Loading status: " << (currentModelData.loaded ? "LOADED" : "NOT LOADED") << std::endl;
+        std::cout << "Vertices count: " << currentModelData.vertices.size() / 3 << std::endl;
 
+        // Рисуем красный куб как заглушку
+        std::cout << "Drawing fallback red cube..." << std::endl;
+        glColor3f(1.0f, 0.0f, 0.0f);
+
+        // Простой куб
+        glBegin(GL_QUADS);
+        // Передняя грань
+        glVertex3f(-0.5f, -0.5f, 0.5f);
+        glVertex3f(0.5f, -0.5f, 0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f);
+        glVertex3f(-0.5f, 0.5f, 0.5f);
+        // Задняя грань
+        glVertex3f(-0.5f, -0.5f, -0.5f);
+        glVertex3f(-0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, -0.5f, -0.5f);
+        // Верхняя грань
+        glVertex3f(-0.5f, 0.5f, -0.5f);
+        glVertex3f(-0.5f, 0.5f, 0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f);
+        glVertex3f(0.5f, 0.5f, -0.5f);
+        // Нижняя грань
+        glVertex3f(-0.5f, -0.5f, -0.5f);
+        glVertex3f(0.5f, -0.5f, -0.5f);
+        glVertex3f(0.5f, -0.5f, 0.5f);
+        glVertex3f(-0.5f, -0.5f, 0.5f);
+        // Левая грань
+        glVertex3f(-0.5f, -0.5f, -0.5f);
+        glVertex3f(-0.5f, -0.5f, 0.5f);
+        glVertex3f(-0.5f, 0.5f, 0.5f);
+        glVertex3f(-0.5f, 0.5f, -0.5f);
+        // Правая грань
+        glVertex3f(0.5f, -0.5f, -0.5f);
+        glVertex3f(0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f);
+        glVertex3f(0.5f, -0.5f, 0.5f);
+        glEnd();
+        std::cout << "Fallback cube drawn" << std::endl;
+    }
+    else {
+        std::cout << "✓ Model loaded successfully!" << std::endl;
+        std::cout << "Model stats:" << std::endl;
+        std::cout << "  - Vertices: " << currentModelData.vertices.size() / 3 << std::endl;
+        std::cout << "  - Normals: " << currentModelData.normals.size() / 3 << std::endl;
+        std::cout << "  - TexCoords: " << currentModelData.texCoords.size() / 2 << std::endl;
+        std::cout << "  - Materials: " << currentModelData.materials.size() << std::endl;
+        std::cout << "  - Triangles: " << currentModelData.materialIndices.size() << std::endl;
+
+        // Устанавливаем цвет в зависимости от части
+        switch (selectedPart) {
+        case 0: glColor3f(0.0f, 1.0f, 0.0f); break; // Голова - зеленый
+        case 1: glColor3f(0.0f, 0.7f, 0.0f); break; // Тело - темно-зеленый
+        case 2: glColor3f(0.0f, 0.5f, 0.0f); break; // Хвост - еще темнее
+        default: glColor3f(1.0f, 1.0f, 1.0f); break;
+        }
+        std::cout << "Drawing color set based on selected part" << std::endl;
+
+        // Рисуем модель
+        std::cout << "Calling drawModel()..." << std::endl;
+        drawModel(currentModelData);
+        std::cout << "✓ Model drawn successfully" << std::endl;
+    }
+
+    // Восстанавливаем матрицы
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
+    std::cout << "Matrices restored" << std::endl;
 
     glPopAttrib();
+    std::cout << "Attributes restored" << std::endl;
 
+    // Возвращаемся к 2D проекции для UI
     reset2DProjection();
+    std::cout << "2D projection restored" << std::endl;
 
+    // Рисуем рамку вокруг области предпросмотра
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f(previewX, previewY);
@@ -1065,8 +1247,12 @@ void render3DPreview() {
     glVertex2f(previewX + previewW, previewY + previewH);
     glVertex2f(previewX, previewY + previewH);
     glEnd();
+    std::cout << "Preview frame drawn" << std::endl;
 
+    // Текст "3D Preview"
     renderText("3D Preview", previewX + 10, previewY + 25, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+    std::cout << "========== PREVIEW COMPLETE ==========\n" << std::endl;
 }
 
 // 3D предпросмотр для препятствий
@@ -1424,8 +1610,62 @@ void renderEnvironmentEditor() {
     drawSlider(startX, startY + 330, 200, &gridColor[1], 0.0f, 1.0f, "G");
     drawSlider(startX, startY + 360, 200, &gridColor[2], 0.0f, 1.0f, "B");
 
+    // === МОДЕЛИ ОКРУЖЕНИЯ ===
+    int modelX = 350;
+    renderText("ENVIRONMENT MODELS", modelX, startY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+    int modelY = startY + 40;
+
+    // Яблоко
+    renderText("Apple:", modelX, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    renderText(currentConfig.appleModel, modelX + 100, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
+    if (drawButton(modelX + 250, modelY - 10, 80, 25, "Browse")) {
+        openModelFileDialog("food", currentConfig.appleModel);
+    }
+    modelY += 35;
+
+    // Дерево
+    renderText("Tree:", modelX, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    renderText(currentConfig.treeModel, modelX + 100, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
+    if (drawButton(modelX + 250, modelY - 10, 80, 25, "Browse")) {
+        openModelFileDialog("obstacles", currentConfig.treeModel);
+    }
+    modelY += 35;
+
+    // Облако
+    renderText("Cloud:", modelX, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    renderText(currentConfig.cloudModel, modelX + 100, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
+    if (drawButton(modelX + 250, modelY - 10, 80, 25, "Browse")) {
+        openModelFileDialog("clouds", currentConfig.cloudModel);
+    }
+    modelY += 35;
+
+    // Птица
+    renderText("Bird:", modelX, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    renderText(currentConfig.birdModel, modelX + 100, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
+    if (drawButton(modelX + 250, modelY - 10, 80, 25, "Browse")) {
+        openModelFileDialog("birds", currentConfig.birdModel);
+    }
+    modelY += 35;
+
+    // Цветок
+    renderText("Flower:", modelX, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    renderText(currentConfig.flowerModel, modelX + 100, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
+    if (drawButton(modelX + 250, modelY - 10, 80, 25, "Browse")) {
+        openModelFileDialog("flowers", currentConfig.flowerModel);
+    }
+    modelY += 35;
+
+    // Пол
+    renderText("Floor Model:", modelX, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    renderText(currentConfig.floorModel, modelX + 150, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
+    if (drawButton(modelX + 250, modelY - 10, 80, 25, "Browse")) {
+        openModelFileDialog("floor", currentConfig.floorModel);
+    }
+    modelY += 35;
+
     // === ТЕКСТУРЫ ===
-    int texX = 350;
+    int texX = 650;
     renderText("TEXTURES", texX, startY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
 
     renderText("Floor Texture:", texX, startY + 40, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
@@ -1449,7 +1689,7 @@ void renderEnvironmentEditor() {
     }
 
     // === ПРЕДПРОСМОТР ===
-    int previewX = 600;
+    int previewX = 850;
     int previewY = 200;
     int previewSize = 150;
 
@@ -1478,41 +1718,45 @@ void renderEnvironmentEditor() {
     glEnd();
 
     // === ОБЪЕКТЫ ===
-    int objX = 800;
-    renderText("OBJECTS", objX, startY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
+    int objX = 850;
+    int objY = 400;
+    renderText("OBJECTS", objX, objY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
 
     char countText[50];
     sprintf_s(countText, "Clouds: %d", cloudCount);
-    renderText(countText, objX, startY + 40, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    if (drawButton(objX + 100, startY + 30, 40, 30, "+")) cloudCount++;
-    if (drawButton(objX + 150, startY + 30, 40, 30, "-") && cloudCount > 0) cloudCount--;
+    renderText(countText, objX, objY + 40, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    if (drawButton(objX + 100, objY + 30, 40, 30, "+")) cloudCount++;
+    if (drawButton(objX + 150, objY + 30, 40, 30, "-") && cloudCount > 0) cloudCount--;
 
     sprintf_s(countText, "Birds: %d", birdCount);
-    renderText(countText, objX, startY + 80, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    if (drawButton(objX + 100, startY + 70, 40, 30, "+")) birdCount++;
-    if (drawButton(objX + 150, startY + 70, 40, 30, "-") && birdCount > 0) birdCount--;
+    renderText(countText, objX, objY + 80, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    if (drawButton(objX + 100, objY + 70, 40, 30, "+")) birdCount++;
+    if (drawButton(objX + 150, objY + 70, 40, 30, "-") && birdCount > 0) birdCount--;
 
     sprintf_s(countText, "Flowers: %d", flowerCount);
-    renderText(countText, objX, startY + 120, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    if (drawButton(objX + 100, startY + 110, 40, 30, "+")) flowerCount++;
-    if (drawButton(objX + 150, startY + 110, 40, 30, "-") && flowerCount > 0) flowerCount--;
+    renderText(countText, objX, objY + 120, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
+    if (drawButton(objX + 100, objY + 110, 40, 30, "+")) flowerCount++;
+    if (drawButton(objX + 150, objY + 110, 40, 30, "-") && flowerCount > 0) flowerCount--;
 
     // Кнопки навигации
     if (drawButton(50, 550, 100, 40, "Back")) {
         currentMode = MODE_MAIN;
     }
 
+    // Кнопка Save
     if (drawButton(170, 550, 100, 40, "Save")) {
+        std::cout << "\n⚠️ SAVE BUTTON CLICKED in Environment Editor!" << std::endl;
+
         currentConfig.skyColor = glm::vec3(skyColor[0], skyColor[1], skyColor[2]);
         currentConfig.floorColor = glm::vec3(floorColor[0], floorColor[1], floorColor[2]);
         currentConfig.gridColor = glm::vec3(gridColor[0], gridColor[1], gridColor[2]);
         currentConfig.cloudCount = cloudCount;
         currentConfig.birdCount = birdCount;
         currentConfig.flowerCount = flowerCount;
+
         saveConfig();
     }
 }
-
 // Главное меню
 void renderMainMenu() {
     reset2DProjection();
@@ -1677,12 +1921,93 @@ int main() {
         return -1;
     }
 
-    if (!ConfigManager::loadGameConfig(configPath, currentConfig)) {
-        std::cout << "Creating new config" << std::endl;
+    initPaths();  // Это уже должно быть
+
+    // ПОДРОБНАЯ ОТЛАДКА ЗАГРУЗКИ КОНФИГА
+    std::cout << "\n========== CONFIG LOAD DEBUG ==========" << std::endl;
+    std::cout << "Config path from initPaths: " << g_configPath << std::endl;
+
+    // Проверяем существование файла
+    std::ifstream testFile(g_configPath);
+    if (testFile.is_open()) {
+        std::cout << "✓ Config file EXISTS at: " << g_configPath << std::endl;
+
+        // Показываем первые несколько строк
+        std::cout << "\nFirst 10 lines of config file:" << std::endl;
+        std::string line;
+        int lineCount = 0;
+        while (std::getline(testFile, line) && lineCount < 10) {
+            std::cout << "  " << line << std::endl;
+            lineCount++;
+        }
+        testFile.close();
     }
+    else {
+        std::cout << "✗ Config file DOES NOT EXIST at: " << g_configPath << std::endl;
+
+        // Проверяем существует ли папка
+        std::string configFolder = g_assetsPath + "config\\";
+        DWORD attrib = GetFileAttributesA(configFolder.c_str());
+        std::cout << "Config folder exists: " << ((attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY)) ? "✓ YES" : "✗ NO") << std::endl;
+
+        // Показываем содержимое папки assets
+        std::cout << "\nContents of assets folder:" << std::endl;
+        std::string searchPath = g_assetsPath + "*";
+        WIN32_FIND_DATAA findData;
+        HANDLE hFind = FindFirstFileA(searchPath.c_str(), &findData);
+        if (hFind != INVALID_HANDLE_VALUE) {
+            do {
+                if (strcmp(findData.cFileName, ".") != 0 && strcmp(findData.cFileName, "..") != 0) {
+                    std::cout << "  - " << findData.cFileName;
+                    if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                        std::cout << " (folder)";
+                    }
+                    std::cout << std::endl;
+                }
+            } while (FindNextFileA(hFind, &findData) != 0);
+            FindClose(hFind);
+        }
+
+        // Показываем содержимое папки config если есть
+        if (attrib != INVALID_FILE_ATTRIBUTES) {
+            std::cout << "\nContents of config folder:" << std::endl;
+            searchPath = configFolder + "*";
+            hFind = FindFirstFileA(searchPath.c_str(), &findData);
+            if (hFind != INVALID_HANDLE_VALUE) {
+                do {
+                    if (strcmp(findData.cFileName, ".") != 0 && strcmp(findData.cFileName, "..") != 0) {
+                        std::cout << "  - " << findData.cFileName << std::endl;
+                    }
+                } while (FindNextFileA(hFind, &findData) != 0);
+                FindClose(hFind);
+            }
+        }
+    }
+
+    // Пытаемся загрузить конфиг
+    std::cout << "\nAttempting to load config with ConfigManager..." << std::endl;
+    if (ConfigManager::loadGameConfig(g_configPath, currentConfig)) {
+        std::cout << "✓ CONFIG LOADED SUCCESSFULLY!" << std::endl;
+        std::cout << "Loaded values:" << std::endl;
+        std::cout << "  Snake head: " << currentConfig.snakeHeadModel << std::endl;
+        std::cout << "  Snake body: " << currentConfig.snakeBodyModel << std::endl;
+        std::cout << "  Snake tail: " << currentConfig.snakeTailModel << std::endl;
+        std::cout << "  Sky color: (" << currentConfig.skyColor.r << ", " << currentConfig.skyColor.g << ", " << currentConfig.skyColor.b << ")" << std::endl;
+        std::cout << "  Floor color: (" << currentConfig.floorColor.r << ", " << currentConfig.floorColor.g << ", " << currentConfig.floorColor.b << ")" << std::endl;
+        std::cout << "  Grid color: (" << currentConfig.gridColor.r << ", " << currentConfig.gridColor.g << ", " << currentConfig.gridColor.b << ")" << std::endl;
+        std::cout << "  Cloud count: " << currentConfig.cloudCount << std::endl;
+        std::cout << "  Bird count: " << currentConfig.birdCount << std::endl;
+        std::cout << "  Flower count: " << currentConfig.flowerCount << std::endl;
+    }
+    else {
+        std::cout << "✗ FAILED TO LOAD CONFIG!" << std::endl;
+        std::cout << "Creating new config at: " << g_configPath << std::endl;
+    }
+    std::cout << "=====================================\n" << std::endl;
 
     std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
     loadFBXModel(currentConfig.snakeHeadModel, currentModelData, folder);
+
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -1701,4 +2026,35 @@ int main() {
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
+}
+// Вспомогательная функция для открытия диалога выбора модели
+void openModelFileDialog(const std::string& subFolder, std::string& destVar) {
+    std::string folderPath = g_modelsPath + subFolder + "\\";
+
+    CreateDirectoryA(folderPath.c_str(), NULL);
+
+    OPENFILENAMEA ofn;
+    char fileName[MAX_PATH] = "";
+
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = GetActiveWindow();
+    ofn.lpstrFilter = "FBX Files\0*.fbx\0OBJ Files\0*.obj\0All Files\0*.*\0";
+    ofn.lpstrFile = fileName;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrInitialDir = folderPath.c_str();
+    ofn.lpstrTitle = ("Choose " + subFolder + " Model").c_str();
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+
+    if (GetOpenFileNameA(&ofn)) {
+        std::string fullPath = fileName;
+        std::string filename = fullPath.substr(fullPath.find_last_of("\\") + 1);
+        destVar = filename;
+
+        // Копируем в папку assets если нужно
+        std::string destPath = folderPath + filename;
+        if (fullPath != destPath) {
+            CopyFileA(fullPath.c_str(), destPath.c_str(), FALSE);
+        }
+    }
 }

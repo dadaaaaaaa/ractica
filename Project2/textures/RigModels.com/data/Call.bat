@@ -1,1 +1,0 @@
-Noesis.exe ?cmode "C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\Project2\textures\RigModels.com\thumbnail.jpg" "C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\Project2\textures\RigModels.com\thumbnail.jpg" -nopause -flipuv -objmtl

@@ -60,6 +60,15 @@ bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& conf
         else if (key == "SNAKE_TAIL_MODEL") config.snakeTailModel = value;
         else if (key == "SNAKE_TAIL_COLOR") config.snakeTailColor = parseVec3(value);
         else if (key == "SNAKE_TAIL_SCALE") config.snakeTailScale = std::stof(value);
+
+        // ÍÎÂÛÅ ÊËÞ×È
+        else if (key == "APPLE_MODEL") config.appleModel = value;
+        else if (key == "TREE_MODEL") config.treeModel = value;
+        else if (key == "CLOUD_MODEL") config.cloudModel = value;
+        else if (key == "BIRD_MODEL") config.birdModel = value;
+        else if (key == "FLOWER_MODEL") config.flowerModel = value;
+        else if (key == "FLOOR_MODEL") config.floorModel = value;
+        else if (key == "FLOOR_TEXTURE") config.floorTexture = value;
     }
 
     file.close();
@@ -102,7 +111,16 @@ bool ConfigManager::saveGameConfig(const std::string& filename, const GameConfig
 
     file << "SNAKE_TAIL_MODEL = " << config.snakeTailModel << "\n";
     file << "SNAKE_TAIL_COLOR = " << config.snakeTailColor.r << " " << config.snakeTailColor.g << " " << config.snakeTailColor.b << "\n";
-    file << "SNAKE_TAIL_SCALE = " << config.snakeTailScale << "\n";
+    file << "SNAKE_TAIL_SCALE = " << config.snakeTailScale << "\n\n";
+
+    file << "# Food and Decorations\n";
+    file << "APPLE_MODEL = " << config.appleModel << "\n";
+    file << "TREE_MODEL = " << config.treeModel << "\n";
+    file << "CLOUD_MODEL = " << config.cloudModel << "\n";
+    file << "BIRD_MODEL = " << config.birdModel << "\n";
+    file << "FLOWER_MODEL = " << config.flowerModel << "\n";
+    file << "FLOOR_MODEL = " << config.floorModel << "\n";
+    file << "FLOOR_TEXTURE = " << config.floorTexture << "\n\n";
 
     file.close();
     return true;

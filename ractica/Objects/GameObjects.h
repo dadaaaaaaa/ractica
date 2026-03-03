@@ -5,17 +5,24 @@
 #include "Sprite.h"
 #include "Bird.h"
 #include "../UI/NetworkManager.h"
+#include <glm/glm.hpp>
+#include <vector>
+#include <string>
 
 class GameObjects {
 private:
+    // === ÈÃĞÎÂÛÅ ÎÁÚÅÊÒÛ ===
     std::vector<Point> snake;
     std::vector<Point> food;
     std::vector<Obstacle> obstacles;
     std::vector<Point> fenceBlocks;
 
+    // === ÄÅÊÎĞÀÖÈÈ ===
     std::vector<Sprite> cloudSprites;
     std::vector<Bird> birds;
     std::vector<Sprite> flowerSprites;
+
+    // === ÑÎÑÒÎßÍÈß ÈÃĞÛ ===
     bool nameInputActive = false;
     Direction currentDirection;
     int verticalDirection;
@@ -25,45 +32,64 @@ private:
     float gameSpeed;
     GameState previousState;
     bool gameFrozen;
-    // ÄÎÁÀÂËÅÍÎ: Ïîëÿ äëÿ ñèñòåìû ğåêîğäîâ è âğåìåíè èãğû
+
+    // === ĞÅÊÎĞÄÛ È ÂĞÅÌß ===
     std::vector<HighScore> highScores;
     static const int MAX_HIGH_SCORES = 10;
     int gameDuration;
     float gameTimer;
-    // ÏÎËß ÄËß ÊÎÍÔÈÃÀ
+
+    // === ÍÀÑÒĞÎÉÊÈ ÇÌÅÉÊÈ ===
     std::string snakeHeadModel;
     std::string snakeBodyModel;
     std::string snakeTailModel;
-
     glm::vec3 snakeHeadColor;
     glm::vec3 snakeBodyColor;
     glm::vec3 snakeTailColor;
-
     float snakeScale;
 
+    // === ÍÀÑÒĞÎÉÊÈ ÎÊĞÓÆÅÍÈß ===
     int cloudCount;
     int birdCount;
     int flowerCount;
+
+    // === ÍÀÑÒĞÎÉÊÈ ÏÎËÀ ===
+    std::string floorModel;
+    glm::vec3 floorColor;
+    float floorScale;
+    bool useFloorTexture;
+    std::string floorTexture;
+    glm::vec3 floorPosition;
+
+    // === ÍÎÂÛÅ ÏÎËß - ÌÎÄÅËÈ ÎÊĞÓÆÅÍÈß ===
+    std::string appleModel;
+    std::string treeModel;
+    std::string cloudModel;
+    std::string birdModel;
+    std::string flowerModel;
+
+    // === ÍÀÑÒĞÎÉÊÈ ÈÃĞÎÊÀ ===
     std::string playerName;
     std::vector<float> speedMultipliers;
     int currentSpeedIndex;
     NetworkManager networkManager;
     std::string settingsFileName = "settings.dat";
     std::string saveFileName = "savegame.dat";
+
 public:
+    GameObjects();
+
+    // === ÓÏĞÀÂËÅÍÈÅ ÑÎÑÒÎßÍÈÅÌ ===
     void toggleFreeze() { gameFrozen = !gameFrozen; }
     bool isFrozen() const { return gameFrozen; }
-    GameObjects();
-    void saveOnExit();
-    void returnToMainMenu();
     void pauseGame();
-    void updateGameSpeedFromMultiplier();
-    float getSpeedMultiplier() const;
-    std::string getSpeedDisplayText() const;
-    void increaseSpeed();
-    void decreaseSpeed();
-    void saveSettings();
-    void loadSettings();
+    void returnToMainMenu();
+
+    // === ÈÍÈÖÈÀËÈÇÀÖÈß ===
+    void initGame();
+    void update();
+
+    // === ÃÅÒÒÅĞÛ ÈÃĞÎÂÛÕ ÎÁÚÅÊÒÎÂ ===
     const std::vector<Point>& getSnake() const { return snake; }
     const std::vector<Point>& getFood() const { return food; }
     const std::vector<Obstacle>& getObstacles() const { return obstacles; }
@@ -71,38 +97,93 @@ public:
     const std::vector<Sprite>& getCloudSprites() const { return cloudSprites; }
     const std::vector<Bird>& getBirds() const { return birds; }
     const std::vector<Sprite>& getFlowerSprites() const { return flowerSprites; }
-    void saveHighScoreToServer();
-    Direction getCurrentDirection() const { return currentDirection; }
-    int getVerticalDirection() const { return verticalDirection; }
+
+    // === ÃÅÒÒÅĞÛ ÑÎÑÒÎßÍÈß ===
     int getScore() const { return score; }
     bool isGameOver() const { return gameOver; }
     GameState getGameState() const { return gameState; }
-    float getGameSpeed() const { return gameSpeed; }
     GameState getPreviousState() const { return previousState; }
-    const std::vector<HighScore>& getHighScores() const { return highScores; }
-    const std::string& getPlayerName() const { return playerName; }
-    void handleNameInput(int key);
-    void setNameInputActive(bool active) { nameInputActive = active; }
-    bool isNameInputActive() const { return nameInputActive; }
-    void addCharacterToName(char c);
-    void removeLastCharacterFromName();
-    // ÄÎÁÀÂËÅÍÎ: Ãåòòåğ äëÿ âğåìåíè èãğû
+    float getGameSpeed() const { return gameSpeed; }
     int getGameDuration() const { return gameDuration; }
+    Direction getCurrentDirection() const { return currentDirection; }
+    int getVerticalDirection() const { return verticalDirection; }
 
+    // === ÑÅÒÒÅĞÛ ÑÎÑÒÎßÍÈß ===
+    void setGameState(GameState state) { gameState = state; }
+    void setPreviousState(GameState state) { previousState = state; }
+    void setGameSpeed(float speed) { gameSpeed = speed; }
     void setCurrentDirection(Direction direction) { currentDirection = direction; }
     void setVerticalDirection(int direction) { verticalDirection = direction; }
     void setScore(int newScore) { score = newScore; }
     void setGameOver(bool over) { gameOver = over; }
-    void setGameState(GameState state) { gameState = state; }
-    void setGameSpeed(float speed) { gameSpeed = speed; }
-    void setPreviousState(GameState state) { previousState = state; }
+
+    // === ÍÀÑÒĞÎÉÊÈ ÑÊÎĞÎÑÒÈ ===
+    void increaseSpeed();
+    void decreaseSpeed();
+    void updateGameSpeedFromMultiplier();
+    float getSpeedMultiplier() const;
+    std::string getSpeedDisplayText() const;
+
+    // === ÍÀÑÒĞÎÉÊÈ ÇÌÅÉÊÈ ===
+    void setSnakeModels(const std::string& head, const std::string& body, const std::string& tail);
+    void setSnakeColors(const glm::vec3& head, const glm::vec3& body, const glm::vec3& tail);
+    void setSnakeScale(float scale);
+
+    const std::string& getSnakeHeadModel() const { return snakeHeadModel; }
+    const std::string& getSnakeBodyModel() const { return snakeBodyModel; }
+    const std::string& getSnakeTailModel() const { return snakeTailModel; }
+    const glm::vec3& getSnakeHeadColor() const { return snakeHeadColor; }
+    const glm::vec3& getSnakeBodyColor() const { return snakeBodyColor; }
+    const glm::vec3& getSnakeTailColor() const { return snakeTailColor; }
+    float getSnakeScale() const { return snakeScale; }
+
+    // === ÍÀÑÒĞÎÉÊÈ ÎÊĞÓÆÅÍÈß ===
+    void setCloudCount(int count);
+    void setBirdCount(int count);
+    void setFlowerCount(int count);
+
+    int getCloudCount() const { return cloudCount; }
+    int getBirdCount() const { return birdCount; }
+    int getFlowerCount() const { return flowerCount; }
+
+    // === ÍÎÂÛÅ ÃÅÒÒÅĞÛ ÄËß ÌÎÄÅËÅÉ ÎÊĞÓÆÅÍÈß ===
+    const std::string& getAppleModel() const { return appleModel; }
+    const std::string& getTreeModel() const { return treeModel; }
+    const std::string& getCloudModel() const { return cloudModel; }
+    const std::string& getBirdModel() const { return birdModel; }
+    const std::string& getFlowerModel() const { return flowerModel; }
+
+    // === ÍÎÂÛÅ ÑÅÒÒÅĞÛ ÄËß ÌÎÄÅËÅÉ ÎÊĞÓÆÅÍÈß ===
+    void setAppleModel(const std::string& model) { appleModel = model; }
+    void setTreeModel(const std::string& model) { treeModel = model; }
+    void setCloudModel(const std::string& model) { cloudModel = model; }
+    void setBirdModel(const std::string& model) { birdModel = model; }
+    void setFlowerModel(const std::string& model) { flowerModel = model; }
+
+    // === ÍÀÑÒĞÎÉÊÈ ÏÎËÀ ===
+    void setFloorModel(const std::string& model);
+    void setFloorColor(const glm::vec3& color);
+    void setFloorScale(float scale);
+    void setFloorTexture(const std::string& texture);
+    void setFloorPosition(const glm::vec3& pos);
+
+    const std::string& getFloorModel() const { return floorModel; }
+    const glm::vec3& getFloorColor() const { return floorColor; }
+    float getFloorScale() const { return floorScale; }
+    bool isUsingFloorTexture() const { return useFloorTexture; }
+    const std::string& getFloorTexture() const { return floorTexture; }
+    const glm::vec3& getFloorPosition() const { return floorPosition; }
+
+    // === ÍÀÑÒĞÎÉÊÈ ÈÃĞÎÊÀ ===
+    const std::string& getPlayerName() const { return playerName; }
     void setPlayerName(const std::string& name);
+    bool isNameInputActive() const { return nameInputActive; }
+    void setNameInputActive(bool active) { nameInputActive = active; }
+    void handleNameInput(int key);
+    void addCharacterToName(char c);
+    void removeLastCharacterFromName();
 
-    bool saveGame();
-    bool loadGame();
-    bool hasSaveGame() const;
-    void deleteSaveGame();
-
+    // === ÃÅÍÅĞÀÖÈß ÎÁÚÅÊÒÎÂ ===
     void generateFence();
     void generateClouds();
     void generateBirds();
@@ -111,40 +192,33 @@ public:
     void generateSingleFood();
     void generateInitialFood();
 
-    void update();
+    // === ÎÁÍÎÂËÅÍÈÅ ÎÁÚÅÊÒÎÂ ===
     void updateClouds();
     void updateBirds();
 
-    void initGame();
-    void debugSnakeInfo();
-    void loadHighScores();
-    void saveHighScore();
-
-    // ÄÎÁÀÂËÅÍÎ: Íîâûå ìåòîäû äëÿ ğàáîòû ñ ğåêîğäàìè
-    void addHighScore(const std::string& playerName, int score);
-    bool isNewHighScore(int score) const;
-    void updateHighScores();
-
+    // === ÎÁĞÀÁÎÒÊÀ ÂÂÎÄÀ ===
     void handleGameKeyPress(int key);
     void handleSettingsKeyPress(int key);
     void handleMenuKeyPress(int key);
-    // ÌÅÒÎÄÛ ÄËß ÓÑÒÀÍÎÂÊÈ ÊÎÍÔÈÃÀ
-    void setSnakeModels(const std::string& head, const std::string& body, const std::string& tail);
-    void setSnakeColors(const glm::vec3& head, const glm::vec3& body, const glm::vec3& tail);
-    void setSnakeScale(float scale);
-    void setCloudCount(int count);
-    void setBirdCount(int count);
-    void setFlowerCount(int count);
 
-    // ÃÅÒÒÅĞÛ ÄËß ÊÎÍÔÈÃÀ
-    const std::string& getSnakeHeadModel() const;
-    const std::string& getSnakeBodyModel() const;
-    const std::string& getSnakeTailModel() const;
-    const glm::vec3& getSnakeHeadColor() const;
-    const glm::vec3& getSnakeBodyColor() const;
-    const glm::vec3& getSnakeTailColor() const;
-    float getSnakeScale() const;
-    int getCloudCount() const;
-    int getBirdCount() const;
-    int getFlowerCount() const;
+    // === ĞÅÊÎĞÄÛ ===
+    void loadHighScores();
+    void saveHighScore();
+    void saveHighScoreToServer();
+    void updateHighScores();
+    bool isNewHighScore(int score) const;
+    void addHighScore(const std::string& playerName, int score);
+    const std::vector<HighScore>& getHighScores() const { return highScores; }
+
+    // === ÑÎÕĞÀÍÅÍÈÅ/ÇÀÃĞÓÇÊÀ ===
+    bool saveGame();
+    bool loadGame();
+    bool hasSaveGame() const;
+    void deleteSaveGame();
+    void saveSettings();
+    void loadSettings();
+    void saveOnExit();
+
+    // === ÎÒËÀÄÊÀ ===
+    void debugSnakeInfo() {}
 };

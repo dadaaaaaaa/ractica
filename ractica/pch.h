@@ -1,31 +1,49 @@
 #pragma once
 
 // Стандартные библиотеки
-#define _WINSOCK_DEPRECATED_NO_WARNINGS 
-#define _CRT_SECURE_NO_WARNINGS
-#include <GLEW/glew.h>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <random>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <memory>
+#include <functional>
+#include <filesystem>
+
+// Windows
+#include <windows.h>
+
+// OpenGL
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
+
+// GLM
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <iostream>
-#include <vector>
-#include <cstdlib>
-#include <ctime>
-#include <algorithm>
-#include <string>
-#include <cmath>
-#include <fstream>
-#include <sstream>
-#include <map>
-#include <ft2build.h>
-#include <chrono>
-#include <iomanip>
-// чтобы убрать предупреждения
-// OpenGL и графические библиотеки
 
-// Windows-специфичные библиотеки для шрифтов
-#ifdef _WIN32
-#include <windows.h>
-#include <wingdi.h>
-#endif
+// FreeType
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+// STB Image
+#include "stb_image.h"
+
+// Assimp
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+
+// Наши заголовки
+#include "Core/Constants.h"
+#include "Core/Types.h"
+#include "../Shared/ConfigTypes.h"
+#include "Objects/Sprite.h"
+#include "Objects/Bird.h"
+#include "Objects/Obstacle.h"

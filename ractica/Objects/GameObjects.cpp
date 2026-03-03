@@ -3,11 +3,17 @@
 #include "../Graphics/ShaderManager.h"
 #include "../Graphics/Camera.h"
 #include "../Core/Constants.h"
-
+#include <algorithm>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 
+//=============================================================================
+// КОНСТРУКТОР - здесь только минимальные значения по умолчанию
+//=============================================================================
 GameObjects::GameObjects()
     : gameFrozen(false),
     currentDirection(FORWARD),
@@ -21,7 +27,8 @@ GameObjects::GameObjects()
     gameDuration(0),
     gameTimer(0.0f),
     nameInputActive(false),
-    // Инициализация полей конфига
+
+    // Эти значения будут перезаписаны из конфига в Game::loadConfig()
     snakeHeadModel("snake_head.obj"),
     snakeBodyModel("snake_body.obj"),
     snakeTailModel("snake_tail.obj"),
@@ -29,24 +36,35 @@ GameObjects::GameObjects()
     snakeBodyColor(0.0f, 0.7f, 0.0f),
     snakeTailColor(0.0f, 0.5f, 0.0f),
     snakeScale(0.8f),
+
+    // Модели окружения
+    appleModel("apple.fbx"),
+    treeModel("tree.fbx"),
+    cloudModel("cloud.fbx"),
+    birdModel("bird.fbx"),
+    flowerModel("flower.fbx"),
+
     cloudCount(20),
     birdCount(15),
-    flowerCount(25) {
+    flowerCount(25),
+    floorModel("floor.obj"),
+    floorColor(0.3f, 0.6f, 0.2f),
+    floorScale(1.0f),
+    useFloorTexture(false),
+    floorTexture(""),
+    floorPosition(0.0f, -0.5f, 0.0f) {
 
     speedMultipliers = { 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f };
     currentSpeedIndex = 3;
 
-    // Загружаем настройки при создании
-    loadSettings();
+    loadSettings(); // загружает настройки игрока (имя, скорость)
     updateGameSpeedFromMultiplier();
-    loadHighScores();
+    loadHighScores(); // загружает рекорды с сервера
 }
 
-void GameObjects::saveHighScoreToServer() {
-    // Пока просто вызовем наш NetworkManager
-    networkManager.submitHighScore(playerName, score, gameSpeed, 0, snake.size());
-}
-
+//=============================================================================
+// НАСТРОЙКИ СКОРОСТИ
+//=============================================================================
 void GameObjects::updateGameSpeedFromMultiplier() {
     float baseSpeed = 0.12f;
     gameSpeed = baseSpeed / speedMultipliers[currentSpeedIndex];
@@ -70,7 +88,7 @@ void GameObjects::increaseSpeed() {
     if (currentSpeedIndex < speedMultipliers.size() - 1) {
         currentSpeedIndex++;
         updateGameSpeedFromMultiplier();
-        saveSettings(); // Сохраняем настройки сразу при изменении
+        saveSettings();
     }
 }
 
@@ -78,27 +96,13 @@ void GameObjects::decreaseSpeed() {
     if (currentSpeedIndex > 0) {
         currentSpeedIndex--;
         updateGameSpeedFromMultiplier();
-        saveSettings(); // Сохраняем настройки сразу при изменении
+        saveSettings();
     }
 }
 
-void GameObjects::saveOnExit() {
-    // Сохраняем игру если она активна и не завершена
-    if (gameState == PLAYING && !gameOver) {
-        saveGame();
-        std::cout << " Game saved on exit" << std::endl;
-    }
-
-    // Сохраняем настройки при выходе
-    saveSettings();
-    std::cout << " Settings saved on exit" << std::endl;
-}
-
-void GameObjects::setPlayerName(const std::string& name) {
-    playerName = name;
-    saveSettings(); // Сохраняем настройки сразу при изменении
-}
-
+//=============================================================================
+// СОХРАНЕНИЕ/ЗАГРУЗКА НАСТРОЕК ИГРОКА
+//=============================================================================
 struct SettingsData {
     int version = 1;
     float gameSpeed;
@@ -139,22 +143,35 @@ void GameObjects::loadSettings() {
     }
 }
 
+void GameObjects::setPlayerName(const std::string& name) {
+    playerName = name;
+    saveSettings();
+}
 
-
+//=============================================================================
+// УПРАВЛЕНИЕ СОСТОЯНИЕМ
+//=============================================================================
 void GameObjects::pauseGame() {
     if (gameState == PLAYING) {
         gameState = PAUSED;
-        // НЕ сохраняем при паузе - только при выходе в меню
     }
 }
 
 void GameObjects::returnToMainMenu() {
-    // Сохраняем игру только при возврате в меню из активной игры
     if (gameState == PLAYING && !gameOver) {
         saveGame();
         std::cout << " Game saved when returning to main menu" << std::endl;
     }
     gameState = MAIN_MENU;
+}
+
+void GameObjects::saveOnExit() {
+    if (gameState == PLAYING && !gameOver) {
+        saveGame();
+        std::cout << " Game saved on exit" << std::endl;
+    }
+    saveSettings();
+    std::cout << " Settings saved on exit" << std::endl;
 }
 
 void GameObjects::handleSettingsKeyPress(int key) {
@@ -170,6 +187,41 @@ void GameObjects::handleSettingsKeyPress(int key) {
     }
 }
 
+//=============================================================================
+// ИНИЦИАЛИЗАЦИЯ ИГРЫ
+//=============================================================================
+void GameObjects::initGame() {
+    snake.clear();
+    snake.push_back(Point(GRID_WIDTH / 2, 0, GRID_DEPTH / 2));
+    snake.push_back(Point(GRID_WIDTH / 2 - 1, 0, GRID_DEPTH / 2));
+    snake.push_back(Point(GRID_WIDTH / 2 - 2, 0, GRID_DEPTH / 2));
+
+    generateFence();
+    generateInitialFood();
+    generateObstacles();
+    generateClouds();
+    generateBirds();
+    generateGroundSprites();
+
+    currentDirection = FORWARD;
+    verticalDirection = 0;
+    score = 0;
+    gameOver = false;
+    gameDuration = 0;
+    gameTimer = 0.0f;
+
+    g_camera.setTargetDistance(5.0f);
+
+    std::cout << "Game initialized with config values:" << std::endl;
+    std::cout << "  Cloud count: " << cloudCount << std::endl;
+    std::cout << "  Bird count: " << birdCount << std::endl;
+    std::cout << "  Flower count: " << flowerCount << std::endl;
+    std::cout << "  Floor model: " << floorModel << std::endl;
+}
+
+//=============================================================================
+// ОБНОВЛЕНИЕ ИГРЫ
+//=============================================================================
 void GameObjects::update() {
     if (gameOver || gameState != PLAYING) return;
 
@@ -183,20 +235,19 @@ void GameObjects::update() {
     }
     lastMoveTime = currentTime;
 
-    // Обновление времени игры
     gameTimer += gameSpeed;
     if (gameTimer >= 1.0f) {
         gameDuration++;
         gameTimer = 0.0f;
     }
 
-    Point newHead = snake[0];
     if (gameFrozen) {
-        // Можно обновлять только анимации (облака, птицы) для красивого скриншота
         updateClouds();
         updateBirds();
         return;
     }
+
+    Point newHead = snake[0];
     switch (currentDirection) {
     case FORWARD: newHead.z++; break;
     case BACKWARD: newHead.z--; break;
@@ -250,141 +301,20 @@ void GameObjects::update() {
     updateBirds();
 }
 
-void GameObjects::initGame() {
-    snake.clear();
-    snake.push_back(Point(GRID_WIDTH / 2, 0, GRID_DEPTH / 2));
-    snake.push_back(Point(GRID_WIDTH / 2 - 1, 0, GRID_DEPTH / 2));
-    snake.push_back(Point(GRID_WIDTH / 2 - 2, 0, GRID_DEPTH / 2));
-
-    generateFence();
-    generateInitialFood();
-    generateObstacles();
-    generateClouds();
-    generateBirds();
-    generateGroundSprites();
-
-    currentDirection = FORWARD;
-    verticalDirection = 0;
-    score = 0;
-    gameOver = false;
-    gameDuration = 0;
-    gameTimer = 0.0f;
-
-    g_camera.setTargetDistance(5.0f);
-}
-
-
-void GameObjects::loadHighScores() {
-    std::cout << "Loading high scores from server..." << std::endl;
-
- 
-    highScores = networkManager.getTopScores();
-
-    if (highScores.empty()) {
-        std::cout << " No high scores available (server unavailable)" << std::endl;
-    }
-    else {
-        std::cout << " Loaded " << highScores.size() << " high scores from server" << std::endl;
-    }
-}
-
-
-
-
-
-// НОВАЯ ФУНКЦИЯ: Проверка является ли счет новым рекордом
-bool GameObjects::isNewHighScore(int score) const {
-    if (highScores.size() < MAX_HIGH_SCORES) return true;
-    return score > highScores.back().score;
-}
-
-// НОВАЯ ФУНКЦИЯ: Добавление нового рекорда
-void GameObjects::addHighScore(const std::string& playerName, int score) {
-    // Получаем текущую дату
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    std::stringstream ss;
-    ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d");
-
-    HighScore newScore(
-        playerName,
-        score,
-        ss.str(),
-        gameSpeed,
-        static_cast<int>(snake.size()),
-        gameDuration
-    );
-
-    highScores.push_back(newScore);
-    std::sort(highScores.begin(), highScores.end());
-
-    // Оставляем только топ MAX_HIGH_SCORES
-    if (highScores.size() > MAX_HIGH_SCORES) {
-        highScores.resize(MAX_HIGH_SCORES);
-    }
-
-}
-
-void GameObjects::updateHighScores() {
-    if (score <= 0) {
-        std::cout << "Score is 0, not submitting to server" << std::endl;
-        return;
-    }
-
-    if (isNewHighScore(score)) {
-        std::cout << "NEW HIGH SCORE! " << playerName << ": " << score << " points!" << std::endl;
-
-        if (networkManager.submitHighScore(playerName, score, gameSpeed, gameDuration, snake.size())) {
-            std::cout << " High score sent to server successfully!" << std::endl;
-
-            loadHighScores();
-        }
-        else {
-            std::cout << "Failed to send high score to server" << std::endl;
-        }
-    }
-}
-
-
-void GameObjects::generateFence() {
-    fenceBlocks.clear();
-
-    // Углы (4 штуки)
-    fenceBlocks.push_back(Point(0, 0, 0));                     // Левый верхний
-    fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, 0));        // Правый верхний
-    fenceBlocks.push_back(Point(0, 0, GRID_DEPTH - 1));        // Левый нижний
-    fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, GRID_DEPTH - 1)); // Правый нижний
-
-    // Северная сторона (без углов)
-    for (int x = 1; x < GRID_WIDTH - 1; x++) {
-        fenceBlocks.push_back(Point(x, 0, 0));
-    }
-
-    // Южная сторона (без углов)
-    for (int x = 1; x < GRID_WIDTH - 1; x++) {
-        fenceBlocks.push_back(Point(x, 0, GRID_DEPTH - 1));
-    }
-
-    // Западная сторона (без углов)
-    for (int z = 1; z < GRID_DEPTH - 1; z++) {
-        fenceBlocks.push_back(Point(0, 0, z));
-    }
-
-    // Восточная сторона (без углов)
-    for (int z = 1; z < GRID_DEPTH - 1; z++) {
-        fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, z));
-    }
-}
-
+//=============================================================================
+// ГЕНЕРАЦИЯ ОБЪЕКТОВ (ИСПОЛЬЗУЮТ ЗНАЧЕНИЯ ИЗ КОНФИГА)
+//=============================================================================
 void GameObjects::generateClouds() {
     cloudSprites.clear();
+    std::cout << "Generating " << cloudCount << " clouds (from config)" << std::endl;
+
     float gameFieldMinX = -GRID_WIDTH * CELL_SIZE * 0.5f;
     float gameFieldMaxX = GRID_WIDTH * CELL_SIZE * 0.5f;
     float gameFieldMinZ = -GRID_DEPTH * CELL_SIZE * 0.5f;
     float gameFieldMaxZ = GRID_DEPTH * CELL_SIZE * 0.5f;
     float safeDistance = 2.0f;
 
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < cloudCount; i++) {
         glm::vec3 position;
         bool validPosition = false;
         int attempts = 0;
@@ -426,13 +356,15 @@ void GameObjects::generateClouds() {
 
 void GameObjects::generateBirds() {
     birds.clear();
+    std::cout << "Generating " << birdCount << " birds (from config)" << std::endl;
+
     float gameFieldMinX = -GRID_WIDTH * CELL_SIZE * 0.5f;
     float gameFieldMaxX = GRID_WIDTH * CELL_SIZE * 0.5f;
     float gameFieldMinZ = -GRID_DEPTH * CELL_SIZE * 0.5f;
     float gameFieldMaxZ = GRID_DEPTH * CELL_SIZE * 0.5f;
     float safeDistance = 1.5f;
 
-    for (int i = 0; i < 15; i++) {
+    for (int i = 0; i < birdCount; i++) {
         glm::vec3 position;
         bool validPosition = false;
         int attempts = 0;
@@ -476,14 +408,15 @@ void GameObjects::generateBirds() {
 
         Bird bird(position, color, size, speed);
         bird.direction = direction;
-
         birds.push_back(bird);
     }
 }
 
 void GameObjects::generateGroundSprites() {
     flowerSprites.clear();
-    for (int i = 0; i < 25; i++) {
+    std::cout << "Generating " << flowerCount << " flowers (from config)" << std::endl;
+
+    for (int i = 0; i < flowerCount; i++) {
         float x = (rand() % 200 - 100) * 0.1f;
         float y = 0.01f;
         float z = (rand() % 200 - 100) * 0.1f;
@@ -499,6 +432,28 @@ void GameObjects::generateGroundSprites() {
         }
 
         flowerSprites.push_back(Sprite(glm::vec3(x, y, z), color, size, 0.0f));
+    }
+}
+
+void GameObjects::generateFence() {
+    fenceBlocks.clear();
+
+    fenceBlocks.push_back(Point(0, 0, 0));
+    fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, 0));
+    fenceBlocks.push_back(Point(0, 0, GRID_DEPTH - 1));
+    fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, GRID_DEPTH - 1));
+
+    for (int x = 1; x < GRID_WIDTH - 1; x++) {
+        fenceBlocks.push_back(Point(x, 0, 0));
+    }
+    for (int x = 1; x < GRID_WIDTH - 1; x++) {
+        fenceBlocks.push_back(Point(x, 0, GRID_DEPTH - 1));
+    }
+    for (int z = 1; z < GRID_DEPTH - 1; z++) {
+        fenceBlocks.push_back(Point(0, 0, z));
+    }
+    for (int z = 1; z < GRID_DEPTH - 1; z++) {
+        fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, z));
     }
 }
 
@@ -622,6 +577,9 @@ void GameObjects::generateInitialFood() {
     }
 }
 
+//=============================================================================
+// ОБНОВЛЕНИЕ ДЕКОРАЦИЙ
+//=============================================================================
 void GameObjects::updateClouds() {
     for (auto& cloud : cloudSprites) {
         float currentAngle = atan2f(cloud.position.z, cloud.position.x);
@@ -629,7 +587,6 @@ void GameObjects::updateClouds() {
 
         cloud.position.x += cos(movementAngle) * cloud.speed * 0.01f;
         cloud.position.z += sin(movementAngle) * cloud.speed * 0.01f;
-
         cloud.position.y += (rand() % 100 - 50) * 0.0001f;
 
         if (cloud.position.y < 2.3f) cloud.position.y = 2.3f;
@@ -678,9 +635,12 @@ void GameObjects::updateBirds() {
     }
 }
 
+//=============================================================================
+// ОБРАБОТКА ВВОДА
+//=============================================================================
 void GameObjects::handleGameKeyPress(int key) {
     switch (key) {
-    case GLFW_KEY_S:  
+    case GLFW_KEY_S:
         gameFrozen = !gameFrozen;
         std::cout << "Game " << (gameFrozen ? "FROZEN" : "UNFROZEN") << std::endl;
         break;
@@ -783,227 +743,7 @@ void GameObjects::handleMenuKeyPress(int key) {
         break;
     }
 }
-#pragma pack(push, 1)
-struct SaveData {
-    int version = 1;
-    int score;
-    int gameDuration;
-    float gameSpeed;
-    int currentDirection;
 
-    // Змейка
-    int snakeLength;
-    Point snake[1000];
-
-    // Еда
-    int foodCount;
-    Point food[50];
-
-    // Препятствия
-    int obstaclesCount;
-    Point obstacles[100];
-
-
-    // Облака
-    int cloudSpritesCount;
-    struct CloudSave {
-        glm::vec3 position;
-        glm::vec3 color;
-        float size;
-        float speed;
-    } cloudSprites[100]; // Увеличил с 50 до 100
-
-    // Птицы
-    int birdsCount;
-    struct BirdSave {
-        glm::vec3 position;
-        glm::vec3 color;
-        float size;
-        float speed;
-        glm::vec3 direction;
-    } birds[50]; // Увеличил с 30 до 50
-
-    // Цветы (увеличим размер - цветов может быть много)
-    int flowerSpritesCount;
-    struct FlowerSave {
-        glm::vec3 position;
-        glm::vec3 color;
-        float size;
-    } flowerSprites[100]; // Увеличил с 50 до 100
-};
-#pragma pack(pop)
-
-bool GameObjects::saveGame() {
-    std::ofstream file(saveFileName, std::ios::binary);
-    if (!file.is_open()) {
-        std::cout << " Failed to save game" << std::endl;
-        return false;
-    }
-
-    SaveData save;
-    save.version = 1;
-    save.score = score;
-    save.gameDuration = gameDuration;
-    save.gameSpeed = gameSpeed;
-    save.currentDirection = currentDirection;
-
-    // Сохраняем змейку
-    save.snakeLength = static_cast<int>(snake.size());
-    for (int i = 0; i < save.snakeLength && i < 1000; i++) {
-        save.snake[i] = snake[i];
-    }
-
-    // Сохраняем еду
-    save.foodCount = static_cast<int>(food.size());
-    for (int i = 0; i < save.foodCount && i < 50; i++) {
-        save.food[i] = food[i];
-    }
-
-    // Сохраняем препятствия
-    save.obstaclesCount = static_cast<int>(obstacles.size());
-    for (int i = 0; i < save.obstaclesCount && i < 100; i++) {
-        save.obstacles[i] = obstacles[i].center;
-    }
-
-    // ЗАБОР НЕ СОХРАНЯЕМ - он статичный
-
-    // Сохраняем облака
-    save.cloudSpritesCount = static_cast<int>(cloudSprites.size());
-    for (int i = 0; i < save.cloudSpritesCount && i < 100; i++) {
-        save.cloudSprites[i].position = cloudSprites[i].position;
-        save.cloudSprites[i].color = cloudSprites[i].color;
-        save.cloudSprites[i].size = cloudSprites[i].size;
-        save.cloudSprites[i].speed = cloudSprites[i].speed;
-    }
-
-    // Сохраняем птиц
-    save.birdsCount = static_cast<int>(birds.size());
-    for (int i = 0; i < save.birdsCount && i < 50; i++) {
-        save.birds[i].position = birds[i].position;
-        save.birds[i].color = birds[i].color;
-        save.birds[i].size = birds[i].size;
-        save.birds[i].speed = birds[i].speed;
-        save.birds[i].direction = birds[i].direction;
-    }
-
-    // Сохраняем цветы
-    save.flowerSpritesCount = static_cast<int>(flowerSprites.size());
-    for (int i = 0; i < save.flowerSpritesCount && i < 100; i++) {
-        save.flowerSprites[i].position = flowerSprites[i].position;
-        save.flowerSprites[i].color = flowerSprites[i].color;
-        save.flowerSprites[i].size = flowerSprites[i].size;
-    }
-
-    file.write(reinterpret_cast<char*>(&save), sizeof(SaveData));
-    file.close();
-
-    std::cout << " Game saved successfully! ("
-        << save.snakeLength << " snake segments, "
-        << save.foodCount << " food, "
-        << save.obstaclesCount << " obstacles, "
-        << save.cloudSpritesCount << " clouds, "
-        << save.birdsCount << " birds, "
-        << save.flowerSpritesCount << " flowers)" << std::endl;
-    return true;
-}
-
-bool GameObjects::loadGame() {
-    std::ifstream file(saveFileName, std::ios::binary);
-    if (!file.is_open()) {
-        std::cout << " No save game found" << std::endl;
-        return false;
-    }
-
-    SaveData save;
-    file.read(reinterpret_cast<char*>(&save), sizeof(SaveData));
-    file.close();
-
-    if (save.version != 1) {
-        std::cout << " Invalid save game version" << std::endl;
-        return false;
-    }
-
-    // Восстанавливаем основное состояние
-    score = save.score;
-    gameDuration = save.gameDuration;
-    gameSpeed = save.gameSpeed;
-    currentDirection = static_cast<Direction>(save.currentDirection);
-    gameOver = false;
-
-    // ГЕНЕРИРУЕМ ЗАБОР ЗАНОВО (вместо загрузки из сохранения)
-    generateFence();
-
-    // Восстанавливаем змейку
-    snake.clear();
-    for (int i = 0; i < save.snakeLength && i < 1000; i++) {
-        snake.push_back(save.snake[i]);
-    }
-
-    // Восстанавливаем еду
-    food.clear();
-    for (int i = 0; i < save.foodCount && i < 50; i++) {
-        food.push_back(save.food[i]);
-    }
-
-    // Восстанавливаем препятствия
-    obstacles.clear();
-    for (int i = 0; i < save.obstaclesCount && i < 100; i++) {
-        obstacles.push_back(Obstacle(save.obstacles[i]));
-    }
-
-    // ЗАБОР УБРАН - больше не загружаем из сохранения
-
-    // Восстанавливаем облака
-    cloudSprites.clear();
-    for (int i = 0; i < save.cloudSpritesCount && i < 100; i++) {
-        Sprite cloud(save.cloudSprites[i].position,
-            save.cloudSprites[i].color,
-            save.cloudSprites[i].size,
-            save.cloudSprites[i].speed);
-        cloudSprites.push_back(cloud);
-    }
-
-    // Восстанавливаем птиц
-    birds.clear();
-    for (int i = 0; i < save.birdsCount && i < 50; i++) {
-        Bird bird(save.birds[i].position,
-            save.birds[i].color,
-            save.birds[i].size,
-            save.birds[i].speed);
-        bird.direction = save.birds[i].direction;
-        birds.push_back(bird);
-    }
-
-    // Восстанавливаем цветы
-    flowerSprites.clear();
-    for (int i = 0; i < save.flowerSpritesCount && i < 100; i++) {
-        Sprite flower(save.flowerSprites[i].position,
-            save.flowerSprites[i].color,
-            save.flowerSprites[i].size,
-            0.0f); // цветы не двигаются
-        flowerSprites.push_back(flower);
-    }
-
-    std::cout << " Game loaded successfully! ("
-        << save.snakeLength << " snake segments, "
-        << save.foodCount << " food, "
-        << save.obstaclesCount << " obstacles, "
-        << "fence regenerated, "
-        << save.cloudSpritesCount << " clouds, "
-        << save.birdsCount << " birds, "
-        << save.flowerSpritesCount << " flowers)" << std::endl;
-    return true;
-}
-
-bool GameObjects::hasSaveGame() const {
-    std::ifstream file(saveFileName);
-    return file.good();
-}
-
-void GameObjects::deleteSaveGame() {
-    std::remove(saveFileName.c_str());
-    std::cout << " Save game deleted" << std::endl;
-}
 void GameObjects::handleNameInput(int key) {
     if (!nameInputActive) return;
 
@@ -1012,15 +752,12 @@ void GameObjects::handleNameInput(int key) {
     }
     else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_ESCAPE) {
         setNameInputActive(false);
-        saveSettings(); // Сохраняем настройки при завершении ввода
+        saveSettings();
     }
-    // Остальные клавиши обрабатываются через charCallback
 }
 
 void GameObjects::addCharacterToName(char c) {
-    // Ограничиваем длину имени
     if (playerName.length() < 15) {
-        // Разрешаем буквы, цифры, пробелы, дефисы и подчеркивания
         if (isalnum(c) || c == ' ' || c == '-' || c == '_') {
             playerName += c;
         }
@@ -1032,7 +769,81 @@ void GameObjects::removeLastCharacterFromName() {
         playerName.pop_back();
     }
 }
-// Реализация методов для конфига
+
+//=============================================================================
+// РЕКОРДЫ
+//=============================================================================
+void GameObjects::saveHighScoreToServer() {
+    networkManager.submitHighScore(playerName, score, gameSpeed, gameDuration, snake.size());
+}
+
+void GameObjects::loadHighScores() {
+    std::cout << "Loading high scores from server..." << std::endl;
+    highScores = networkManager.getTopScores();
+
+    if (highScores.empty()) {
+        std::cout << " No high scores available (server unavailable)" << std::endl;
+    }
+    else {
+        std::cout << " Loaded " << highScores.size() << " high scores from server" << std::endl;
+    }
+}
+
+bool GameObjects::isNewHighScore(int score) const {
+    if (highScores.size() < MAX_HIGH_SCORES) return true;
+    return score > highScores.back().score;
+}
+
+void GameObjects::addHighScore(const std::string& playerName, int score) {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+
+    // Используем localtime_s вместо localtime
+    struct tm timeinfo;
+    localtime_s(&timeinfo, &time_t);
+
+    std::stringstream ss;
+    ss << std::put_time(&timeinfo, "%Y-%m-%d");
+
+    HighScore newScore(
+        playerName,
+        score,
+        ss.str(),
+        gameSpeed,
+        static_cast<int>(snake.size()),
+        gameDuration
+    );
+
+    highScores.push_back(newScore);
+    std::sort(highScores.begin(), highScores.end());
+
+    if (highScores.size() > MAX_HIGH_SCORES) {
+        highScores.resize(MAX_HIGH_SCORES);
+    }
+}
+
+void GameObjects::updateHighScores() {
+    if (score <= 0) {
+        std::cout << "Score is 0, not submitting to server" << std::endl;
+        return;
+    }
+
+    if (isNewHighScore(score)) {
+        std::cout << "NEW HIGH SCORE! " << playerName << ": " << score << " points!" << std::endl;
+
+        if (networkManager.submitHighScore(playerName, score, gameSpeed, gameDuration, snake.size())) {
+            std::cout << " High score sent to server successfully!" << std::endl;
+            loadHighScores();
+        }
+        else {
+            std::cout << "Failed to send high score to server" << std::endl;
+        }
+    }
+}
+
+//=============================================================================
+// МЕТОДЫ ДЛЯ КОНФИГА
+//=============================================================================
 void GameObjects::setSnakeModels(const std::string& head, const std::string& body, const std::string& tail) {
     snakeHeadModel = head;
     snakeBodyModel = body;
@@ -1062,42 +873,215 @@ void GameObjects::setFlowerCount(int count) {
     flowerCount = count;
 }
 
-const std::string& GameObjects::getSnakeHeadModel() const {
-    return snakeHeadModel;
+//=============================================================================
+// МЕТОДЫ ДЛЯ ПОЛА
+//=============================================================================
+void GameObjects::setFloorModel(const std::string& model) {
+    floorModel = model;
+    std::cout << "Floor model set to: " << model << std::endl;
 }
 
-const std::string& GameObjects::getSnakeBodyModel() const {
-    return snakeBodyModel;
+void GameObjects::setFloorColor(const glm::vec3& color) {
+    floorColor = color;
 }
 
-const std::string& GameObjects::getSnakeTailModel() const {
-    return snakeTailModel;
+void GameObjects::setFloorScale(float scale) {
+    floorScale = scale;
 }
 
-const glm::vec3& GameObjects::getSnakeHeadColor() const {
-    return snakeHeadColor;
+void GameObjects::setFloorTexture(const std::string& texture) {
+    floorTexture = texture;
+    useFloorTexture = !texture.empty();
+    std::cout << "Floor texture set to: " << (texture.empty() ? "none" : texture) << std::endl;
 }
 
-const glm::vec3& GameObjects::getSnakeBodyColor() const {
-    return snakeBodyColor;
+void GameObjects::setFloorPosition(const glm::vec3& pos) {
+    floorPosition = pos;
 }
 
-const glm::vec3& GameObjects::getSnakeTailColor() const {
-    return snakeTailColor;
+//=============================================================================
+// СОХРАНЕНИЕ/ЗАГРУЗКА ИГРЫ
+//=============================================================================
+#pragma pack(push, 1)
+struct SaveData {
+    int version = 1;
+    int score;
+    int gameDuration;
+    float gameSpeed;
+    int currentDirection;
+
+    int snakeLength;
+    Point snake[1000];
+
+    int foodCount;
+    Point food[50];
+
+    int obstaclesCount;
+    Point obstacles[100];
+
+    int cloudSpritesCount;
+    struct CloudSave {
+        glm::vec3 position;
+        glm::vec3 color;
+        float size;
+        float speed;
+    } cloudSprites[100];
+
+    int birdsCount;
+    struct BirdSave {
+        glm::vec3 position;
+        glm::vec3 color;
+        float size;
+        float speed;
+        glm::vec3 direction;
+    } birds[50];
+
+    int flowerSpritesCount;
+    struct FlowerSave {
+        glm::vec3 position;
+        glm::vec3 color;
+        float size;
+    } flowerSprites[100];
+};
+#pragma pack(pop)
+
+bool GameObjects::saveGame() {
+    std::ofstream file(saveFileName, std::ios::binary);
+    if (!file.is_open()) {
+        std::cout << " Failed to save game" << std::endl;
+        return false;
+    }
+
+    SaveData save;
+    save.version = 1;
+    save.score = score;
+    save.gameDuration = gameDuration;
+    save.gameSpeed = gameSpeed;
+    save.currentDirection = currentDirection;
+
+    save.snakeLength = static_cast<int>(snake.size());
+    for (int i = 0; i < save.snakeLength && i < 1000; i++) {
+        save.snake[i] = snake[i];
+    }
+
+    save.foodCount = static_cast<int>(food.size());
+    for (int i = 0; i < save.foodCount && i < 50; i++) {
+        save.food[i] = food[i];
+    }
+
+    save.obstaclesCount = static_cast<int>(obstacles.size());
+    for (int i = 0; i < save.obstaclesCount && i < 100; i++) {
+        save.obstacles[i] = obstacles[i].center;
+    }
+
+    save.cloudSpritesCount = static_cast<int>(cloudSprites.size());
+    for (int i = 0; i < save.cloudSpritesCount && i < 100; i++) {
+        save.cloudSprites[i].position = cloudSprites[i].position;
+        save.cloudSprites[i].color = cloudSprites[i].color;
+        save.cloudSprites[i].size = cloudSprites[i].size;
+        save.cloudSprites[i].speed = cloudSprites[i].speed;
+    }
+
+    save.birdsCount = static_cast<int>(birds.size());
+    for (int i = 0; i < save.birdsCount && i < 50; i++) {
+        save.birds[i].position = birds[i].position;
+        save.birds[i].color = birds[i].color;
+        save.birds[i].size = birds[i].size;
+        save.birds[i].speed = birds[i].speed;
+        save.birds[i].direction = birds[i].direction;
+    }
+
+    save.flowerSpritesCount = static_cast<int>(flowerSprites.size());
+    for (int i = 0; i < save.flowerSpritesCount && i < 100; i++) {
+        save.flowerSprites[i].position = flowerSprites[i].position;
+        save.flowerSprites[i].color = flowerSprites[i].color;
+        save.flowerSprites[i].size = flowerSprites[i].size;
+    }
+
+    file.write(reinterpret_cast<char*>(&save), sizeof(SaveData));
+    file.close();
+
+    std::cout << " Game saved successfully! (" << std::endl;
+    return true;
 }
 
-float GameObjects::getSnakeScale() const {
-    return snakeScale;
+bool GameObjects::loadGame() {
+    std::ifstream file(saveFileName, std::ios::binary);
+    if (!file.is_open()) {
+        std::cout << " No save game found" << std::endl;
+        return false;
+    }
+
+    SaveData save;
+    file.read(reinterpret_cast<char*>(&save), sizeof(SaveData));
+    file.close();
+
+    if (save.version != 1) {
+        std::cout << " Invalid save game version" << std::endl;
+        return false;
+    }
+
+    score = save.score;
+    gameDuration = save.gameDuration;
+    gameSpeed = save.gameSpeed;
+    currentDirection = static_cast<Direction>(save.currentDirection);
+    gameOver = false;
+
+    generateFence();
+
+    snake.clear();
+    for (int i = 0; i < save.snakeLength && i < 1000; i++) {
+        snake.push_back(save.snake[i]);
+    }
+
+    food.clear();
+    for (int i = 0; i < save.foodCount && i < 50; i++) {
+        food.push_back(save.food[i]);
+    }
+
+    obstacles.clear();
+    for (int i = 0; i < save.obstaclesCount && i < 100; i++) {
+        obstacles.push_back(Obstacle(save.obstacles[i]));
+    }
+
+    cloudSprites.clear();
+    for (int i = 0; i < save.cloudSpritesCount && i < 100; i++) {
+        Sprite cloud(save.cloudSprites[i].position,
+            save.cloudSprites[i].color,
+            save.cloudSprites[i].size,
+            save.cloudSprites[i].speed);
+        cloudSprites.push_back(cloud);
+    }
+
+    birds.clear();
+    for (int i = 0; i < save.birdsCount && i < 50; i++) {
+        Bird bird(save.birds[i].position,
+            save.birds[i].color,
+            save.birds[i].size,
+            save.birds[i].speed);
+        bird.direction = save.birds[i].direction;
+        birds.push_back(bird);
+    }
+
+    flowerSprites.clear();
+    for (int i = 0; i < save.flowerSpritesCount && i < 100; i++) {
+        Sprite flower(save.flowerSprites[i].position,
+            save.flowerSprites[i].color,
+            save.flowerSprites[i].size,
+            0.0f);
+        flowerSprites.push_back(flower);
+    }
+
+    std::cout << " Game loaded successfully!" << std::endl;
+    return true;
 }
 
-int GameObjects::getCloudCount() const {
-    return cloudCount;
+bool GameObjects::hasSaveGame() const {
+    std::ifstream file(saveFileName);
+    return file.good();
 }
 
-int GameObjects::getBirdCount() const {
-    return birdCount;
-}
-
-int GameObjects::getFlowerCount() const {
-    return flowerCount;
+void GameObjects::deleteSaveGame() {
+    std::remove(saveFileName.c_str());
+    std::cout << " Save game deleted" << std::endl;
 }

@@ -64,7 +64,7 @@ private:
 
     // Масштабирование размера шрифта
     unsigned int getScaledFontSize() const {
-        float scale = min(
+        float scale = std::min(
             static_cast<float>(windowWidth) / 1200.0f,
             static_cast<float>(windowHeight) / 800.0f
         );
