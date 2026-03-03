@@ -14,7 +14,19 @@ struct Material {
     Material() : diffuse(1.0f), specular(1.0f), shininess(32.0f), textureID(0) {}
 };
 
-// Структура для препятствий (для ConfigEditor)
+// Структура для данных модели
+struct ModelData {
+    std::vector<float> vertices;
+    std::vector<float> normals;
+    std::vector<float> texCoords;
+    std::vector<Material> materials;
+    std::vector<int> materialIndices;
+    bool loaded;
+
+    ModelData() : loaded(false) {}
+};
+
+// Структура для препятствий
 struct ObstacleData {
     std::string name;
     std::string modelFile;
@@ -26,18 +38,6 @@ struct ObstacleData {
     ObstacleData() : sizeX(1.0f), sizeY(1.0f), sizeZ(1.0f),
         color(1.0f, 1.0f, 1.0f), spawnChance(1.0f), minDistanceFromStart(0.0f) {
     }
-};
-
-// Структура для данных модели (для загрузки FBX)
-struct ModelData {
-    std::vector<float> vertices;
-    std::vector<float> normals;
-    std::vector<float> texCoords;
-    std::vector<Material> materials;
-    std::vector<int> materialIndices;
-    bool loaded;
-
-    ModelData() : loaded(false) {}
 };
 
 // Конфигурация игры
@@ -80,4 +80,9 @@ struct GameConfig {
     std::string flowerModel = "flower.fbx";
     std::string floorModel = "floor.fbx";
     std::string floorTexture = "";
+
+    // Дополнительные модели (опционально)
+    std::string fenceModel = "fence.fbx";
+    std::string rockModel = "rock.fbx";
+    std::string grassModel = "grass.fbx";
 };

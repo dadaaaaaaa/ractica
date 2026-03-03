@@ -36,6 +36,7 @@ bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& conf
         std::string key = trim(line.substr(0, equalsPos));
         std::string value = trim(line.substr(equalsPos + 1));
 
+        // Game Settings
         if (key == "GRID_WIDTH") config.gridWidth = std::stoi(value);
         else if (key == "GRID_DEPTH") config.gridDepth = std::stoi(value);
         else if (key == "CELL_SIZE") config.cellSize = std::stof(value);
@@ -45,10 +46,12 @@ bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& conf
         else if (key == "BIRD_COUNT") config.birdCount = std::stoi(value);
         else if (key == "FLOWER_COUNT") config.flowerCount = std::stoi(value);
 
+        // Colors
         else if (key == "SKY_COLOR") config.skyColor = parseVec3(value);
         else if (key == "FLOOR_COLOR") config.floorColor = parseVec3(value);
         else if (key == "GRID_COLOR") config.gridColor = parseVec3(value);
 
+        // Snake Models and Colors
         else if (key == "SNAKE_HEAD_MODEL") config.snakeHeadModel = value;
         else if (key == "SNAKE_HEAD_COLOR") config.snakeHeadColor = parseVec3(value);
         else if (key == "SNAKE_HEAD_SCALE") config.snakeHeadScale = std::stof(value);
@@ -61,7 +64,7 @@ bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& conf
         else if (key == "SNAKE_TAIL_COLOR") config.snakeTailColor = parseVec3(value);
         else if (key == "SNAKE_TAIL_SCALE") config.snakeTailScale = std::stof(value);
 
-        // НОВЫЕ КЛЮЧИ
+        // Environment Models
         else if (key == "APPLE_MODEL") config.appleModel = value;
         else if (key == "TREE_MODEL") config.treeModel = value;
         else if (key == "CLOUD_MODEL") config.cloudModel = value;
@@ -69,6 +72,11 @@ bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& conf
         else if (key == "FLOWER_MODEL") config.flowerModel = value;
         else if (key == "FLOOR_MODEL") config.floorModel = value;
         else if (key == "FLOOR_TEXTURE") config.floorTexture = value;
+
+        // Дополнительные модели для окружения (если нужны)
+        else if (key == "FENCE_MODEL") config.fenceModel = value;
+        else if (key == "ROCK_MODEL") config.rockModel = value;
+        else if (key == "GRASS_MODEL") config.grassModel = value;
     }
 
     file.close();
@@ -122,13 +130,22 @@ bool ConfigManager::saveGameConfig(const std::string& filename, const GameConfig
     file << "FLOOR_MODEL = " << config.floorModel << "\n";
     file << "FLOOR_TEXTURE = " << config.floorTexture << "\n\n";
 
+    // Дополнительные модели (опционально)
+    file << "# Additional Models (optional)\n";
+    file << "FENCE_MODEL = " << config.fenceModel << "\n";
+    file << "ROCK_MODEL = " << config.rockModel << "\n";
+    file << "GRASS_MODEL = " << config.grassModel << "\n";
+
     file.close();
     return true;
 }
 
 bool ConfigManager::loadObstacles(const std::string& filename, std::vector<ObstacleData>& obstacles) {
     std::ifstream file(filename, std::ios::binary);
-    if (!file.is_open()) return false;
+    if (!file.is_open()) {
+        std::cerr << "Cannot open obstacles file: " << filename << std::endl;
+        return false;
+    }
 
     size_t count;
     file.read((char*)&count, sizeof(count));
@@ -159,12 +176,16 @@ bool ConfigManager::loadObstacles(const std::string& filename, std::vector<Obsta
     }
 
     file.close();
+    std::cout << "Loaded " << obstacles.size() << " obstacles from " << filename << std::endl;
     return true;
 }
 
 bool ConfigManager::saveObstacles(const std::string& filename, const std::vector<ObstacleData>& obstacles) {
     std::ofstream file(filename, std::ios::binary);
-    if (!file.is_open()) return false;
+    if (!file.is_open()) {
+        std::cerr << "Cannot save obstacles file: " << filename << std::endl;
+        return false;
+    }
 
     size_t count = obstacles.size();
     file.write((char*)&count, sizeof(count));
@@ -187,5 +208,6 @@ bool ConfigManager::saveObstacles(const std::string& filename, const std::vector
     }
 
     file.close();
+    std::cout << "Saved " << obstacles.size() << " obstacles to " << filename << std::endl;
     return true;
 }

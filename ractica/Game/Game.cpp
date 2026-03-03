@@ -77,82 +77,134 @@ void Game::initPaths() {
 }
 
 void Game::loadConfig() {
-    std::cout << "\n===== LOADING GAME CONFIG =====" << std::endl;
-    std::cout << "Attempting to load from: " << g_configPath << std::endl;
+    std::cout << "\n========== ГРУЗИМ КОНФИГ ==========" << std::endl;
+    std::cout << "Путь к конфигу: " << g_configPath << std::endl;
 
     GameConfig config;
 
     if (ConfigManager::loadGameConfig(g_configPath, config)) {
-        std::cout << "✓ CONFIG LOADED SUCCESSFULLY!" << std::endl;
+        std::cout << "✓ КОНФИГ ЗАГРУЖЕН УСПЕШНО!" << std::endl;
 
-        // Показываем что загрузили
-        std::cout << "\nLoaded values from file:" << std::endl;
-        std::cout << "  Sky color: (" << config.skyColor.r << ", " << config.skyColor.g << ", " << config.skyColor.b << ")" << std::endl;
-        std::cout << "  Floor color: (" << config.floorColor.r << ", " << config.floorColor.g << ", " << config.floorColor.b << ")" << std::endl;
-        std::cout << "  Grid color: (" << config.gridColor.r << ", " << config.gridColor.g << ", " << config.gridColor.b << ")" << std::endl;
-        std::cout << "  Cloud count: " << config.cloudCount << std::endl;
-        std::cout << "  Bird count: " << config.birdCount << std::endl;
-        std::cout << "  Flower count: " << config.flowerCount << std::endl;
+        // ВЫВОДИМ ВСЕ ЗНАЧЕНИЯ ИЗ КОНФИГА
+        std::cout << "\n--- ЗНАЧЕНИЯ ИЗ КОНФИГА ---" << std::endl;
+
+        // Цвета
+        std::cout << "SKY_COLOR = " << config.skyColor.r << " " << config.skyColor.g << " " << config.skyColor.b << std::endl;
+        std::cout << "FLOOR_COLOR = " << config.floorColor.r << " " << config.floorColor.g << " " << config.floorColor.b << std::endl;
+        std::cout << "GRID_COLOR = " << config.gridColor.r << " " << config.gridColor.g << " " << config.gridColor.b << std::endl;
 
         // Модели змейки
-        std::cout << "  Snake Head: " << config.snakeHeadModel << std::endl;
-        std::cout << "  Snake Body: " << config.snakeBodyModel << std::endl;
-        std::cout << "  Snake Tail: " << config.snakeTailModel << std::endl;
+        std::cout << "SNAKE_HEAD_MODEL = " << config.snakeHeadModel << std::endl;
+        std::cout << "SNAKE_BODY_MODEL = " << config.snakeBodyModel << std::endl;
+        std::cout << "SNAKE_TAIL_MODEL = " << config.snakeTailModel << std::endl;
+
+        // Цвета змейки
+        std::cout << "SNAKE_HEAD_COLOR = " << config.snakeHeadColor.r << " " << config.snakeHeadColor.g << " " << config.snakeHeadColor.b << std::endl;
+        std::cout << "SNAKE_BODY_COLOR = " << config.snakeBodyColor.r << " " << config.snakeBodyColor.g << " " << config.snakeBodyColor.b << std::endl;
+        std::cout << "SNAKE_TAIL_COLOR = " << config.snakeTailColor.r << " " << config.snakeTailColor.g << " " << config.snakeTailColor.b << std::endl;
+
+        // Масштабы
+        std::cout << "SNAKE_HEAD_SCALE = " << config.snakeHeadScale << std::endl;
+        std::cout << "SNAKE_BODY_SCALE = " << config.snakeBodyScale << std::endl;
+        std::cout << "SNAKE_TAIL_SCALE = " << config.snakeTailScale << std::endl;
 
         // Модели окружения
-        std::cout << "  Apple Model: " << config.appleModel << std::endl;
-        std::cout << "  Tree Model: " << config.treeModel << std::endl;
-        std::cout << "  Cloud Model: " << config.cloudModel << std::endl;
-        std::cout << "  Bird Model: " << config.birdModel << std::endl;
-        std::cout << "  Flower Model: " << config.flowerModel << std::endl;
-        std::cout << "  Floor Model: " << config.floorModel << std::endl;
+        std::cout << "APPLE_MODEL = " << config.appleModel << std::endl;
+        std::cout << "TREE_MODEL = " << config.treeModel << std::endl;
+        std::cout << "CLOUD_MODEL = " << config.cloudModel << std::endl;
+        std::cout << "BIRD_MODEL = " << config.birdModel << std::endl;
+        std::cout << "FLOWER_MODEL = " << config.flowerModel << std::endl;
+        std::cout << "FLOOR_MODEL = " << config.floorModel << std::endl;
+        std::cout << "FLOOR_TEXTURE = " << config.floorTexture << std::endl;
 
-        // Применяем к GameObjects
+        // Количество объектов
+        std::cout << "CLOUD_COUNT = " << config.cloudCount << std::endl;
+        std::cout << "BIRD_COUNT = " << config.birdCount << std::endl;
+        std::cout << "FLOWER_COUNT = " << config.flowerCount << std::endl;
+
+        std::cout << "----------------------------\n" << std::endl;
+
+        // ПРИМЕНЯЕМ К GameObjects
+        std::cout << "--- ПРИМЕНЯЕМ К GameObjects ---" << std::endl;
+
         objects.setSnakeModels(
             config.snakeHeadModel,
             config.snakeBodyModel,
             config.snakeTailModel
         );
+        std::cout << "  setSnakeModels: Head=" << config.snakeHeadModel
+            << " Body=" << config.snakeBodyModel
+            << " Tail=" << config.snakeTailModel << std::endl;
 
         objects.setAppleModel(config.appleModel);
+        std::cout << "  setAppleModel: " << config.appleModel << std::endl;
+
         objects.setTreeModel(config.treeModel);
+        std::cout << "  setTreeModel: " << config.treeModel << std::endl;
+
         objects.setCloudModel(config.cloudModel);
+        std::cout << "  setCloudModel: " << config.cloudModel << std::endl;
+
         objects.setBirdModel(config.birdModel);
+        std::cout << "  setBirdModel: " << config.birdModel << std::endl;
+
         objects.setFlowerModel(config.flowerModel);
+        std::cout << "  setFlowerModel: " << config.flowerModel << std::endl;
+
         objects.setFloorModel(config.floorModel);
+        std::cout << "  setFloorModel: " << config.floorModel << std::endl;
 
         objects.setSnakeColors(
             config.snakeHeadColor,
             config.snakeBodyColor,
             config.snakeTailColor
         );
+        std::cout << "  setSnakeColors: Head=("
+            << config.snakeHeadColor.r << "," << config.snakeHeadColor.g << "," << config.snakeHeadColor.b << ") "
+            << "Body=(" << config.snakeBodyColor.r << "," << config.snakeBodyColor.g << "," << config.snakeBodyColor.b << ") "
+            << "Tail=(" << config.snakeTailColor.r << "," << config.snakeTailColor.g << "," << config.snakeTailColor.b << ")" << std::endl;
 
         objects.setSnakeScale(config.snakeHeadScale);
+        std::cout << "  setSnakeScale: " << config.snakeHeadScale << std::endl;
+
         objects.setCloudCount(config.cloudCount);
+        std::cout << "  setCloudCount: " << config.cloudCount << std::endl;
+
         objects.setBirdCount(config.birdCount);
+        std::cout << "  setBirdCount: " << config.birdCount << std::endl;
+
         objects.setFlowerCount(config.flowerCount);
+        std::cout << "  setFlowerCount: " << config.flowerCount << std::endl;
 
-        // Применяем к Renderer
+        // ПРИМЕНЯЕМ К Renderer
+        std::cout << "\n--- ПРИМЕНЯЕМ К Renderer ---" << std::endl;
+
         renderer.setSkyColor(config.skyColor);
-        renderer.setFloorColor(config.floorColor);
-        renderer.setGridColor(config.gridColor);
+        std::cout << "  setSkyColor: (" << config.skyColor.r << "," << config.skyColor.g << "," << config.skyColor.b << ")" << std::endl;
 
-        // Загружаем модели
+        renderer.setFloorColor(config.floorColor);
+        std::cout << "  setFloorColor: (" << config.floorColor.r << "," << config.floorColor.g << "," << config.floorColor.b << ")" << std::endl;
+
+        renderer.setGridColor(config.gridColor);
+        std::cout << "  setGridColor: (" << config.gridColor.r << "," << config.gridColor.g << "," << config.gridColor.b << ")" << std::endl;
+
+        // ЗАГРУЖАЕМ МОДЕЛИ
+        std::cout << "\n--- ЗАГРУЖАЕМ МОДЕЛИ ---" << std::endl;
         renderer.loadModelsFromConfig(objects);
 
         if (!config.floorTexture.empty()) {
+            std::cout << "  setFloorTexture: " << config.floorTexture << std::endl;
             renderer.setFloorTexture(config.floorTexture);
         }
+
+        std::cout << "===============================\n" << std::endl;
     }
     else {
-        std::cout << "✗ FAILED TO LOAD CONFIG!" << std::endl;
-        std::cout << "Creating default models..." << std::endl;
-        // Создаем примитивы по умолчанию
+        std::cout << "✗ НЕ УДАЛОСЬ ЗАГРУЗИТЬ КОНФИГ!" << std::endl;
+        std::cout << "Создаем примитивы по умолчанию..." << std::endl;
         renderer.createPrimitives();
     }
-    std::cout << "===============================\n" << std::endl;
 }
-
 void Game::initialize() {
     std::cout << "=== GAME INITIALIZATION START ===" << std::endl;
 

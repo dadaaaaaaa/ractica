@@ -15,7 +15,7 @@
 #include <string>
 #include <functional>
 #include <filesystem>
-
+#include "ModelLoader.h"
 // Структура для текстуры
 struct Texture {
     unsigned int id;
@@ -26,8 +26,6 @@ struct Texture {
     Texture() : id(0), width(0), height(0), path("") {}
 };
 
-// Объявление внешних функций (они определены в ConfigEditor.cpp)
-bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder = "");
 
 class GameRenderer {
 private:

@@ -146,6 +146,7 @@
     <ClCompile Include="Graphics\Camera.cpp" />
     <ClCompile Include="Graphics\GameRenderer.cpp" />
     <ClCompile Include="Graphics\Model.cpp" />
+    <ClCompile Include="Graphics\ModelLoader.cpp" />
     <ClCompile Include="Graphics\ShaderManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Objects\GameObjects.cpp" />
@@ -177,6 +178,7 @@
     <ClInclude Include="Graphics\Camera.h" />
     <ClInclude Include="Graphics\GameRenderer.h" />
     <ClInclude Include="Graphics\Model.h" />
+    <ClInclude Include="Graphics\ModelLoader.h" />
     <ClInclude Include="Graphics\ShaderManager.h" />
     <ClInclude Include="Objects\Bird.h" />
     <ClInclude Include="Objects\GameObjects.h" />

@@ -78,9 +78,10 @@ const char* fragmentShaderSource = R"(
             float isHorizontalLine = step(distToHorizontal, gridLineWidth + epsilon);
             float isAnyLine = min(1.0, isVerticalLine + isHorizontalLine);
             
-            vec3 lightCellColor = vec3(0.45f, 0.75f, 0.35f);
-            vec3 darkCellColor = vec3(0.35f, 0.65f, 0.25f);
-            vec3 gridColor = vec3(0.2f, 0.5f, 0.15f);
+            // ИСПОЛЬЗУЕМ ЦВЕТ ИЗ UNIFORM ДЛЯ КЛЕТОК
+            vec3 lightCellColor = finalColor * 1.2;      // Светлые клетки
+            vec3 darkCellColor = finalColor * 0.8;       // Темные клетки
+            vec3 gridColor = finalColor * 0.5;            // Цвет сетки (темнее)
             
             int patternX = cellIdx.x + 10000;
             int patternZ = cellIdx.y + 10000;
@@ -97,16 +98,15 @@ const char* fragmentShaderSource = R"(
             
         } else {
             // Обычное освещение для всех 3D моделей
-            vec3 lightDir = vec3(0.5, -1.0, 0.3);  // Направление света
+            vec3 lightDir = vec3(0.5, -1.0, 0.3);
             lightDir = normalize(lightDir);
             
-            vec3 ambient = 0.3 * finalColor;       // Фоновое освещение
+            vec3 ambient = 0.3 * finalColor;
             float diff = max(dot(normalize(Normal), -lightDir), 0.0);
-            vec3 diffuse = diff * finalColor;       // Диффузное освещение
+            vec3 diffuse = diff * finalColor;
             
             result = ambient + diffuse * 0.8;
             
-            // Добавляем небольшой блеск
             vec3 viewDir = normalize(-FragPos);
             vec3 reflectDir = reflect(lightDir, normalize(Normal));
             float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);

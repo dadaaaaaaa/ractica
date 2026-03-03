@@ -845,29 +845,39 @@ void GameObjects::updateHighScores() {
 // МЕТОДЫ ДЛЯ КОНФИГА
 //=============================================================================
 void GameObjects::setSnakeModels(const std::string& head, const std::string& body, const std::string& tail) {
+    std::cout << "GameObjects::setSnakeModels: было ("
+        << snakeHeadModel << ", " << snakeBodyModel << ", " << snakeTailModel << ") -> "
+        << "стало (" << head << ", " << body << ", " << tail << ")" << std::endl;
     snakeHeadModel = head;
     snakeBodyModel = body;
     snakeTailModel = tail;
-    std::cout << "Snake models set: Head=" << head << ", Body=" << body << ", Tail=" << tail << std::endl;
 }
 
 void GameObjects::setSnakeColors(const glm::vec3& head, const glm::vec3& body, const glm::vec3& tail) {
+    std::cout << "GameObjects::setSnakeColors: Head ("
+        << head.r << "," << head.g << "," << head.b << ") "
+        << "Body (" << body.r << "," << body.g << "," << body.b << ") "
+        << "Tail (" << tail.r << "," << tail.g << "," << tail.b << ")" << std::endl;
     snakeHeadColor = head;
     snakeBodyColor = body;
     snakeTailColor = tail;
 }
 
 void GameObjects::setSnakeScale(float scale) {
+    std::cout << "GameObjects::setSnakeScale: " << scale << std::endl;
     snakeScale = scale;
 }
 
 void GameObjects::setCloudCount(int count) {
+    std::cout << "GameObjects::setCloudCount: " << count << std::endl;
     cloudCount = count;
 }
 
 void GameObjects::setBirdCount(int count) {
+    std::cout << "GameObjects::setBirdCount: " << count << std::endl;
     birdCount = count;
 }
+
 
 void GameObjects::setFlowerCount(int count) {
     flowerCount = count;

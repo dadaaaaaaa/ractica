@@ -28,8 +28,7 @@ extern Game g_game;
 extern std::string g_modelsPath;
 extern std::string g_texturesPath;
 
-// Объявление внешней функции loadFBXModel (она определена в ConfigEditor.cpp)
-bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder);
+
 
 GameRenderer::GameRenderer()
     : skyColor(0.53f, 0.81f, 0.92f)
@@ -269,6 +268,25 @@ void GameRenderer::drawModel(const Model& model, float x, float y, float z,
 
 void GameRenderer::drawSnake(const std::vector<Point>& snake) {
     if (snake.empty()) return;
+
+    static bool firstDraw = true;
+    if (firstDraw) {
+        std::cout << "\n=== ПЕРВАЯ ОТРИСОВКА ЗМЕЙКИ ===" << std::endl;
+        std::cout << "snakeHeadColor из Game: ("
+            << g_game.getSnakeHeadColor().r << ", "
+            << g_game.getSnakeHeadColor().g << ", "
+            << g_game.getSnakeHeadColor().b << ")" << std::endl;
+        std::cout << "snakeBodyColor из Game: ("
+            << g_game.getSnakeBodyColor().r << ", "
+            << g_game.getSnakeBodyColor().g << ", "
+            << g_game.getSnakeBodyColor().b << ")" << std::endl;
+        std::cout << "snakeTailColor из Game: ("
+            << g_game.getSnakeTailColor().r << ", "
+            << g_game.getSnakeTailColor().g << ", "
+            << g_game.getSnakeTailColor().b << ")" << std::endl;
+        std::cout << "snakeScale из Game: " << g_game.getSnakeScale() << std::endl;
+        firstDraw = false;
+    }
 
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(2.0f, 4.0f);
@@ -593,6 +611,13 @@ void GameRenderer::setFloorTexture(const std::string& texturePath) {
 }
 
 void GameRenderer::drawFloor() {
+    std::cout << "\n=== DRAW FLOOR DEBUG ===" << std::endl;
+    std::cout << "Текущий floorColor: ("
+        << floorColor.r << ", "
+        << floorColor.g << ", "
+        << floorColor.b << ")" << std::endl;
+    std::cout << "useFloorTexture: " << (useFloorTexture ? "ДА" : "НЕТ") << std::endl;
+
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(5.0f, 10.0f);
 
@@ -604,18 +629,13 @@ void GameRenderer::drawFloor() {
 
     g_shaderManager.setModelMatrix(model);
 
-    if (useFloorTexture && floorTexture.id != 0) {
-        // Используем текстуру
-        g_shaderManager.setColor(glm::vec3(1.0f, 1.0f, 1.0f));
-        g_shaderManager.setUseTexture(true);
-        // Здесь нужно будет передать текстуру в шейдер
-    }
-    else {
-        // Используем цвет
-        g_shaderManager.setColor(floorColor);
-        g_shaderManager.setUseTexture(false);
-    }
+    std::cout << "Устанавливаем цвет шейдера: ("
+        << floorColor.r << ", "
+        << floorColor.g << ", "
+        << floorColor.b << ")" << std::endl;
 
+    g_shaderManager.setColor(floorColor);
+    g_shaderManager.setUseTexture(false);
     g_shaderManager.setIsFloor(true);
     g_shaderManager.setCellSize(CELL_SIZE);
 
@@ -623,6 +643,8 @@ void GameRenderer::drawFloor() {
 
     g_shaderManager.setIsFloor(false);
     glDisable(GL_POLYGON_OFFSET_FILL);
+
+    std::cout << "=== END DRAW FLOOR ===\n" << std::endl;
 }
 
 // Методы для создания примитивов забора
@@ -943,9 +965,4 @@ void GameRenderer::setupCallbacks(GLFWwindow* window) {
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
-}
-bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder) {
-    std::cout << "loadFBXModel called for: " << filename << " in folder: " << subFolder << std::endl;
-    std::cout << "WARNING: This is a stub implementation. Model loading disabled." << std::endl;
-    return false;
 }
