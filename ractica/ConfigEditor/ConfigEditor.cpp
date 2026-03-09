@@ -750,69 +750,30 @@ void openFileDialog(std::string& destVar, const std::string& subFolder) {
 void drawModel(ModelData& model) {
     if (!model.loaded || model.vertices.empty()) return;
 
-    size_t numVertices = model.vertices.size() / 3;
-    if (numVertices == 0) return;
-
-    // Проходим по всем треугольникам
-    glBegin(GL_TRIANGLES);
-
-    int lastMaterial = -1;
-
-    for (size_t i = 0; i < numVertices / 3; i++) {
-        // Определяем материал для этого треугольника
-        int materialIdx = 0;
-        if (!model.materialIndices.empty() && i < model.materialIndices.size()) {
-            materialIdx = model.materialIndices[i];
-        }
-
-        // Если материал изменился, меняем состояние
-        if (materialIdx != lastMaterial && materialIdx < (int)model.materials.size()) {
-            // Завершаем текущий блок
-            glEnd();
-
-            lastMaterial = materialIdx;
-            Material& mat = model.materials[materialIdx];
-
-            // Устанавливаем новый материал
-            if (mat.textureID != 0) {
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, mat.textureID);
-                glColor3f(1.0f, 1.0f, 1.0f);
-            }
-            else {
-                glDisable(GL_TEXTURE_2D);
-                glColor3f(mat.diffuse.r, mat.diffuse.g, mat.diffuse.b);
-            }
-
-            // Начинаем новый блок
-            glBegin(GL_TRIANGLES);
-        }
-
-        // Рисуем треугольник
-        for (int j = 0; j < 3; j++) {
-            size_t idx = i * 3 + j;
-            if (idx < numVertices) {
-                // Текстурные координаты
-                if (!model.texCoords.empty() && idx < model.texCoords.size() / 2) {
-                    glTexCoord2f(model.texCoords[idx * 2], model.texCoords[idx * 2 + 1]);
-                }
-
-                // Нормаль
-                if (!model.normals.empty() && idx < model.normals.size() / 3) {
-                    glNormal3f(model.normals[idx * 3], model.normals[idx * 3 + 1], model.normals[idx * 3 + 2]);
-                }
-
-                // Вершина
-                glVertex3f(model.vertices[idx * 3], model.vertices[idx * 3 + 1], model.vertices[idx * 3 + 2]);
-            }
-        }
+    // Устанавливаем текстуру если есть
+    if (!model.materials.empty() && model.materials[0].textureID != 0) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, model.materials[0].textureID);
+        glColor3f(1.0f, 1.0f, 1.0f);
+    }
+    else {
+        glDisable(GL_TEXTURE_2D);
+        glColor3f(0.8f, 0.8f, 0.8f);
     }
 
+    // Рисуем все вершины
+    glBegin(GL_TRIANGLES);
+    for (size_t i = 0; i < model.vertices.size() / 3; i++) {
+        if (!model.texCoords.empty()) {
+            glTexCoord2f(model.texCoords[i * 2], model.texCoords[i * 2 + 1]);
+        }
+        glVertex3f(model.vertices[i * 3], model.vertices[i * 3 + 1], model.vertices[i * 3 + 2]);
+    }
     glEnd();
+
     glBindTexture(GL_TEXTURE_2D, 0);
     glDisable(GL_TEXTURE_2D);
 }
-
 
 void drawTexturedFloor() {
     glEnable(GL_TEXTURE_2D);
@@ -900,66 +861,53 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
     glm::mat4 view = glm::lookAt(eye, center, up);
     glLoadMatrixf(glm::value_ptr(view));
 
-    // Рисуем пол
+    // Поворачиваем всю сцену
+    glRotatef(rotation, 0.0f, 1.0f, 0.0f);
+
+    // ===== РИСУЕМ ПОЛ =====
     glDisable(GL_TEXTURE_2D);
+
+    // Пол (серый)
     glColor3f(0.3f, 0.3f, 0.3f);
     glBegin(GL_QUADS);
-    glVertex3f(-2.0f, -0.5f, -2.0f);
-    glVertex3f(2.0f, -0.5f, -2.0f);
-    glVertex3f(2.0f, -0.5f, 2.0f);
-    glVertex3f(-2.0f, -0.5f, 2.0f);
+    glVertex3f(-3.0f, -0.5f, -3.0f);
+    glVertex3f(3.0f, -0.5f, -3.0f);
+    glVertex3f(3.0f, -0.5f, 3.0f);
+    glVertex3f(-3.0f, -0.5f, 3.0f);
     glEnd();
 
-    // Рисуем сетку
+    // Сетка (светло-серая)
     glColor3f(0.5f, 0.5f, 0.5f);
     glBegin(GL_LINES);
-    for (int i = -4; i <= 4; i++) {
+    for (int i = -3; i <= 3; i++) {
         float pos = i * 0.5f;
-        glVertex3f(pos, -0.4f, -2.0f);
-        glVertex3f(pos, -0.4f, 2.0f);
-        glVertex3f(-2.0f, -0.4f, pos);
-        glVertex3f(2.0f, -0.4f, pos);
+        glVertex3f(pos, -0.45f, -3.0f);
+        glVertex3f(pos, -0.45f, 3.0f);
+        glVertex3f(-3.0f, -0.45f, pos);
+        glVertex3f(3.0f, -0.45f, pos);
     }
     glEnd();
 
-    // Рисуем модель
+    // ===== РИСУЕМ МОДЕЛЬ =====
     if (model.loaded && !model.vertices.empty()) {
         glPushMatrix();
-        glRotatef(rotation, 0.0f, 1.0f, 0.0f);
+
+        // Просто применяем масштаб и поворот
         glScalef(scale, scale, scale);
 
-        // Центрируем модель
-        float minX = model.vertices[0], maxX = model.vertices[0];
-        float minY = model.vertices[1], maxY = model.vertices[1];
-        float minZ = model.vertices[2], maxZ = model.vertices[2];
+        // Ставим модель на пол (центрируем по X и Z)
+        glTranslatef(0.0f, 0.0f, 0.0f);
 
-        for (size_t i = 0; i < model.vertices.size() / 3; i++) {
-            float vx = model.vertices[i * 3];
-            float vy = model.vertices[i * 3 + 1];
-            float vz = model.vertices[i * 3 + 2];
-
-            minX = min(minX, vx);
-            minY = min(minY, vy);
-            minZ = min(minZ, vz);
-            maxX = max(maxX, vx);
-            maxY = max(maxY, vy);
-            maxZ = max(maxZ, vz);
-        }
-
-        float centerX = (minX + maxX) / 2.0f;
-        float centerY = (minY + maxY) / 2.0f;
-        float centerZ = (minZ + maxZ) / 2.0f;
-
-        glTranslatef(-centerX, -centerY, -centerZ);
-
+        // Рисуем модель
         drawModel(model);
+
         glPopMatrix();
     }
     else {
         // Рисуем тестовый куб
         glPushMatrix();
-        glRotatef(rotation, 0.0f, 1.0f, 0.0f);
         glScalef(scale, scale, scale);
+        glTranslatef(0.0f, 0.0f, 0.0f);
 
         glDisable(GL_TEXTURE_2D);
         glColor3f(1.0f, 0.0f, 0.0f);
@@ -993,7 +941,7 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
     // Возвращаемся к 2D проекции для UI
     reset2DProjection();
 
-    // Рисуем рамку и кнопки
+    // Рисуем рамку
     glDisable(GL_TEXTURE_2D);
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
@@ -1005,10 +953,12 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
 
     renderRussianText(title, x + 10, y + 25, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
 
+    // Отображаем текущий масштаб
     char scaleText[50];
     sprintf_s(scaleText, "Scale: %.2f", scale);
     renderRussianText(scaleText, x + w - 100, y + 25, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
 
+    // Кнопки поворота
     int arrowY = (int)(y + h + 25);
     int arrowCenterX = (int)(x + w / 2);
     int arrowWidth = 60;
@@ -1038,6 +988,7 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
         if (rotation >= 360) rotation -= 360;
     }
 }
+
 void debugTexture(GLuint textureID, const std::string& name) {
     if (textureID == 0) {
         std::cout << "Texture " << name << " is NULL" << std::endl;
