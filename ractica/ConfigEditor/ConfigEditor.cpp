@@ -614,7 +614,51 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
                     std::cout << "  ✓ Texture loaded" << std::endl;
                 }
             }
-        }
+            // После загрузки материалов, если текстуры не найдены в FBX
+          // После загрузки материалов, если текстуры не найдены в FBX
+            for (auto& material : model.materials) {
+                if (material.textureID == 0) {
+                    // Путь к папке с моделью
+                    std::string basePath = fullPath.substr(0, fullPath.find_last_of("\\/") + 1);
+
+                    // Список возможных имен текстур для этой конкретной модели
+                    std::vector<std::string> possibleTextures = {
+                        "StoneFloor_diffuse.jpg",
+                        "StoneFloor_diffuse.png",
+                        "StoneFloor_diffuse.tga",
+                        "StoneFloor_diffuse.bmp",
+                        "StoneFloor_Normal.jpg",
+                        "StoneFloor_Normal.png",
+                        "StoneFloor_Specular.jpg",
+                        "StoneFloor_Specular.png",
+                        // Также пробуем без суффиксов
+                        "StoneFloor.jpg",
+                        "StoneFloor.png",
+                        "StoneFloor.tga"
+                    };
+
+                    std::cout << "  Searching for textures in: " << basePath << std::endl;
+
+                    for (const auto& texName : possibleTextures) {
+                        std::string texPath = basePath + texName;
+                        if (std::filesystem::exists(texPath)) {
+                            std::cout << "  Found texture: " << texName << std::endl;
+                            material.textureID = loadTextureFromFile(texPath);
+                            if (material.textureID) {
+                                std::cout << "  ✓ Texture loaded successfully!" << std::endl;
+                                material.texturePath = texName;
+                                break;  // Загружаем первую найденную текстуру
+                            }
+                        }
+                    }
+
+                    if (material.textureID == 0) {
+                        std::cout << "  ✗ No texture found for this material" << std::endl;
+                    }
+                }
+            }
+        
+            }
 
         model.materials.push_back(material);
     }
@@ -750,15 +794,17 @@ void openFileDialog(std::string& destVar, const std::string& subFolder) {
 void drawModel(ModelData& model) {
     if (!model.loaded || model.vertices.empty()) return;
 
-    // Устанавливаем текстуру если есть
+    // Включаем текстуру если есть
     if (!model.materials.empty() && model.materials[0].textureID != 0) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, model.materials[0].textureID);
         glColor3f(1.0f, 1.0f, 1.0f);
+        std::cout << "Drawing with texture ID: " << model.materials[0].textureID << std::endl;
     }
     else {
         glDisable(GL_TEXTURE_2D);
         glColor3f(0.8f, 0.8f, 0.8f);
+        std::cout << "Drawing without texture" << std::endl;
     }
 
     // Рисуем все вершины
@@ -827,7 +873,8 @@ void drawGrid() {
 }
 
 void renderModelPreview(ModelData& model, const char* title, float x, float y, float w, float h,
-    float& rotation, bool& autoRotate, float& lastTime, float scale = 1.0f) {
+    float& rotation, bool& autoRotate, float& lastTime, float scale = 1.0f,
+    bool isFloor = false) {  // Новый параметр для определения, это пол или нет
     // Сохраняем текущий viewport
     GLint viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
@@ -864,68 +911,75 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
     // Поворачиваем всю сцену
     glRotatef(rotation, 0.0f, 1.0f, 0.0f);
 
-    // ===== РИСУЕМ ПОЛ =====
-    glDisable(GL_TEXTURE_2D);
+    if (isFloor) {
+        // ===== ЭТО ПОЛ - рисуем модель как горизонтальный пол =====
+        if (model.loaded && !model.vertices.empty()) {
+            glPushMatrix();
 
-    // Пол (серый)
-    glColor3f(0.3f, 0.3f, 0.3f);
-    glBegin(GL_QUADS);
-    glVertex3f(-3.0f, -0.5f, -3.0f);
-    glVertex3f(3.0f, -0.5f, -3.0f);
-    glVertex3f(3.0f, -0.5f, 3.0f);
-    glVertex3f(-3.0f, -0.5f, 3.0f);
-    glEnd();
+            // Просто поворачиваем на -90 градусов вокруг X
+            glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
 
-    // Сетка (светло-серая)
-    glColor3f(0.5f, 0.5f, 0.5f);
-    glBegin(GL_LINES);
-    for (int i = -3; i <= 3; i++) {
-        float pos = i * 0.5f;
-        glVertex3f(pos, -0.45f, -3.0f);
-        glVertex3f(pos, -0.45f, 3.0f);
-        glVertex3f(-3.0f, -0.45f, pos);
-        glVertex3f(3.0f, -0.45f, pos);
-    }
-    glEnd();
+            // Масштабируем до разумного размера
+            glScalef(0.01f, 0.01f, 0.01f);  // Модель очень большая (382 единицы)
 
-    // ===== РИСУЕМ МОДЕЛЬ =====
-    if (model.loaded && !model.vertices.empty()) {
-        glPushMatrix();
+            // Центрируем
+            glTranslatef(0.0f, 0.0f, 0.0f);
 
-        // Просто применяем масштаб и поворот
-        glScalef(scale, scale, scale);
+            // Рисуем модель
+            drawModel(model);
 
-        // Ставим модель на пол (центрируем по X и Z)
-        glTranslatef(0.0f, 0.0f, 0.0f);
+            glPopMatrix();
+        }
+
+        // Сетка
+        glDisable(GL_TEXTURE_2D);
+        glColor3f(0.5f, 0.5f, 0.5f);
+        glBegin(GL_LINES);
+        for (int i = -3; i <= 3; i++) {
+            float pos = i * 0.5f;
+            glVertex3f(pos, -0.45f, -3.0f);
+            glVertex3f(pos, -0.45f, 3.0f);
+            glVertex3f(-3.0f, -0.45f, pos);
+            glVertex3f(3.0f, -0.45f, pos);
+        }
+        
+        glEnd();
+    
 
         // Рисуем модель
-        drawModel(model);
+        if (model.loaded && !model.vertices.empty()) {
+            glPushMatrix();
 
-        glPopMatrix();
-    }
-    else {
-        // Рисуем тестовый куб
-        glPushMatrix();
-        glScalef(scale, scale, scale);
-        glTranslatef(0.0f, 0.0f, 0.0f);
+            // Масштаб
+            glScalef(scale, scale, scale);
 
-        glDisable(GL_TEXTURE_2D);
-        glColor3f(1.0f, 0.0f, 0.0f);
+            // Центрируем модель
+            float minX = model.vertices[0], maxX = model.vertices[0];
+            float minY = model.vertices[1], maxY = model.vertices[1];
+            float minZ = model.vertices[2], maxZ = model.vertices[2];
 
-        glBegin(GL_QUADS);
-        // Передняя грань
-        glVertex3f(-0.5f, -0.5f, 0.5f);
-        glVertex3f(0.5f, -0.5f, 0.5f);
-        glVertex3f(0.5f, 0.5f, 0.5f);
-        glVertex3f(-0.5f, 0.5f, 0.5f);
-        // Задняя грань
-        glVertex3f(-0.5f, -0.5f, -0.5f);
-        glVertex3f(-0.5f, 0.5f, -0.5f);
-        glVertex3f(0.5f, 0.5f, -0.5f);
-        glVertex3f(0.5f, -0.5f, -0.5f);
-        glEnd();
+            for (size_t i = 0; i < model.vertices.size() / 3; i++) {
+                float vx = model.vertices[i * 3];
+                float vy = model.vertices[i * 3 + 1];
+                float vz = model.vertices[i * 3 + 2];
 
-        glPopMatrix();
+                minX = min(minX, vx);
+                maxX = max(maxX, vx);
+                minY = min(minY, vy);
+                maxY = max(maxY, vy);
+                minZ = min(minZ, vz);
+                maxZ = max(maxZ, vz);
+            }
+
+            float centerX = (minX + maxX) / 2.0f;
+            float centerZ = (minZ + maxZ) / 2.0f;
+
+            // Ставим модель на пол
+            glTranslatef(-centerX, -minY + 0.1f, -centerZ);
+
+            drawModel(model);
+            glPopMatrix();
+        }
     }
 
     // Восстанавливаем матрицы
@@ -953,10 +1007,16 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
 
     renderRussianText(title, x + 10, y + 25, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
 
-    // Отображаем текущий масштаб
-    char scaleText[50];
-    sprintf_s(scaleText, "Scale: %.2f", scale);
-    renderRussianText(scaleText, x + w - 100, y + 25, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
+    // Для пола показываем другой текст
+    if (isFloor) {
+        renderRussianText("Модель пола с текстурой", x + 10, y + 50, 0.25f, glm::vec3(0.5f, 1.0f, 0.5f));
+    }
+    else {
+        // Отображаем текущий масштаб только для обычных моделей
+        char scaleText[50];
+        sprintf_s(scaleText, "Scale: %.2f", scale);
+        renderRussianText(scaleText, x + w - 100, y + 25, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
+    }
 
     // Кнопки поворота
     int arrowY = (int)(y + h + 25);
@@ -988,7 +1048,6 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
         if (rotation >= 360) rotation -= 360;
     }
 }
-
 void debugTexture(GLuint textureID, const std::string& name) {
     if (textureID == 0) {
         std::cout << "Texture " << name << " is NULL" << std::endl;
@@ -1898,13 +1957,14 @@ void renderGroundSkyEditor() {
             updatePreviewForCurrentMode();
         }
 
-        if (selectedGroundSky == 0) {
-            renderModelPreview(previewModel, "ПРЕДПРОСМОТР ПОЛА",
-                windowWidth * 0.46f, windowHeight * 0.12f,
-                windowWidth * 0.36f, windowHeight * 0.5f,
-                previewRotation, autoRotate, lastRotationTime,
-                groundSkyElements[0]->scale);  // ← передаем масштаб пола
-        }
+        // Для пола передаем isFloor = true
+  // Для пола передаем isFloor = true
+        renderModelPreview(previewModel, "ПРЕДПРОСМОТР ПОЛА",
+            windowWidth * 0.46f, windowHeight * 0.12f,
+            windowWidth * 0.36f, windowHeight * 0.5f,
+            previewRotation, autoRotate, lastRotationTime,
+            1.0f,  // масштаб для пола не используется
+            true); // <- ЭТО ВАЖНО! true означает что это пол
     }
     else {
         // НЕБО
