@@ -28,12 +28,13 @@
 #include "ConfigManager.h"
 #include "../Shared/ConfigTypes.h"
 
+// Глобальные пути
 std::string g_assetsPath;
 std::string g_modelsPath;
 std::string g_texturesPath;
 std::string g_configPath;
 
-// Шейдеры для текста - ОПРЕДЕЛЯЕМ ЗДЕСЬ
+// Шейдеры для текста
 const char* textVertexShader = R"(
 #version 330 core
 layout (location = 0) in vec4 vertex;
@@ -75,32 +76,31 @@ struct Texture {
     Texture() : id(0), width(0), height(0), path("") {}
 };
 
-// Структура для препятствия
-struct ObstacleItem {
+// Структура для элемента с текстурой и цветом
+struct VisualElement {
     std::string name;
     std::string modelFile;
+    std::string textureFile;
     glm::vec3 color;
     float scale;
-    int posX, posZ;
+    int count;
     bool enabled;
+
+    VisualElement(const std::string& n = "") : name(n), modelFile(""), textureFile(""),
+        color(1.0f, 1.0f, 1.0f), scale(1.0f), count(1), enabled(true) {
+    }
 };
 
 // Глобальные переменные
 GLFWwindow* window;
-int windowWidth = 1200;
-int windowHeight = 800;
+int windowWidth = 1400;
+int windowHeight = 900;
 GameConfig currentConfig;
-
-// Пути
-std::string basePath;
-std::string modelsPath;
-std::string texturesPath;
-std::string configPath;
 
 // FreeType
 FT_Library ft;
 FT_Face face;
-std::map<char, Character> Characters;
+std::map<unsigned char, Character> Characters;
 GLuint textVAO, textVBO;
 GLuint textShaderProgram;
 
@@ -108,37 +108,44 @@ GLuint textShaderProgram;
 enum EditorMode {
     MODE_MAIN,
     MODE_SNAKE_EDITOR,
-    MODE_OBSTACLE_EDITOR,
-    MODE_ENVIRONMENT_EDITOR
+    MODE_GROUND_SKY_EDITOR,
+    MODE_OBSTACLES_EDITOR,
+    MODE_ENVIRONMENT_EDITOR,
+    MODE_GRID_EDITOR
 };
 EditorMode currentMode = MODE_MAIN;
 
-// Для редактора змейки
-int selectedPart = 0; // 0-голова, 1-тело, 2-хвост
+// Элементы для каждой категории
+std::vector<VisualElement*> snakeElements;
+std::vector<VisualElement*> groundSkyElements;
+std::vector<VisualElement*> obstaclesElements;
+std::vector<VisualElement*> environmentElements;
+
+// Для предпросмотра
+ModelData previewModel;
+std::string currentPreviewModel;
+std::string currentPreviewFolder;
 float previewRotation = 0.0f;
 bool autoRotate = true;
 float lastRotationTime = 0.0f;
 float autoRotateDelay = 5.0f;
 float rotationSpeed = 0.5f;
-ModelData currentModelData;
+
+// Для редактора змейки
+int selectedPart = 0;
 
 // Для редактора препятствий
-std::vector<ObstacleItem> obstacles;
-int selectedObstacle = -1;
-float obstaclePreviewRotation = 0.0f;
-bool obstacleAutoRotate = true;
-float obstacleLastRotationTime = 0.0f;
+int selectedObstacle = 0;
 
 // Для редактора окружения
-float skyColor[3] = { 0.53f, 0.81f, 0.92f };
-float floorColor[3] = { 0.3f, 0.6f, 0.2f };
-float gridColor[3] = { 0.2f, 0.5f, 0.15f };
-int cloudCount = 20;
-int birdCount = 15;
-int flowerCount = 25;
+int selectedEnv = 0;
+
+// Для редактора пола и неба
+int selectedGroundSky = 0;
 
 // Текстуры
 Texture floorTexture;
+Texture skyTexture;
 std::vector<std::string> availableTextures;
 
 // Для UI
@@ -146,91 +153,192 @@ bool mousePressed = false;
 bool mousePressedLast = false;
 double mouseX, mouseY;
 
-// Карта соответствия типов моделей и папок
-std::map<std::string, std::string> modelFolders = {
-    {"snake_head", "snake_head"},
-    {"snake_body", "snake_body"},
-    {"snake_tail", "snake_tail"},
-    {"apple", "food"},
-    {"tree", "obstacles"},
-    {"cloud", "clouds"},
-    {"bird", "birds"},
-    {"flower", "flowers"},
-    {"floor", "floor"},
-    {"fence", "fence"},
-    {"rock", "obstacles"},
-    {"grass", "grass"}
-};
-
-// Прототипы
+// Прототипы функций
 void renderMainMenu();
 void renderSnakeEditor();
-void renderObstacleEditor();
+void renderGroundSkyEditor();
+void renderObstaclesEditor();
 void renderEnvironmentEditor();
-void render3DPreview();
-void renderObstaclePreview();
-void renderEnvironmentModelPreview(const std::string& modelFile, const std::string& subFolder, int x, int y, int w, int h);
+void renderGridEditor();
+void renderModelPreview(ModelData& model, const char* title, float x, float y, float w, float h, float& rotation, bool& autoRotate, float& lastTime);
+void renderTexturedFloor();
+void renderTexturedSky();
+void drawGrid();
+void drawModel(ModelData& model);
+void reset2DProjection();
+void saveConfig();
+void initPaths();
+void initElements();
+void loadAvailableTextures();
+void openFileDialog(std::string& destVar, const std::string& subFolder);
+void openTextureFileDialog(std::string& destVar, Texture& texture);
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
-void openFileDialog();
-void openObstacleFileDialog();
-void openModelFileDialog(const std::string& subFolder, std::string& destVar);
+void windowSizeCallback(GLFWwindow* window, int width, int height);
 void initFreeType();
-float getTextWidth(const std::string& text, float scale);
-void renderText(const std::string& text, float x, float y, float scale, glm::vec3 color, bool centerX = false, bool centerY = false);
-bool drawButton(int x, int y, int w, int h, const std::string& text, bool enabled = true);
-bool drawSlider(int x, int y, int w, float* value, float minVal, float maxVal, const std::string& label);
-void drawInfoBox(int x, int y, int w, int h, const std::string& label, const std::string& value);
-void drawGrid();
-void reset2DProjection();
+float getTextWidth(const char* text, float scale);
+void renderText(const char* text, float x, float y, float scale, glm::vec3 color, bool centerX = false, bool centerY = false);
+bool drawButton(int x, int y, int w, int h, const char* text, bool enabled = true);
+bool drawSlider(int x, int y, int w, float* value, float minVal, float maxVal, const char* label);
+bool drawIntSlider(int x, int y, int w, int* value, int minVal, int maxVal, const char* label);
+void drawInfoBox(int x, int y, int w, int h, const char* label, const char* value);
+void drawColorPicker(int x, int y, const char* label, glm::vec3& color);
 bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder = "");
-bool loadEnvironmentModel(const std::string& type, const std::string& filename, ModelData& model);
-GLuint loadTextureFromFile(const std::string& path);
 bool loadTexture(const std::string& filename, Texture& texture);
-void drawModel(ModelData& model);
-void drawTexturedFloor();
-void saveConfig();
-void initPaths();
-void initObstacles();
-void loadAvailableTextures();
-std::string openTextureFileDialog();
+GLuint loadTextureFromFile(const std::string& path);
+
+// Функция для очистки модели предпросмотра
+void clearPreview() {
+    previewModel.loaded = false;
+    previewModel.vertices.clear();
+    previewModel.normals.clear();
+    previewModel.texCoords.clear();
+    previewModel.materials.clear();
+    previewModel.materialIndices.clear();
+}
+// Функция для обновления предпросмотра текущего элемента
+// Функция для обновления предпросмотра текущего элемента
+void updatePreviewForCurrentMode() {
+    // Сначала очищаем предпросмотр
+    clearPreview();
+
+    switch (currentMode) {
+    case MODE_SNAKE_EDITOR:
+        if (selectedPart >= 0 && selectedPart < snakeElements.size()) {
+            std::string folder = (selectedPart == 0) ? "snake_head" :
+                (selectedPart == 1) ? "snake_body" : "snake_tail";
+            loadFBXModel(snakeElements[selectedPart]->modelFile, previewModel, folder);
+        }
+        break;
+
+    case MODE_GROUND_SKY_EDITOR:
+        if (selectedGroundSky == 0 && !groundSkyElements.empty()) {
+            // Только для пола загружаем модель, для неба не надо
+            loadFBXModel(groundSkyElements[0]->modelFile, previewModel, "floor");
+        }
+        // Для неба оставляем пустым
+        break;
+
+    case MODE_OBSTACLES_EDITOR:
+        if (selectedObstacle >= 0 && selectedObstacle < obstaclesElements.size()) {
+            loadFBXModel(obstaclesElements[selectedObstacle]->modelFile, previewModel, "obstacles");
+        }
+        break;
+
+    case MODE_ENVIRONMENT_EDITOR:
+        if (selectedEnv >= 0 && selectedEnv < environmentElements.size()) {
+            std::string folder = (selectedEnv == 0) ? "flowers" :
+                (selectedEnv == 1) ? "birds" : "clouds";
+            loadFBXModel(environmentElements[selectedEnv]->modelFile, previewModel, folder);
+        }
+        break;
+
+    case MODE_GRID_EDITOR:
+        // Для редактора сетки модель не нужна
+        break;
+    }
+}
+//=============================================================================
+// ФУНКЦИИ ДЛЯ РАБОТЫ С РУССКИМ ТЕКСТОМ (ПОЛНОСТЬЮ СОХРАНЕНЫ)
+//=============================================================================
+// Просто обертка для renderText, которая принимает русский текст в CP1251
+void renderRussianText(const char* text, float x, float y, float scale, glm::vec3 color, bool centerX = false, bool centerY = false) {
+    renderText(text, x, y, scale, color, centerX, centerY);
+}
+
+// Обертка для кнопок
+bool drawRussianButton(int x, int y, int w, int h, const char* text, bool enabled = true) {
+    return drawButton(x, y, w, h, text, enabled);
+}
 
 //=============================================================================
-// ИНИЦИАЛИЗАЦИЯ ПРЕПЯТСТВИЙ
+// ИНИЦИАЛИЗАЦИЯ ЭЛЕМЕНТОВ
 //=============================================================================
-void initObstacles() {
-    obstacles.clear();
+void initElements() {
+    // 1. ЗМЕЯ
+    VisualElement* head = new VisualElement("ГОЛОВА");
+    head->modelFile = currentConfig.snakeHeadModel;
+    head->color = currentConfig.snakeHeadColor;
+    head->scale = currentConfig.snakeHeadScale;
+    snakeElements.push_back(head);
 
-    ObstacleItem tree1;
-    tree1.name = "Tree 1";
-    tree1.modelFile = "tree.fbx";
-    tree1.color = glm::vec3(0.1f, 0.4f, 0.1f);
-    tree1.scale = 1.5f;
-    tree1.posX = 20;
-    tree1.posZ = 20;
-    tree1.enabled = true;
-    obstacles.push_back(tree1);
+    VisualElement* body = new VisualElement("ТЕЛО");
+    body->modelFile = currentConfig.snakeBodyModel;
+    body->color = currentConfig.snakeBodyColor;
+    body->scale = currentConfig.snakeBodyScale;
+    snakeElements.push_back(body);
 
-    ObstacleItem tree2;
-    tree2.name = "Tree 2";
-    tree2.modelFile = "tree.fbx";
-    tree2.color = glm::vec3(0.1f, 0.4f, 0.1f);
-    tree2.scale = 1.5f;
-    tree2.posX = 40;
-    tree2.posZ = 40;
-    tree2.enabled = true;
-    obstacles.push_back(tree2);
+    VisualElement* tail = new VisualElement("ХВОСТ");
+    tail->modelFile = currentConfig.snakeTailModel;
+    tail->color = currentConfig.snakeTailColor;
+    tail->scale = currentConfig.snakeTailScale;
+    snakeElements.push_back(tail);
 
-    ObstacleItem rock;
-    rock.name = "Rock";
-    rock.modelFile = "rock.fbx";
-    rock.color = glm::vec3(0.5f, 0.5f, 0.5f);
-    rock.scale = 1.2f;
-    rock.posX = 30;
-    rock.posZ = 30;
-    rock.enabled = true;
-    obstacles.push_back(rock);
+    // 2. ПОЛ И НЕБО
+    VisualElement* ground = new VisualElement("ПОЛ");
+    ground->modelFile = currentConfig.floorModel;
+    ground->textureFile = currentConfig.floorTexture;
+    ground->color = currentConfig.floorColor;
+    ground->scale = 1.0f;
+    groundSkyElements.push_back(ground);
+
+    VisualElement* sky = new VisualElement("НЕБО");
+    sky->textureFile = ""; // будет загружаться отдельно
+    sky->color = currentConfig.skyColor;
+    sky->scale = 1.0f;
+    groundSkyElements.push_back(sky);
+
+    // 3. ПРЕГРАДЫ (деревья, камни, забор, яблоки)
+    VisualElement* tree = new VisualElement("ДЕРЕВО");
+    tree->modelFile = currentConfig.treeModel;
+    tree->color = glm::vec3(0.1f, 0.4f, 0.1f);
+    tree->scale = 1.5f;
+    tree->count = 10;
+    obstaclesElements.push_back(tree);
+
+    VisualElement* rock = new VisualElement("КАМЕНЬ");
+    rock->modelFile = currentConfig.rockModel;
+    rock->color = glm::vec3(0.5f, 0.5f, 0.5f);
+    rock->scale = 1.2f;
+    rock->count = 5;
+    obstaclesElements.push_back(rock);
+
+    VisualElement* fence = new VisualElement("ЗАБОР");
+    fence->modelFile = currentConfig.fenceModel;
+    fence->color = glm::vec3(0.6f, 0.4f, 0.2f);
+    fence->scale = 1.0f;
+    fence->count = 8;
+    obstaclesElements.push_back(fence);
+
+    VisualElement* apple = new VisualElement("ЯБЛОКО");
+    apple->modelFile = currentConfig.appleModel;
+    apple->color = glm::vec3(1.0f, 0.0f, 0.0f);
+    apple->scale = 0.8f;
+    apple->count = currentConfig.initialFoodCount;
+    obstaclesElements.push_back(apple);
+
+    // 4. ОКРУЖЕНИЕ (цветы, птицы, облака)
+    VisualElement* flower = new VisualElement("ЦВЕТОК");
+    flower->modelFile = currentConfig.flowerModel;
+    flower->color = glm::vec3(1.0f, 0.0f, 1.0f);
+    flower->scale = 0.7f;
+    flower->count = currentConfig.flowerCount;
+    environmentElements.push_back(flower);
+
+    VisualElement* bird = new VisualElement("ПТИЦА");
+    bird->modelFile = currentConfig.birdModel;
+    bird->color = glm::vec3(0.5f, 0.5f, 0.5f);
+    bird->scale = 0.6f;
+    bird->count = currentConfig.birdCount;
+    environmentElements.push_back(bird);
+
+    VisualElement* cloud = new VisualElement("ОБЛАКО");
+    cloud->modelFile = currentConfig.cloudModel;
+    cloud->color = glm::vec3(1.0f, 1.0f, 1.0f);
+    cloud->scale = 1.5f;
+    cloud->count = currentConfig.cloudCount;
+    environmentElements.push_back(cloud);
 }
 
 //=============================================================================
@@ -242,31 +350,24 @@ void initPaths() {
     std::string exePath = std::string(currentDir);
 
     std::cout << "\n=========================================" << std::endl;
-    std::cout << "===== CONFIG EDITOR PATH DEBUG =====" << std::endl;
+    std::cout << "===== КОНФИГУРАТОР ПУТЕЙ =====" << std::endl;
     std::cout << "=========================================" << std::endl;
-    std::cout << "1. Current directory (exe): " << exePath << std::endl;
 
-    // Находим корень проекта
     std::string rootPath = exePath;
 
     size_t pos = rootPath.find("\\Project2");
     if (pos != std::string::npos) {
         rootPath = rootPath.substr(0, pos);
-        std::cout << "2. Found Project2 folder, root: " << rootPath << std::endl;
     }
     else if ((pos = rootPath.find("\\x64\\Debug")) != std::string::npos) {
         rootPath = rootPath.substr(0, pos);
-        std::cout << "2. Found x64/Debug, root: " << rootPath << std::endl;
     }
     else if ((pos = rootPath.find("\\Debug")) != std::string::npos) {
         rootPath = rootPath.substr(0, pos);
-        std::cout << "2. Found Debug, root: " << rootPath << std::endl;
     }
 
-    // Убеждаемся что мы в папке ractica
     if (rootPath.find("ractica") == std::string::npos) {
         rootPath += "\\ractica";
-        std::cout << "3. Added '\\ractica', root: " << rootPath << std::endl;
     }
 
     g_assetsPath = rootPath + "\\assets\\";
@@ -274,52 +375,19 @@ void initPaths() {
     g_texturesPath = g_assetsPath + "textures\\";
     g_configPath = g_assetsPath + "config\\game.cfg";
 
-    std::cout << "\n--- FINAL PATHS ---" << std::endl;
-    std::cout << "Assets path:  " << g_assetsPath << std::endl;
-    std::cout << "Models path:  " << g_modelsPath << std::endl;
-    std::cout << "Textures path: " << g_texturesPath << std::endl;
-    std::cout << "Config path:  " << g_configPath << std::endl;
+    CreateDirectoryA(g_assetsPath.c_str(), NULL);
+    CreateDirectoryA((g_assetsPath + "config").c_str(), NULL);
+    CreateDirectoryA(g_modelsPath.c_str(), NULL);
+    CreateDirectoryA(g_texturesPath.c_str(), NULL);
 
-    // Проверяем существование папок
-    std::cout << "\n--- FOLDER VALIDATION ---" << std::endl;
-
-    DWORD attrib = GetFileAttributesA(g_assetsPath.c_str());
-    std::cout << "Assets folder: " << ((attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY)) ? "✓ EXISTS" : "✗ NOT FOUND") << std::endl;
-
-    std::string modelsFolder = g_modelsPath;
-    attrib = GetFileAttributesA(modelsFolder.c_str());
-    std::cout << "Models folder: " << ((attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY)) ? "✓ EXISTS" : "✗ NOT FOUND") << std::endl;
-
-    std::string configFolder = g_assetsPath + "config\\";
-    attrib = GetFileAttributesA(configFolder.c_str());
-    std::cout << "Config folder: " << ((attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY)) ? "✓ EXISTS" : "✗ NOT FOUND") << std::endl;
-
-    // Создаем папки если их нет
-    std::cout << "\n--- CREATING FOLDERS ---" << std::endl;
-
-    if (CreateDirectoryA(g_assetsPath.c_str(), NULL) || GetLastError() == ERROR_ALREADY_EXISTS) {
-        std::cout << "✓ Assets folder ready" << std::endl;
-    }
-    if (CreateDirectoryA((g_assetsPath + "config").c_str(), NULL) || GetLastError() == ERROR_ALREADY_EXISTS) {
-        std::cout << "✓ Config folder ready" << std::endl;
-    }
-    if (CreateDirectoryA(g_modelsPath.c_str(), NULL) || GetLastError() == ERROR_ALREADY_EXISTS) {
-        std::cout << "✓ Models folder ready" << std::endl;
-    }
-
-    // Создаем подпапки для моделей
     std::vector<std::string> modelSubfolders = {
         "snake_head", "snake_body", "snake_tail", "obstacles",
-        "food", "clouds", "birds", "flowers", "floor", "fence", "grass"
+        "food", "clouds", "birds", "flowers", "floor", "fence"
     };
     for (const auto& subfolder : modelSubfolders) {
         std::string path = g_modelsPath + subfolder + "\\";
-        if (CreateDirectoryA(path.c_str(), NULL) || GetLastError() == ERROR_ALREADY_EXISTS) {
-            std::cout << "✓ " << subfolder << " folder ready" << std::endl;
-        }
+        CreateDirectoryA(path.c_str(), NULL);
     }
-
-    std::cout << "=========================================\n" << std::endl;
 }
 
 //=============================================================================
@@ -345,23 +413,17 @@ GLuint loadTextureFromFile(const std::string& path) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
         stbi_image_free(data);
-        std::cout << "Texture loaded: " << width << "x" << height << std::endl;
         return textureID;
     }
-    else {
-        std::cout << "Failed to load texture: " << stbi_failure_reason() << std::endl;
-        glDeleteTextures(1, &textureID);
-        return 0;
-    }
+
+    glDeleteTextures(1, &textureID);
+    return 0;
 }
 
 bool loadTexture(const std::string& filename, Texture& texture) {
     std::string fullPath = g_texturesPath + filename;
 
-    std::cout << "Loading texture: " << fullPath << std::endl;
-
     if (!std::filesystem::exists(fullPath)) {
-        std::cout << "Texture file does not exist!" << std::endl;
         return false;
     }
 
@@ -375,31 +437,7 @@ bool loadTexture(const std::string& filename, Texture& texture) {
     return texture.id != 0;
 }
 
-void loadAvailableTextures() {
-    availableTextures.clear();
-
-    if (!std::filesystem::exists(g_texturesPath)) {
-        return;
-    }
-
-    try {
-        for (const auto& entry : std::filesystem::directory_iterator(g_texturesPath)) {
-            std::string ext = entry.path().extension().string();
-            if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") {
-                availableTextures.push_back(entry.path().filename().string());
-            }
-        }
-    }
-    catch (...) {
-        std::cout << "Could not read textures folder" << std::endl;
-    }
-}
-
-std::string openTextureFileDialog() {
-    if (!std::filesystem::exists(g_texturesPath)) {
-        std::filesystem::create_directories(g_texturesPath);
-    }
-
+void openTextureFileDialog(std::string& destVar, Texture& texture) {
     OPENFILENAMEA ofn;
     char fileName[MAX_PATH] = "";
 
@@ -410,164 +448,80 @@ std::string openTextureFileDialog() {
     ofn.lpstrFile = fileName;
     ofn.nMaxFile = MAX_PATH;
     ofn.lpstrInitialDir = g_texturesPath.c_str();
-    ofn.lpstrTitle = "Choose Texture";
+    ofn.lpstrTitle = "Выберите текстуру";
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 
     if (GetOpenFileNameA(&ofn)) {
         std::string fullPath = fileName;
-        return fullPath.substr(fullPath.find_last_of("\\") + 1);
-    }
+        std::string filename = fullPath.substr(fullPath.find_last_of("\\") + 1);
+        destVar = filename;
+        loadTexture(filename, texture);
 
-    return "";
+        // Для пола обновляем предпросмотр
+        if (currentMode == MODE_GROUND_SKY_EDITOR && selectedGroundSky == 0) {
+            updatePreviewForCurrentMode();
+        }
+    }
 }
 
 //=============================================================================
 // ЗАГРУЗКА МОДЕЛЕЙ
 //=============================================================================
 bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder) {
-    std::cout << "\n========== FBX LOADER DEBUG ==========" << std::endl;
-    std::cout << "Loading model for folder: " << subFolder << std::endl;
-    std::cout << "Filename: " << filename << std::endl;
+    if (filename.empty()) return false;
 
-    // Формируем полный путь
     std::string fullPath = g_modelsPath + subFolder + "\\" + filename;
-    std::cout << "Full path: " << fullPath << std::endl;
 
-    // Проверяем существование файла
     if (!std::filesystem::exists(fullPath)) {
-        std::cout << "❌ ERROR: File does not exist!" << std::endl;
-
-        // Показываем содержимое папки
-        std::string folderPath = g_modelsPath + subFolder + "\\";
-        std::cout << "Contents of " << folderPath << ":" << std::endl;
-        try {
-            int fileCount = 0;
-            for (const auto& entry : std::filesystem::directory_iterator(folderPath)) {
-                std::cout << "  - " << entry.path().filename().string()
-                    << " (" << std::filesystem::file_size(entry.path()) << " bytes)" << std::endl;
-                fileCount++;
-            }
-            if (fileCount == 0) {
-                std::cout << "  📁 Folder is empty!" << std::endl;
-            }
-        }
-        catch (const std::exception& e) {
-            std::cout << "  ❌ Cannot read folder: " << e.what() << std::endl;
-        }
         return false;
     }
 
-    // Проверяем размер файла
-    size_t fileSize = std::filesystem::file_size(fullPath);
-    std::cout << "File size: " << fileSize << " bytes" << std::endl;
-
-    if (fileSize == 0) {
-        std::cout << "❌ ERROR: File is empty!" << std::endl;
-        return false;
-    }
-
-    std::cout << "Initializing Assimp importer..." << std::endl;
     Assimp::Importer importer;
 
-    // Пробуем загрузить с разными флагами
-    std::cout << "Reading file with Assimp..." << std::endl;
     const aiScene* scene = importer.ReadFile(fullPath,
         aiProcess_Triangulate |
         aiProcess_GenSmoothNormals |
         aiProcess_FlipUVs |
         aiProcess_CalcTangentSpace);
 
-    if (!scene) {
-        std::cout << "❌ Assimp error: " << importer.GetErrorString() << std::endl;
+    if (!scene) return false;
 
-        // Пробуем с минимальными флагами
-        std::cout << "Retrying with minimal flags..." << std::endl;
-        scene = importer.ReadFile(fullPath, aiProcess_Triangulate);
-
-        if (!scene) {
-            std::cout << "❌ Still failed: " << importer.GetErrorString() << std::endl;
-            return false;
-        }
-    }
-
-    std::cout << "✓ Scene loaded successfully!" << std::endl;
-    std::cout << "Scene info:" << std::endl;
-    std::cout << "  - Meshes: " << scene->mNumMeshes << std::endl;
-    std::cout << "  - Materials: " << scene->mNumMaterials << std::endl;
-    std::cout << "  - Animations: " << scene->mNumAnimations << std::endl;
-    std::cout << "  - Textures: " << scene->mNumTextures << std::endl;
-
-    if (!scene->mRootNode) {
-        std::cout << "❌ ERROR: Scene has no root node!" << std::endl;
-        return false;
-    }
-
-    // Очищаем старые данные
     model.vertices.clear();
     model.normals.clear();
     model.texCoords.clear();
     model.materials.clear();
     model.materialIndices.clear();
 
-    std::cout << "\n--- Loading Materials ---" << std::endl;
-    // Загружаем материалы
     for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
         aiMaterial* mat = scene->mMaterials[i];
         Material material;
 
-        aiString matName;
-        mat->Get(AI_MATKEY_NAME, matName);
-        std::cout << "Material " << i << ": " << matName.C_Str() << std::endl;
-
         aiColor3D color(1.0f, 1.0f, 1.0f);
         mat->Get(AI_MATKEY_COLOR_DIFFUSE, color);
         material.diffuse = glm::vec3(color.r, color.g, color.b);
-        std::cout << "  Diffuse color: (" << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
-
-        // Пытаемся загрузить текстуру
-        if (mat->GetTextureCount(aiTextureType_DIFFUSE) > 0) {
-            aiString path;
-            mat->GetTexture(aiTextureType_DIFFUSE, 0, &path);
-            std::cout << "  Texture: " << path.C_Str() << std::endl;
-            material.texturePath = path.C_Str();
-        }
 
         model.materials.push_back(material);
     }
 
-    // Если нет материалов, создаем дефолтный
     if (model.materials.empty()) {
-        std::cout << "No materials found, creating default material" << std::endl;
         Material defaultMat;
         defaultMat.diffuse = glm::vec3(0.8f, 0.8f, 0.8f);
         model.materials.push_back(defaultMat);
     }
 
-    std::cout << "\n--- Loading Meshes ---" << std::endl;
-    int totalVertices = 0;
-    int totalFaces = 0;
-
     for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
         aiMesh* mesh = scene->mMeshes[i];
-        std::cout << "Mesh " << i << ":" << std::endl;
-        std::cout << "  - Vertices: " << mesh->mNumVertices << std::endl;
-        std::cout << "  - Faces: " << mesh->mNumFaces << std::endl;
-        std::cout << "  - Has normals: " << (mesh->HasNormals() ? "YES" : "NO") << std::endl;
-        std::cout << "  - Has texture coords: " << (mesh->HasTextureCoords(0) ? "YES" : "NO") << std::endl;
 
         int materialIndex = mesh->mMaterialIndex;
         if (materialIndex >= (int)model.materials.size()) {
-            std::cout << "  ⚠ Material index out of range, using 0" << std::endl;
             materialIndex = 0;
         }
 
         for (unsigned int j = 0; j < mesh->mNumVertices; j++) {
-            // Вершины
             model.vertices.push_back(mesh->mVertices[j].x);
             model.vertices.push_back(mesh->mVertices[j].y);
             model.vertices.push_back(mesh->mVertices[j].z);
 
-            // Нормали
             if (mesh->HasNormals()) {
                 model.normals.push_back(mesh->mNormals[j].x);
                 model.normals.push_back(mesh->mNormals[j].y);
@@ -579,7 +533,6 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
                 model.normals.push_back(0.0f);
             }
 
-            // Текстурные координаты
             if (mesh->HasTextureCoords(0)) {
                 model.texCoords.push_back(mesh->mTextureCoords[0][j].x);
                 model.texCoords.push_back(mesh->mTextureCoords[0][j].y);
@@ -590,55 +543,56 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
             }
         }
 
-        // Индексы материалов для каждого треугольника
         for (unsigned int j = 0; j < mesh->mNumFaces; j++) {
             aiFace face = mesh->mFaces[j];
             if (face.mNumIndices == 3) {
                 model.materialIndices.push_back(materialIndex);
-                totalFaces++;
             }
         }
-
-        totalVertices += mesh->mNumVertices;
     }
-
-    std::cout << "\n--- Loading Summary ---" << std::endl;
-    std::cout << "Total vertices loaded: " << totalVertices << std::endl;
-    std::cout << "Total triangles: " << totalFaces << std::endl;
-    std::cout << "Total materials: " << model.materials.size() << std::endl;
 
     model.loaded = (model.vertices.size() > 0);
-
-    if (model.loaded) {
-        std::cout << "✅ MODEL LOADED SUCCESSFULLY!" << std::endl;
-        std::cout << "   Vertex count: " << model.vertices.size() / 3 << std::endl;
-        std::cout << "   Normal count: " << model.normals.size() / 3 << std::endl;
-        std::cout << "   TexCoord count: " << model.texCoords.size() / 2 << std::endl;
-    }
-    else {
-        std::cout << "❌ MODEL LOADING FAILED!" << std::endl;
-    }
-
-    std::cout << "====================================\n" << std::endl;
     return model.loaded;
 }
 
-bool loadEnvironmentModel(const std::string& type, const std::string& filename, ModelData& model) {
-    auto it = modelFolders.find(type);
-    if (it != modelFolders.end()) {
-        return loadFBXModel(filename, model, it->second);
+void openFileDialog(std::string& destVar, const std::string& subFolder) {
+    std::string folderPath = g_modelsPath + subFolder + "\\";
+
+    CreateDirectoryA(folderPath.c_str(), NULL);
+
+    OPENFILENAMEA ofn;
+    char fileName[MAX_PATH] = "";
+
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = GetActiveWindow();
+    ofn.lpstrFilter = "FBX Files\0*.fbx\0OBJ Files\0*.obj\0All Files\0*.*\0";
+    ofn.lpstrFile = fileName;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrInitialDir = folderPath.c_str();
+    ofn.lpstrTitle = "Выберите модель";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+
+    if (GetOpenFileNameA(&ofn)) {
+        std::string fullPath = fileName;
+        std::string filename = fullPath.substr(fullPath.find_last_of("\\") + 1);
+        destVar = filename;
+
+        std::string destPath = folderPath + filename;
+        if (fullPath != destPath) {
+            CopyFileA(fullPath.c_str(), destPath.c_str(), FALSE);
+        }
+
+        // Обновляем предпросмотр после загрузки
+        updatePreviewForCurrentMode();
     }
-    std::cout << "❌ Unknown model type: " << type << std::endl;
-    return false;
 }
 
 //=============================================================================
-// ОТРИСОВКА МОДЕЛИ
+// ОТРИСОВКА
 //=============================================================================
 void drawModel(ModelData& model) {
-    if (!model.loaded || model.vertices.empty()) {
-        return;
-    }
+    if (!model.loaded || model.vertices.empty()) return;
 
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_NORMAL_ARRAY);
@@ -653,16 +607,7 @@ void drawModel(ModelData& model) {
         int materialIdx = model.materialIndices[i];
         if (materialIdx >= 0 && materialIdx < model.materials.size()) {
             Material& mat = model.materials[materialIdx];
-
-            if (mat.textureID != 0) {
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, mat.textureID);
-                glColor3f(1.0f, 1.0f, 1.0f);
-            }
-            else {
-                glDisable(GL_TEXTURE_2D);
-                glColor3f(mat.diffuse.r, mat.diffuse.g, mat.diffuse.b);
-            }
+            glColor3f(mat.diffuse.r, mat.diffuse.g, mat.diffuse.b);
         }
 
         glDrawArrays(GL_TRIANGLES, vertexIndex, 3);
@@ -672,12 +617,8 @@ void drawModel(ModelData& model) {
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_NORMAL_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-    glDisable(GL_TEXTURE_2D);
 }
 
-//=============================================================================
-// ОТРИСОВКА ПОЛА
-//=============================================================================
 void drawTexturedFloor() {
     glEnable(GL_TEXTURE_2D);
 
@@ -687,7 +628,11 @@ void drawTexturedFloor() {
     }
     else {
         glDisable(GL_TEXTURE_2D);
-        glColor3f(floorColor[0], floorColor[1], floorColor[2]);
+        if (!groundSkyElements.empty()) {
+            glColor3f(groundSkyElements[0]->color.r,
+                groundSkyElements[0]->color.g,
+                groundSkyElements[0]->color.b);
+        }
     }
 
     float size = 5.0f;
@@ -703,12 +648,15 @@ void drawTexturedFloor() {
     glDisable(GL_TEXTURE_2D);
 }
 
-//=============================================================================
-// ОТРИСОВКА СЕТКИ
-//=============================================================================
 void drawGrid() {
+    if (!currentConfig.gridEnabled) return; // Если сетка выключена, не рисуем
+
     glDisable(GL_LIGHTING);
-    glColor3f(0.3f, 0.3f, 0.3f);
+    glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
+
+    // Устанавливаем толщину линий
+    glLineWidth(currentConfig.gridLineWidth);
+
     glBegin(GL_LINES);
     for (int i = -2; i <= 2; i++) {
         glVertex3f(i, -0.5f, -2);
@@ -717,35 +665,161 @@ void drawGrid() {
         glVertex3f(2, -0.5f, i);
     }
     glEnd();
+
+    // Возвращаем толщину по умолчанию
+    glLineWidth(1.0f);
+}
+
+void renderModelPreview(ModelData& model, const char* title, float x, float y, float w, float h, float& rotation, bool& autoRotate, float& lastTime) {
+    // Сохраняем текущий viewport
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+    glViewport(x, windowHeight - y - h, w, h);
+    glScissor(x, windowHeight - y - h, w, h);
+    glEnable(GL_SCISSOR_TEST);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_BLEND);
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+
+    float aspect = w / h;
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+    glLoadMatrixf(glm::value_ptr(projection));
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glm::vec3 eye(3.0f, 2.0f, 5.0f);
+    glm::vec3 center(0.0f);
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+    glm::mat4 view = glm::lookAt(eye, center, up);
+    glLoadMatrixf(glm::value_ptr(view));
+
+    glRotatef(rotation, 0.0f, 1.0f, 0.0f);
+
+    glDisable(GL_LIGHTING);
+
+    drawGrid();
+    drawTexturedFloor();
+
+    if (!model.loaded) {
+        glColor3f(1.0f, 0.0f, 0.0f);
+    }
+    else {
+        drawModel(model);
+    }
+
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+
+    glPopAttrib();
+    glDisable(GL_SCISSOR_TEST);
+
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+
+    reset2DProjection();
+
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x, y);
+    glVertex2f(x + w, y);
+    glVertex2f(x + w, y + h);
+    glVertex2f(x, y + h);
+    glEnd();
+
+    renderRussianText(title, x + 10, y + 25, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+    int arrowY = y + h + 25;
+    int arrowCenterX = x + w / 2;
+    int arrowWidth = 60;
+    int arrowHeight = 35;
+
+    if (drawButton(arrowCenterX - arrowWidth - 10, arrowY, arrowWidth, arrowHeight, "<-")) {
+        rotation -= 15.0f;
+        lastTime = glfwGetTime();
+        autoRotate = false;
+    }
+
+    if (drawButton(arrowCenterX + 10, arrowY, arrowWidth, arrowHeight, "->")) {
+        rotation += 15.0f;
+        lastTime = glfwGetTime();
+        autoRotate = false;
+    }
+
+    float currentTime = glfwGetTime();
+    if (!autoRotate) {
+        if (currentTime - lastTime >= autoRotateDelay) {
+            autoRotate = true;
+        }
+    }
+
+    if (autoRotate) {
+        rotation += rotationSpeed;
+        if (rotation >= 360) rotation -= 360;
+    }
 }
 
 //=============================================================================
 // СОХРАНЕНИЕ КОНФИГА
 //=============================================================================
 void saveConfig() {
-    std::cout << "\n========== SAVING CONFIG ==========" << std::endl;
-    std::cout << "Saving to: " << g_configPath << std::endl;
+    // Змея
+    if (snakeElements.size() >= 3) {
+        currentConfig.snakeHeadModel = snakeElements[0]->modelFile;
+        currentConfig.snakeHeadColor = snakeElements[0]->color;
+        currentConfig.snakeHeadScale = snakeElements[0]->scale;
 
-    std::string configFolder = g_assetsPath + "config\\";
-    DWORD attrib = GetFileAttributesA(configFolder.c_str());
-    if (attrib == INVALID_FILE_ATTRIBUTES) {
-        std::cout << "Config folder does not exist, creating..." << std::endl;
-        CreateDirectoryA(configFolder.c_str(), NULL);
+        currentConfig.snakeBodyModel = snakeElements[1]->modelFile;
+        currentConfig.snakeBodyColor = snakeElements[1]->color;
+        currentConfig.snakeBodyScale = snakeElements[1]->scale;
+
+        currentConfig.snakeTailModel = snakeElements[2]->modelFile;
+        currentConfig.snakeTailColor = snakeElements[2]->color;
+        currentConfig.snakeTailScale = snakeElements[2]->scale;
     }
 
-    if (ConfigManager::saveGameConfig(g_configPath, currentConfig)) {
-        std::cout << "✓ Config saved successfully!" << std::endl;
+    // Пол и небо
+    if (groundSkyElements.size() >= 2) {
+        currentConfig.floorModel = groundSkyElements[0]->modelFile;
+        currentConfig.floorTexture = groundSkyElements[0]->textureFile;
+        currentConfig.floorColor = groundSkyElements[0]->color;
 
-        std::ifstream checkFile(g_configPath);
-        if (checkFile.is_open()) {
-            std::cout << "✓ File exists at: " << g_configPath << std::endl;
-            checkFile.close();
-        }
+        currentConfig.skyColor = groundSkyElements[1]->color;
     }
-    else {
-        std::cout << "✗ Failed to save config!" << std::endl;
+
+    // Преграды
+    if (obstaclesElements.size() >= 4) {
+        currentConfig.treeModel = obstaclesElements[0]->modelFile;
+        currentConfig.rockModel = obstaclesElements[1]->modelFile;
+        currentConfig.fenceModel = obstaclesElements[2]->modelFile;
+        currentConfig.appleModel = obstaclesElements[3]->modelFile;
+        currentConfig.initialFoodCount = obstaclesElements[3]->count;
     }
-    std::cout << "==================================\n" << std::endl;
+
+    // Окружение
+    if (environmentElements.size() >= 3) {
+        currentConfig.flowerModel = environmentElements[0]->modelFile;
+        currentConfig.flowerCount = environmentElements[0]->count;
+
+        currentConfig.birdModel = environmentElements[1]->modelFile;
+        currentConfig.birdCount = environmentElements[1]->count;
+
+        currentConfig.cloudModel = environmentElements[2]->modelFile;
+        currentConfig.cloudCount = environmentElements[2]->count;
+    }
+
+    ConfigManager::saveGameConfig(g_configPath, currentConfig);
 }
 
 //=============================================================================
@@ -754,7 +828,6 @@ void saveConfig() {
 void reset2DProjection() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_LIGHTING);
-    glDisable(GL_LIGHT0);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -766,151 +839,7 @@ void reset2DProjection() {
 }
 
 //=============================================================================
-// ДИАЛОГИ ВЫБОРА ФАЙЛОВ
-//=============================================================================
-void openFileDialog() {
-    std::string subFolder;
-    switch (selectedPart) {
-    case 0: subFolder = "snake_head"; break;
-    case 1: subFolder = "snake_body"; break;
-    case 2: subFolder = "snake_tail"; break;
-    }
-
-    std::string folderPath = g_modelsPath + subFolder + "\\";
-
-    std::cout << "\n========== FILE DIALOG DEBUG ==========" << std::endl;
-    std::cout << "Selected part: " << subFolder << std::endl;
-    std::cout << "Opening folder: " << folderPath << std::endl;
-
-    CreateDirectoryA(folderPath.c_str(), NULL);
-
-    OPENFILENAMEA ofn;
-    char fileName[MAX_PATH] = "";
-
-    ZeroMemory(&ofn, sizeof(ofn));
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = GetActiveWindow();
-    ofn.lpstrFilter = "FBX Files\0*.fbx\0OBJ Files\0*.obj\0All Files\0*.*\0";
-    ofn.lpstrFile = fileName;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrInitialDir = folderPath.c_str();
-    ofn.lpstrTitle = "Choose Model";
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-
-    if (GetOpenFileNameA(&ofn)) {
-        std::string fullPath = fileName;
-        std::string filename = fullPath.substr(fullPath.find_last_of("\\") + 1);
-
-        std::cout << "Selected file: " << filename << std::endl;
-        std::cout << "Full path: " << fullPath << std::endl;
-
-        if (selectedPart == 0) currentConfig.snakeHeadModel = filename;
-        else if (selectedPart == 1) currentConfig.snakeBodyModel = filename;
-        else currentConfig.snakeTailModel = filename;
-
-        std::string destPath = folderPath + filename;
-        if (fullPath != destPath) {
-            std::cout << "Copying to assets: " << destPath << std::endl;
-            if (CopyFileA(fullPath.c_str(), destPath.c_str(), FALSE)) {
-                std::cout << "✅ File copied successfully" << std::endl;
-            }
-            else {
-                std::cout << "❌ Failed to copy file. Error: " << GetLastError() << std::endl;
-            }
-        }
-
-        std::cout << "Loading model..." << std::endl;
-        bool loaded = loadFBXModel(filename, currentModelData, subFolder);
-
-        if (loaded) {
-            std::cout << "✅ Model loaded and ready for preview!" << std::endl;
-        }
-        else {
-            std::cout << "❌ Model loading failed!" << std::endl;
-        }
-
-        saveConfig();
-    }
-    else {
-        std::cout << "Dialog cancelled or failed" << std::endl;
-    }
-    std::cout << "======================================\n" << std::endl;
-}
-
-void openObstacleFileDialog() {
-    std::string folderPath = g_modelsPath + "obstacles\\";
-
-    if (!std::filesystem::exists(folderPath)) {
-        std::filesystem::create_directories(folderPath);
-    }
-
-    OPENFILENAMEA ofn;
-    char fileName[MAX_PATH] = "";
-
-    ZeroMemory(&ofn, sizeof(ofn));
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = GetActiveWindow();
-    ofn.lpstrFilter = "FBX Files\0*.fbx\0OBJ Files\0*.obj\0All Files\0*.*\0";
-    ofn.lpstrFile = fileName;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrInitialDir = folderPath.c_str();
-    ofn.lpstrTitle = "Choose Obstacle Model";
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-
-    if (GetOpenFileNameA(&ofn)) {
-        std::string fullPath = fileName;
-        std::string filename = fullPath.substr(fullPath.find_last_of("\\") + 1);
-
-        if (!filename.empty() && selectedObstacle >= 0) {
-            obstacles[selectedObstacle].modelFile = filename;
-            std::cout << "Selected obstacle model: " << filename << std::endl;
-        }
-    }
-}
-
-void openModelFileDialog(const std::string& subFolder, std::string& destVar) {
-    std::string folderPath = g_modelsPath + subFolder + "\\";
-
-    CreateDirectoryA(folderPath.c_str(), NULL);
-
-    OPENFILENAMEA ofn;
-    char fileName[MAX_PATH] = "";
-
-    ZeroMemory(&ofn, sizeof(ofn));
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = GetActiveWindow();
-    ofn.lpstrFilter = "Model Files\0*.fbx;*.obj\0FBX Files\0*.fbx\0OBJ Files\0*.obj\0All Files\0*.*\0";
-    ofn.lpstrFile = fileName;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrInitialDir = folderPath.c_str();
-    ofn.lpstrTitle = ("Choose " + subFolder + " Model").c_str();
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-
-    if (GetOpenFileNameA(&ofn)) {
-        std::string fullPath = fileName;
-        std::string filename = fullPath.substr(fullPath.find_last_of("\\") + 1);
-        destVar = filename;
-
-        std::string destPath = folderPath + filename;
-        if (fullPath != destPath) {
-            std::cout << "Copying to assets: " << destPath << std::endl;
-            if (CopyFileA(fullPath.c_str(), destPath.c_str(), FALSE)) {
-                std::cout << "✅ File copied successfully" << std::endl;
-            }
-            else {
-                std::cout << "❌ Failed to copy file. Error: " << GetLastError() << std::endl;
-            }
-        }
-
-        ModelData previewModel;
-        if (loadFBXModel(filename, previewModel, subFolder)) {
-            std::cout << "✅ Model loaded for preview!" << std::endl;
-        }
-    }
-}
-
-//=============================================================================
-// ШРИФТЫ И ТЕКСТ
+// ШРИФТЫ И ТЕКСТ (ПОЛНОСТЬЮ СОХРАНЕНЫ)
 //=============================================================================
 GLuint compileShader(GLenum type, const char* source) {
     GLuint shader = glCreateShader(type);
@@ -922,7 +851,7 @@ GLuint compileShader(GLenum type, const char* source) {
     if (!success) {
         char infoLog[512];
         glGetShaderInfoLog(shader, 512, NULL, infoLog);
-        std::cerr << "Shader compilation error: " << infoLog << std::endl;
+        std::cerr << "Ошибка компиляции шейдера: " << infoLog << std::endl;
     }
     return shader;
 }
@@ -941,20 +870,29 @@ void initTextShader() {
 }
 
 void initFreeType() {
+    std::cout << "\n========== ИНИЦИАЛИЗАЦИЯ ШРИФТОВ ==========" << std::endl;
+
     if (FT_Init_FreeType(&ft)) {
-        std::cerr << "Could not init FreeType" << std::endl;
+        std::cerr << "❌ Не удалось инициализировать FreeType" << std::endl;
+        return;
+    }
+    std::cout << "✓ FreeType инициализирован" << std::endl;
+
+    std::string fontPath = "C:/Windows/Fonts/arial.ttf";
+    std::cout << "Загрузка шрифта: " << fontPath << std::endl;
+
+    if (FT_New_Face(ft, fontPath.c_str(), 0, &face)) {
+        std::cerr << "❌ Не удалось загрузить шрифт Arial" << std::endl;
         return;
     }
 
-    if (FT_New_Face(ft, "C:/Windows/Fonts/arial.ttf", 0, &face)) {
-        std::cerr << "Could not load font" << std::endl;
-        return;
-    }
+    std::cout << "✓ Шрифт загружен успешно" << std::endl;
 
     FT_Set_Pixel_Sizes(face, 0, 48);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    for (unsigned char c = 0; c < 128; c++) {
+    int loadedCount = 0;
+    for (unsigned char c = 32; c < 128; c++) {
         if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
             continue;
         }
@@ -985,8 +923,155 @@ void initFreeType() {
             glm::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
             face->glyph->advance.x
         };
-        Characters.insert(std::pair<char, Character>(c, character));
+        Characters.insert(std::pair<unsigned char, Character>(c, character));
+        loadedCount++;
     }
+
+    std::cout << "✓ Загружено ASCII символов: " << loadedCount << std::endl;
+
+    int russianLoaded = 0;
+
+    for (int i = 0; i < 32; i++) {
+        int unicode = 0x0410 + i;
+        unsigned char cp1251 = 0xC0 + i;
+
+        if (FT_Load_Char(face, unicode, FT_LOAD_RENDER)) {
+            continue;
+        }
+
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RED,
+            face->glyph->bitmap.width,
+            face->glyph->bitmap.rows,
+            0,
+            GL_RED,
+            GL_UNSIGNED_BYTE,
+            face->glyph->bitmap.buffer
+        );
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        Character character = {
+            texture,
+            glm::ivec2(face->glyph->bitmap.width, face->glyph->bitmap.rows),
+            glm::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
+            face->glyph->advance.x
+        };
+        Characters.insert(std::pair<unsigned char, Character>(cp1251, character));
+        russianLoaded++;
+    }
+
+    if (FT_Load_Char(face, 0x0401, FT_LOAD_RENDER) == 0) {
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RED,
+            face->glyph->bitmap.width,
+            face->glyph->bitmap.rows,
+            0,
+            GL_RED,
+            GL_UNSIGNED_BYTE,
+            face->glyph->bitmap.buffer
+        );
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        Character character = {
+            texture,
+            glm::ivec2(face->glyph->bitmap.width, face->glyph->bitmap.rows),
+            glm::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
+            face->glyph->advance.x
+        };
+        Characters.insert(std::pair<unsigned char, Character>(0xA8, character));
+        russianLoaded++;
+    }
+
+    for (int i = 0; i < 32; i++) {
+        int unicode = 0x0430 + i;
+        unsigned char cp1251 = 0xE0 + i;
+
+        if (FT_Load_Char(face, unicode, FT_LOAD_RENDER)) {
+            continue;
+        }
+
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RED,
+            face->glyph->bitmap.width,
+            face->glyph->bitmap.rows,
+            0,
+            GL_RED,
+            GL_UNSIGNED_BYTE,
+            face->glyph->bitmap.buffer
+        );
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        Character character = {
+            texture,
+            glm::ivec2(face->glyph->bitmap.width, face->glyph->bitmap.rows),
+            glm::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
+            face->glyph->advance.x
+        };
+        Characters.insert(std::pair<unsigned char, Character>(cp1251, character));
+        russianLoaded++;
+    }
+
+    if (FT_Load_Char(face, 0x0451, FT_LOAD_RENDER) == 0) {
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(
+            GL_TEXTURE_2D,
+            0,
+            GL_RED,
+            face->glyph->bitmap.width,
+            face->glyph->bitmap.rows,
+            0,
+            GL_RED,
+            GL_UNSIGNED_BYTE,
+            face->glyph->bitmap.buffer
+        );
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        Character character = {
+            texture,
+            glm::ivec2(face->glyph->bitmap.width, face->glyph->bitmap.rows),
+            glm::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
+            face->glyph->advance.x
+        };
+        Characters.insert(std::pair<unsigned char, Character>(0xB8, character));
+        russianLoaded++;
+    }
+
+    std::cout << "✓ Загружено русских символов: " << russianLoaded << std::endl;
+    std::cout << "✓ Всего символов: " << Characters.size() << std::endl;
+    std::cout << "============================================\n" << std::endl;
 
     glGenVertexArrays(1, &textVAO);
     glGenBuffers(1, &textVBO);
@@ -1001,17 +1086,25 @@ void initFreeType() {
     initTextShader();
 }
 
-float getTextWidth(const std::string& text, float scale) {
+float getTextWidth(const char* text, float scale) {
     float width = 0;
-    for (char c : text) {
-        Character ch = Characters[c];
-        width += (ch.Advance >> 6) * scale;
+    for (const unsigned char* c = (const unsigned char*)text; *c; c++) {
+        auto it = Characters.find(*c);
+        if (it != Characters.end()) {
+            width += (it->second.Advance >> 6) * scale;
+        }
+        else {
+            auto spaceIt = Characters.find(' ');
+            if (spaceIt != Characters.end()) {
+                width += (spaceIt->second.Advance >> 6) * scale;
+            }
+        }
     }
     return width;
 }
 
-void renderText(const std::string& text, float x, float y, float scale, glm::vec3 color, bool centerX, bool centerY) {
-    if (text.empty()) return;
+void renderText(const char* text, float x, float y, float scale, glm::vec3 color, bool centerX, bool centerY) {
+    if (!text || !*text) return;
 
     float textWidth = getTextWidth(text, scale);
     float textHeight = 48 * scale;
@@ -1031,8 +1124,14 @@ void renderText(const std::string& text, float x, float y, float scale, glm::vec
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(textVAO);
 
-    for (char c : text) {
-        Character ch = Characters[c];
+    for (const unsigned char* c = (const unsigned char*)text; *c; c++) {
+        auto it = Characters.find(*c);
+        if (it == Characters.end()) {
+            it = Characters.find(' ');
+            if (it == Characters.end()) continue;
+        }
+
+        Character ch = it->second;
 
         float xpos = x + ch.Bearing.x * scale;
         float ypos = y + (ch.Size.y - ch.Bearing.y) * scale;
@@ -1044,7 +1143,6 @@ void renderText(const std::string& text, float x, float y, float scale, glm::vec
             { xpos,     ypos - h,   0.0f, 0.0f },
             { xpos,     ypos,       0.0f, 1.0f },
             { xpos + w, ypos,       1.0f, 1.0f },
-
             { xpos,     ypos - h,   0.0f, 0.0f },
             { xpos + w, ypos,       1.0f, 1.0f },
             { xpos + w, ypos - h,   1.0f, 0.0f }
@@ -1069,7 +1167,7 @@ void renderText(const std::string& text, float x, float y, float scale, glm::vec
 //=============================================================================
 // UI ЭЛЕМЕНТЫ
 //=============================================================================
-bool drawButton(int x, int y, int w, int h, const std::string& text, bool enabled) {
+bool drawButton(int x, int y, int w, int h, const char* text, bool enabled) {
     bool hover = (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h);
 
     glDisable(GL_DEPTH_TEST);
@@ -1107,7 +1205,7 @@ bool drawButton(int x, int y, int w, int h, const std::string& text, bool enable
     return enabled && hover && mousePressed && !mousePressedLast;
 }
 
-bool drawSlider(int x, int y, int w, float* value, float minVal, float maxVal, const std::string& label) {
+bool drawSlider(int x, int y, int w, float* value, float minVal, float maxVal, const char* label) {
     bool hover = (mouseX >= x && mouseX <= x + w && mouseY >= y - 10 && mouseY <= y + 10);
     bool changed = false;
 
@@ -1140,14 +1238,23 @@ bool drawSlider(int x, int y, int w, float* value, float minVal, float maxVal, c
     glVertex2f(thumbX - 5, y + 10);
     glEnd();
 
-    char valueText[50];
-    sprintf_s(valueText, "%s: %.2f", label.c_str(), *value);
-    renderText(valueText, x + w + 10, y - 5, 0.2f, glm::vec3(1.0f, 1.0f, 1.0f));
+    char valueText[100];
+    sprintf_s(valueText, "%s: %.2f", label, *value);
+    renderText(valueText, x + w + 10, y - 5, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
 
     return changed;
 }
 
-void drawInfoBox(int x, int y, int w, int h, const std::string& label, const std::string& value) {
+bool drawIntSlider(int x, int y, int w, int* value, int minVal, int maxVal, const char* label) {
+    float fval = (float)*value;
+    bool changed = drawSlider(x, y, w, &fval, (float)minVal, (float)maxVal, label);
+    if (changed) {
+        *value = (int)(fval + 0.5f);
+    }
+    return changed;
+}
+
+void drawInfoBox(int x, int y, int w, int h, const char* label, const char* value) {
     glDisable(GL_DEPTH_TEST);
 
     glColor3f(0.2f, 0.2f, 0.2f);
@@ -1170,741 +1277,28 @@ void drawInfoBox(int x, int y, int w, int h, const std::string& label, const std
     renderText(value, x + 5, y + 45, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
 }
 
-//=============================================================================
-// 3D ПРЕДПРОСМОТР
-//=============================================================================
-void render3DPreview() {
-    int previewX = 650;
-    int previewY = 120;
-    int previewW = 500;
-    int previewH = 400;
+void drawColorPicker(int x, int y, const char* label, glm::vec3& color) {
+    renderRussianText(label, x, y - 20, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
 
-    std::cout << "\n========== 3D PREVIEW DEBUG ==========" << std::endl;
-    std::cout << "Preview area: (" << previewX << ", " << previewY << ") size: " << previewW << "x" << previewH << std::endl;
-    std::cout << "Current rotation: " << previewRotation << "°" << std::endl;
-    std::cout << "Selected part: " << selectedPart << " (0=Head, 1=Body, 2=Tail)" << std::endl;
-
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
-
-    glViewport(previewX, windowHeight - previewY - previewH, previewW, previewH);
-    glClear(GL_DEPTH_BUFFER_BIT);
-
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
-
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix();
-    glLoadIdentity();
-
-    float aspect = (float)previewW / previewH;
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-    glLoadMatrixf(glm::value_ptr(projection));
-
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
-
-    glm::vec3 eye(3.0f, 2.0f, 5.0f);
-    glm::vec3 center(0.0f);
-    glm::vec3 up(0.0f, 1.0f, 0.0f);
-    glm::mat4 view = glm::lookAt(eye, center, up);
-    glLoadMatrixf(glm::value_ptr(view));
-
-    glRotatef(previewRotation, 0.0f, 1.0f, 0.0f);
-
-    glDisable(GL_LIGHTING);
-    glDisable(GL_LIGHT0);
-
-    drawGrid();
-    drawTexturedFloor();
-
-    if (!currentModelData.loaded) {
-        std::cout << "⚠ WARNING: No model loaded for preview!" << std::endl;
-        std::cout << "Loading status: " << (currentModelData.loaded ? "LOADED" : "NOT LOADED") << std::endl;
-
-        glColor3f(1.0f, 0.0f, 0.0f);
-        glBegin(GL_QUADS);
-        glVertex3f(-0.5f, -0.5f, 0.5f);
-        glVertex3f(0.5f, -0.5f, 0.5f);
-        glVertex3f(0.5f, 0.5f, 0.5f);
-        glVertex3f(-0.5f, 0.5f, 0.5f);
-        glVertex3f(-0.5f, -0.5f, -0.5f);
-        glVertex3f(-0.5f, 0.5f, -0.5f);
-        glVertex3f(0.5f, 0.5f, -0.5f);
-        glVertex3f(0.5f, -0.5f, -0.5f);
-        glEnd();
-    }
-    else {
-        switch (selectedPart) {
-        case 0: glColor3f(0.0f, 1.0f, 0.0f); break;
-        case 1: glColor3f(0.0f, 0.7f, 0.0f); break;
-        case 2: glColor3f(0.0f, 0.5f, 0.0f); break;
-        default: glColor3f(1.0f, 1.0f, 1.0f); break;
-        }
-
-        drawModel(currentModelData);
-    }
-
-    glMatrixMode(GL_PROJECTION);
-    glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    glPopMatrix();
-
-    glPopAttrib();
-
-    reset2DProjection();
-
-    glColor3f(1.0f, 1.0f, 1.0f);
-    glBegin(GL_LINE_LOOP);
-    glVertex2f(previewX, previewY);
-    glVertex2f(previewX + previewW, previewY);
-    glVertex2f(previewX + previewW, previewY + previewH);
-    glVertex2f(previewX, previewY + previewH);
+    glColor3f(color.r, color.g, color.b);
+    glBegin(GL_QUADS);
+    glVertex2f(x, y);
+    glVertex2f(x + 60, y);
+    glVertex2f(x + 60, y + 35);
+    glVertex2f(x, y + 35);
     glEnd();
-
-    renderText("3D Preview", previewX + 10, previewY + 25, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
-}
-
-void renderObstaclePreview() {
-    int previewX = 650;
-    int previewY = 120;
-    int previewW = 500;
-    int previewH = 400;
-
-    if (selectedObstacle < 0 || selectedObstacle >= obstacles.size()) return;
-
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
-
-    glViewport(previewX, windowHeight - previewY - previewH, previewW, previewH);
-    glClear(GL_DEPTH_BUFFER_BIT);
-
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
-
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix();
-    glLoadIdentity();
-
-    float aspect = (float)previewW / previewH;
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-    glLoadMatrixf(glm::value_ptr(projection));
-
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
-
-    glm::vec3 eye(3.0f, 2.0f, 5.0f);
-    glm::vec3 center(0.0f);
-    glm::vec3 up(0.0f, 1.0f, 0.0f);
-    glm::mat4 view = glm::lookAt(eye, center, up);
-    glLoadMatrixf(glm::value_ptr(view));
-
-    glRotatef(obstaclePreviewRotation, 0.0f, 1.0f, 0.0f);
-    glScalef(obstacles[selectedObstacle].scale, obstacles[selectedObstacle].scale, obstacles[selectedObstacle].scale);
-
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
-
-    GLfloat lightPos[] = { 2.0f, 3.0f, 2.0f, 1.0f };
-    glLightfv(GL_LIGHT0, GL_POSITION, lightPos);
-
-    GLfloat lightAmbient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbient);
-
-    GLfloat lightDiffuse[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, lightDiffuse);
-
-    GLfloat matDiffuse[4] = {
-        obstacles[selectedObstacle].color.r,
-        obstacles[selectedObstacle].color.g,
-        obstacles[selectedObstacle].color.b,
-        1.0f
-    };
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, matDiffuse);
-
-    drawGrid();
-    drawTexturedFloor();
-
-    ModelData tempModel;
-    loadFBXModel(obstacles[selectedObstacle].modelFile, tempModel, "obstacles");
-    drawModel(tempModel);
-
-    glMatrixMode(GL_PROJECTION);
-    glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    glPopMatrix();
-
-    glPopAttrib();
-
-    reset2DProjection();
-
-    glColor3f(1.0f, 1.0f, 1.0f);
-    glBegin(GL_LINE_LOOP);
-    glVertex2f(previewX, previewY);
-    glVertex2f(previewX + previewW, previewY);
-    glVertex2f(previewX + previewW, previewY + previewH);
-    glVertex2f(previewX, previewY + previewH);
-    glEnd();
-
-    renderText("Obstacle Preview", previewX + 10, previewY + 25, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
-}
-
-void renderEnvironmentModelPreview(const std::string& modelFile, const std::string& subFolder, int x, int y, int w, int h) {
-    if (modelFile.empty()) return;
-
-    static ModelData previewModel;
-    static std::string lastLoadedFile;
-    static std::string lastLoadedFolder;
-
-    if (lastLoadedFile != modelFile || lastLoadedFolder != subFolder) {
-        loadFBXModel(modelFile, previewModel, subFolder);
-        lastLoadedFile = modelFile;
-        lastLoadedFolder = subFolder;
-    }
-
-    if (!previewModel.loaded) return;
-
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
-
-    glViewport(x, windowHeight - y - h, w, h);
-    glClear(GL_DEPTH_BUFFER_BIT);
-
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDisable(GL_BLEND);
-
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix();
-    glLoadIdentity();
-
-    float aspect = (float)w / h;
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
-    glLoadMatrixf(glm::value_ptr(projection));
-
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
-
-    glm::vec3 eye(2.0f, 1.0f, 3.0f);
-    glm::vec3 center(0.0f);
-    glm::vec3 up(0.0f, 1.0f, 0.0f);
-    glm::mat4 view = glm::lookAt(eye, center, up);
-    glLoadMatrixf(glm::value_ptr(view));
-
-    static float previewRot = 0.0f;
-    previewRot += 0.5f;
-    glRotatef(previewRot, 0.0f, 1.0f, 0.0f);
-
-    glDisable(GL_LIGHTING);
-    drawModel(previewModel);
-
-    glMatrixMode(GL_PROJECTION);
-    glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    glPopMatrix();
-
-    glPopAttrib();
-
-    reset2DProjection();
 
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f(x, y);
-    glVertex2f(x + w, y);
-    glVertex2f(x + w, y + h);
-    glVertex2f(x, y + h);
+    glVertex2f(x + 60, y);
+    glVertex2f(x + 60, y + 35);
+    glVertex2f(x, y + 35);
     glEnd();
 
-    renderText("Preview", x + 10, y + 20, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
-}
-
-//=============================================================================
-// РЕДАКТОР ЗМЕЙКИ
-//=============================================================================
-void renderSnakeEditor() {
-    reset2DProjection();
-
-    renderText("SNAKE EDITOR", windowWidth / 2, 50, 0.5f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
-
-    int buttonWidth = 120;
-    int startX = 100;
-    int buttonY = 120;
-
-    if (drawButton(startX, buttonY, buttonWidth, 40, "Head")) {
-        selectedPart = 0;
-        std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-        loadFBXModel(currentConfig.snakeHeadModel, currentModelData, folder);
-    }
-    if (drawButton(startX + 130, buttonY, buttonWidth, 40, "Body")) {
-        selectedPart = 1;
-        std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-        loadFBXModel(currentConfig.snakeBodyModel, currentModelData, folder);
-    }
-    if (drawButton(startX + 260, buttonY, buttonWidth, 40, "Tail")) {
-        selectedPart = 2;
-        std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-        loadFBXModel(currentConfig.snakeTailModel, currentModelData, folder);
-    }
-
-    std::string currentModel;
-    std::string folderName;
-    switch (selectedPart) {
-    case 0:
-        currentModel = currentConfig.snakeHeadModel;
-        folderName = "snake_head";
-        break;
-    case 1:
-        currentModel = currentConfig.snakeBodyModel;
-        folderName = "snake_body";
-        break;
-    case 2:
-        currentModel = currentConfig.snakeTailModel;
-        folderName = "snake_tail";
-        break;
-    }
-
-    drawInfoBox(50, 180, 250, 60, "Current Model", currentModel);
-    renderText("Folder: " + folderName, 50, 260, 0.25f, glm::vec3(0.8f, 0.8f, 0.8f));
-
-    if (drawButton(50, 300, 250, 50, "CHOOSE MODEL")) {
-        lastRotationTime = glfwGetTime();
-        autoRotate = false;
-        openFileDialog();
-    }
-
-    render3DPreview();
-
-    int previewX = 650;
-    int previewY = 120;
-    int previewW = 500;
-    int previewH = 400;
-
-    int arrowY = previewY + previewH + 20;
-    int arrowCenterX = previewX + previewW / 2;
-    int arrowWidth = 60;
-    int arrowHeight = 40;
-
-    if (drawButton(arrowCenterX - arrowWidth - 10, arrowY, arrowWidth, arrowHeight, "←")) {
-        previewRotation -= 15.0f;
-        if (previewRotation < 0) previewRotation += 360;
-        lastRotationTime = glfwGetTime();
-        autoRotate = false;
-    }
-
-    if (drawButton(arrowCenterX + 10, arrowY, arrowWidth, arrowHeight, "→")) {
-        previewRotation += 15.0f;
-        if (previewRotation >= 360) previewRotation -= 360;
-        lastRotationTime = glfwGetTime();
-        autoRotate = false;
-    }
-
-    char angleText[50];
-    sprintf_s(angleText, "Angle: %.0f°", previewRotation);
-    renderText(angleText, arrowCenterX, arrowY + arrowHeight + 15, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
-
-    float currentTime = glfwGetTime();
-    float timeSinceLastInput = currentTime - lastRotationTime;
-
-    if (autoRotate) {
-        renderText("Auto-rotation active", arrowCenterX, arrowY + arrowHeight + 40, 0.25f, glm::vec3(0.0f, 1.0f, 0.0f), true, false);
-    }
-    else {
-        if (timeSinceLastInput < autoRotateDelay) {
-            float remainingTime = autoRotateDelay - timeSinceLastInput;
-            char timeText[50];
-            sprintf_s(timeText, "Auto in: %.0f sec", remainingTime);
-            renderText(timeText, arrowCenterX, arrowY + arrowHeight + 40, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
-        }
-    }
-
-    if (drawButton(50, 550, 100, 40, "Back")) {
-        currentMode = MODE_MAIN;
-    }
-
-    if (drawButton(170, 550, 100, 40, "Save")) {
-        lastRotationTime = glfwGetTime();
-        autoRotate = false;
-        saveConfig();
-    }
-
-    if (!autoRotate) {
-        if (timeSinceLastInput >= autoRotateDelay) {
-            autoRotate = true;
-        }
-    }
-
-    if (autoRotate) {
-        previewRotation += rotationSpeed;
-        if (previewRotation >= 360) previewRotation -= 360;
-    }
-}
-
-//=============================================================================
-// РЕДАКТОР ПРЕПЯТСТВИЙ
-//=============================================================================
-void renderObstacleEditor() {
-    reset2DProjection();
-
-    renderText("OBSTACLE EDITOR", windowWidth / 2, 50, 0.5f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
-
-    int listX = 50;
-    int listY = 120;
-    int listWidth = 200;
-    int itemHeight = 30;
-
-    renderText("Obstacles:", listX, listY - 20, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
-
-    for (int i = 0; i < obstacles.size(); i++) {
-        std::string buttonText = obstacles[i].name;
-        if (obstacles[i].enabled) {
-            buttonText = "✓ " + buttonText;
-        }
-
-        if (drawButton(listX, listY + i * (itemHeight + 5), listWidth, itemHeight, buttonText)) {
-            selectedObstacle = i;
-            obstacleLastRotationTime = glfwGetTime();
-            obstacleAutoRotate = false;
-        }
-    }
-
-    if (drawButton(listX, listY + obstacles.size() * (itemHeight + 5) + 10, listWidth, itemHeight, "Add Obstacle")) {
-        ObstacleItem newObstacle;
-        newObstacle.name = "New Obstacle " + std::to_string(obstacles.size() + 1);
-        newObstacle.modelFile = "tree.fbx";
-        newObstacle.color = glm::vec3(0.1f, 0.4f, 0.1f);
-        newObstacle.scale = 1.0f;
-        newObstacle.posX = 30;
-        newObstacle.posZ = 30;
-        newObstacle.enabled = true;
-        obstacles.push_back(newObstacle);
-        selectedObstacle = obstacles.size() - 1;
-    }
-
-    if (selectedObstacle >= 0 && selectedObstacle < obstacles.size()) {
-        int editX = 300;
-        int editY = 120;
-        int editWidth = 300;
-
-        renderText("Properties:", editX, editY - 20, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
-
-        drawInfoBox(editX, editY, editWidth, 60, "Name", obstacles[selectedObstacle].name);
-        drawInfoBox(editX, editY + 70, editWidth, 60, "Model", obstacles[selectedObstacle].modelFile);
-
-        if (drawButton(editX + editWidth + 10, editY + 80, 80, 40, "Browse")) {
-            openObstacleFileDialog();
-        }
-
-        renderText("Color:", editX, editY + 150, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-        drawSlider(editX, editY + 170, 150, &obstacles[selectedObstacle].color.r, 0.0f, 1.0f, "R");
-        drawSlider(editX, editY + 200, 150, &obstacles[selectedObstacle].color.g, 0.0f, 1.0f, "G");
-        drawSlider(editX, editY + 230, 150, &obstacles[selectedObstacle].color.b, 0.0f, 1.0f, "B");
-        drawSlider(editX, editY + 270, 200, &obstacles[selectedObstacle].scale, 0.5f, 3.0f, "Scale");
-
-        char posText[50];
-        sprintf_s(posText, "Pos X: %d, Z: %d", obstacles[selectedObstacle].posX, obstacles[selectedObstacle].posZ);
-        renderText(posText, editX, editY + 310, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-
-        if (drawButton(editX, editY + 340, 100, 30, obstacles[selectedObstacle].enabled ? "Disable" : "Enable")) {
-            obstacles[selectedObstacle].enabled = !obstacles[selectedObstacle].enabled;
-        }
-
-        if (drawButton(editX + 150, editY + 340, 100, 30, "Delete")) {
-            obstacles.erase(obstacles.begin() + selectedObstacle);
-            selectedObstacle = -1;
-        }
-
-        renderObstaclePreview();
-
-        int previewX = 650;
-        int previewY = 120;
-        int previewW = 500;
-        int previewH = 400;
-
-        int arrowY = previewY + previewH + 20;
-        int arrowCenterX = previewX + previewW / 2;
-        int arrowWidth = 60;
-        int arrowHeight = 40;
-
-        if (drawButton(arrowCenterX - arrowWidth - 10, arrowY, arrowWidth, arrowHeight, "←")) {
-            obstaclePreviewRotation -= 15.0f;
-            if (obstaclePreviewRotation < 0) obstaclePreviewRotation += 360;
-            obstacleLastRotationTime = glfwGetTime();
-            obstacleAutoRotate = false;
-        }
-
-        if (drawButton(arrowCenterX + 10, arrowY, arrowWidth, arrowHeight, "→")) {
-            obstaclePreviewRotation += 15.0f;
-            if (obstaclePreviewRotation >= 360) obstaclePreviewRotation -= 360;
-            obstacleLastRotationTime = glfwGetTime();
-            obstacleAutoRotate = false;
-        }
-
-        float currentTime = glfwGetTime();
-        float timeSinceLastInput = currentTime - obstacleLastRotationTime;
-
-        if (!obstacleAutoRotate) {
-            if (timeSinceLastInput >= autoRotateDelay) {
-                obstacleAutoRotate = true;
-            }
-        }
-
-        if (obstacleAutoRotate) {
-            obstaclePreviewRotation += rotationSpeed;
-            if (obstaclePreviewRotation >= 360) obstaclePreviewRotation -= 360;
-        }
-    }
-
-    if (drawButton(50, 550, 100, 40, "Back")) {
-        currentMode = MODE_MAIN;
-    }
-
-    if (drawButton(170, 550, 100, 40, "Save")) {
-        saveConfig();
-    }
-}
-
-//=============================================================================
-// РЕДАКТОР ОКРУЖЕНИЯ
-//=============================================================================
-void renderEnvironmentEditor() {
-    reset2DProjection();
-
-    renderText("ENVIRONMENT EDITOR", windowWidth / 2, 50, 0.5f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
-
-    int startX = 50;
-    int startY = 120;
-    int col1X = 50;
-    int col2X = 350;
-    int col3X = 650;
-    char countText[50];
-
-    // === ЦВЕТА ===
-    renderText("COLORS", col1X, startY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
-
-    renderText("Sky Color:", col1X, startY + 40, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    drawSlider(col1X, startY + 60, 200, &skyColor[0], 0.0f, 1.0f, "R");
-    drawSlider(col1X, startY + 90, 200, &skyColor[1], 0.0f, 1.0f, "G");
-    drawSlider(col1X, startY + 120, 200, &skyColor[2], 0.0f, 1.0f, "B");
-
-    renderText("Floor Color:", col1X, startY + 160, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    drawSlider(col1X, startY + 180, 200, &floorColor[0], 0.0f, 1.0f, "R");
-    drawSlider(col1X, startY + 210, 200, &floorColor[1], 0.0f, 1.0f, "G");
-    drawSlider(col1X, startY + 240, 200, &floorColor[2], 0.0f, 1.0f, "B");
-
-    renderText("Grid Color:", col1X, startY + 280, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    drawSlider(col1X, startY + 300, 200, &gridColor[0], 0.0f, 1.0f, "R");
-    drawSlider(col1X, startY + 330, 200, &gridColor[1], 0.0f, 1.0f, "G");
-    drawSlider(col1X, startY + 360, 200, &gridColor[2], 0.0f, 1.0f, "B");
-
-    // === МОДЕЛИ ОКРУЖЕНИЯ ===
-    renderText("ENVIRONMENT MODELS", col2X, startY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
-
-    int modelY = startY + 40;
-    int labelW = 100;
-    int valueW = 150;
-    int btnW = 80;
-
-    // Яблоко
-    renderText("Apple:", col2X, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    renderText(currentConfig.appleModel, col2X + labelW, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
-    if (drawButton(col2X + labelW + valueW, modelY - 10, btnW, 25, "Browse")) {
-        openModelFileDialog("food", currentConfig.appleModel);
-    }
-    modelY += 35;
-
-    // Дерево
-    renderText("Tree:", col2X, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    renderText(currentConfig.treeModel, col2X + labelW, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
-    if (drawButton(col2X + labelW + valueW, modelY - 10, btnW, 25, "Browse")) {
-        openModelFileDialog("obstacles", currentConfig.treeModel);
-    }
-    modelY += 35;
-
-    // Облако
-    renderText("Cloud:", col2X, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    renderText(currentConfig.cloudModel, col2X + labelW, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
-    if (drawButton(col2X + labelW + valueW, modelY - 10, btnW, 25, "Browse")) {
-        openModelFileDialog("clouds", currentConfig.cloudModel);
-    }
-    modelY += 35;
-
-    // Птица
-    renderText("Bird:", col2X, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    renderText(currentConfig.birdModel, col2X + labelW, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
-    if (drawButton(col2X + labelW + valueW, modelY - 10, btnW, 25, "Browse")) {
-        openModelFileDialog("birds", currentConfig.birdModel);
-    }
-    modelY += 35;
-
-    // Цветок
-    renderText("Flower:", col2X, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    renderText(currentConfig.flowerModel, col2X + labelW, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
-    if (drawButton(col2X + labelW + valueW, modelY - 10, btnW, 25, "Browse")) {
-        openModelFileDialog("flowers", currentConfig.flowerModel);
-    }
-    modelY += 35;
-
-    // Пол
-    renderText("Floor:", col2X, modelY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    renderText(currentConfig.floorModel, col2X + labelW, modelY, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
-    if (drawButton(col2X + labelW + valueW, modelY - 10, btnW, 25, "Browse")) {
-        openModelFileDialog("floor", currentConfig.floorModel);
-    }
-
-    // === ТЕКСТУРЫ ===
-    renderText("TEXTURES", col3X, startY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
-
-    renderText("Floor Texture:", col3X, startY + 40, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-
-    std::string texName = floorTexture.path.empty() ? "None" : floorTexture.path;
-    renderText(texName, col3X + 150, startY + 40, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
-
-    if (drawButton(col3X, startY + 60, 100, 30, "Load")) {
-        std::string filename = openTextureFileDialog();
-        if (!filename.empty()) {
-            loadTexture(filename, floorTexture);
-        }
-    }
-
-    if (drawButton(col3X + 110, startY + 60, 100, 30, "Clear")) {
-        if (floorTexture.id != 0) {
-            glDeleteTextures(1, &floorTexture.id);
-            floorTexture.id = 0;
-            floorTexture.path = "";
-        }
-    }
-
-    // === ОБЪЕКТЫ ===
-    renderText("OBJECTS", col3X, startY + 120, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
-
-    int objY = startY + 160;
-    sprintf_s(countText, "Clouds: %d", cloudCount);
-    renderText(countText, col3X, objY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    if (drawButton(col3X + 100, objY - 10, 40, 30, "+")) cloudCount++;
-    if (drawButton(col3X + 150, objY - 10, 40, 30, "-") && cloudCount > 0) cloudCount--;
-    objY += 40;
-
-    sprintf_s(countText, "Birds: %d", birdCount);
-    renderText(countText, col3X, objY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    if (drawButton(col3X + 100, objY - 10, 40, 30, "+")) birdCount++;
-    if (drawButton(col3X + 150, objY - 10, 40, 30, "-") && birdCount > 0) birdCount--;
-    objY += 40;
-
-    sprintf_s(countText, "Flowers: %d", flowerCount);
-    renderText(countText, col3X, objY, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-    if (drawButton(col3X + 100, objY - 10, 40, 30, "+")) flowerCount++;
-    if (drawButton(col3X + 150, objY - 10, 40, 30, "-") && flowerCount > 0) flowerCount--;
-
-    // === ПРЕДПРОСМОТР ===
-    int previewX = 850;
-    int previewY = 400;
-    int previewW = 300;
-    int previewH = 200;
-
-    // Предпросмотр выбранной модели
-    std::string previewModel;
-    std::string previewFolder;
-
-    // Простой выбор для предпросмотра
-    static int selectedPreview = 0;
-    const char* previewTypes[] = { "Apple", "Tree", "Cloud", "Bird", "Flower", "Floor" };
-    const char* previewModels[] = {
-        currentConfig.appleModel.c_str(),
-        currentConfig.treeModel.c_str(),
-        currentConfig.cloudModel.c_str(),
-        currentConfig.birdModel.c_str(),
-        currentConfig.flowerModel.c_str(),
-        currentConfig.floorModel.c_str()
-    };
-    const char* previewFolders[] = { "food", "obstacles", "clouds", "birds", "flowers", "floor" };
-
-    renderText("Preview:", previewX, previewY - 30, 0.25f, glm::vec3(1.0f, 1.0f, 1.0f));
-
-    // Кнопки для переключения предпросмотра
-    if (drawButton(previewX, previewY - 60, 30, 25, "<")) {
-        selectedPreview = (selectedPreview - 1 + 6) % 6;
-    }
-    renderText(previewTypes[selectedPreview], previewX + 40, previewY - 55, 0.2f, glm::vec3(1.0f, 1.0f, 0.0f));
-    if (drawButton(previewX + 150, previewY - 60, 30, 25, ">")) {
-        selectedPreview = (selectedPreview + 1) % 6;
-    }
-
-    renderEnvironmentModelPreview(
-        previewModels[selectedPreview],
-        previewFolders[selectedPreview],
-        previewX, previewY, previewW, previewH
-    );
-
-    // === КНОПКИ НАВИГАЦИИ ===
-    if (drawButton(50, 550, 100, 40, "Back")) {
-        currentMode = MODE_MAIN;
-    }
-
-    if (drawButton(170, 550, 100, 40, "Save")) {
-        std::cout << "\n⚠️ SAVE BUTTON CLICKED in Environment Editor!" << std::endl;
-
-        currentConfig.skyColor = glm::vec3(skyColor[0], skyColor[1], skyColor[2]);
-        currentConfig.floorColor = glm::vec3(floorColor[0], floorColor[1], floorColor[2]);
-        currentConfig.gridColor = glm::vec3(gridColor[0], gridColor[1], gridColor[2]);
-        currentConfig.cloudCount = cloudCount;
-        currentConfig.birdCount = birdCount;
-        currentConfig.flowerCount = flowerCount;
-
-        saveConfig();
-    }
-}
-
-//=============================================================================
-// ГЛАВНОЕ МЕНЮ
-//=============================================================================
-void renderMainMenu() {
-    reset2DProjection();
-
-    renderText("SNAKE GAME CONFIG EDITOR", windowWidth / 2, 80, 0.6f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
-
-    int buttonWidth = 250;
-    int buttonHeight = 50;
-    int startY = 200;
-    int centerX = windowWidth / 2 - buttonWidth / 2;
-
-    if (drawButton(centerX, startY, buttonWidth, buttonHeight, "1. Snake Editor")) {
-        currentMode = MODE_SNAKE_EDITOR;
-        std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-        loadFBXModel(currentConfig.snakeHeadModel, currentModelData, folder);
-    }
-
-    if (drawButton(centerX, startY + 70, buttonWidth, buttonHeight, "2. Obstacle Editor")) {
-        currentMode = MODE_OBSTACLE_EDITOR;
-    }
-
-    if (drawButton(centerX, startY + 140, buttonWidth, buttonHeight, "3. Environment Editor")) {
-        currentMode = MODE_ENVIRONMENT_EDITOR;
-        skyColor[0] = currentConfig.skyColor.r;
-        skyColor[1] = currentConfig.skyColor.g;
-        skyColor[2] = currentConfig.skyColor.b;
-        floorColor[0] = currentConfig.floorColor.r;
-        floorColor[1] = currentConfig.floorColor.g;
-        floorColor[2] = currentConfig.floorColor.b;
-        gridColor[0] = currentConfig.gridColor.r;
-        gridColor[1] = currentConfig.gridColor.g;
-        gridColor[2] = currentConfig.gridColor.b;
-        cloudCount = currentConfig.cloudCount;
-        birdCount = currentConfig.birdCount;
-        flowerCount = currentConfig.flowerCount;
-    }
-
-    if (drawButton(centerX, startY + 210, buttonWidth, buttonHeight, "4. Save and Exit")) {
-        saveConfig();
-        glfwSetWindowShouldClose(window, true);
-    }
-
-    std::string gridInfo = "Grid: " + std::to_string(currentConfig.gridWidth) + "x" +
-        std::to_string(currentConfig.gridDepth);
-    renderText(gridInfo, windowWidth / 2, 600, 0.3f, glm::vec3(0.8f, 0.8f, 1.0f), true, false);
+    drawSlider(x + 70, y + 5, 120, &color.r, 0.0f, 1.0f, "R");
+    drawSlider(x + 70, y + 40, 120, &color.g, 0.0f, 1.0f, "G");
+    drawSlider(x + 70, y + 75, 120, &color.b, 0.0f, 1.0f, "B");
 }
 
 //=============================================================================
@@ -1914,15 +1308,6 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         mousePressedLast = mousePressed;
         mousePressed = (action == GLFW_PRESS);
-
-        if (currentMode == MODE_SNAKE_EDITOR && action == GLFW_PRESS) {
-            lastRotationTime = glfwGetTime();
-            autoRotate = false;
-        }
-        if (currentMode == MODE_OBSTACLE_EDITOR && action == GLFW_PRESS) {
-            obstacleLastRotationTime = glfwGetTime();
-            obstacleAutoRotate = false;
-        }
     }
 }
 
@@ -1932,36 +1317,8 @@ void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
 }
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+    if (action == GLFW_PRESS) {
         switch (key) {
-        case GLFW_KEY_LEFT:
-            if (currentMode == MODE_SNAKE_EDITOR) {
-                previewRotation -= 15.0f;
-                if (previewRotation < 0) previewRotation += 360;
-                lastRotationTime = glfwGetTime();
-                autoRotate = false;
-            }
-            else if (currentMode == MODE_OBSTACLE_EDITOR) {
-                obstaclePreviewRotation -= 15.0f;
-                if (obstaclePreviewRotation < 0) obstaclePreviewRotation += 360;
-                obstacleLastRotationTime = glfwGetTime();
-                obstacleAutoRotate = false;
-            }
-            break;
-        case GLFW_KEY_RIGHT:
-            if (currentMode == MODE_SNAKE_EDITOR) {
-                previewRotation += 15.0f;
-                if (previewRotation >= 360) previewRotation -= 360;
-                lastRotationTime = glfwGetTime();
-                autoRotate = false;
-            }
-            else if (currentMode == MODE_OBSTACLE_EDITOR) {
-                obstaclePreviewRotation += 15.0f;
-                if (obstaclePreviewRotation >= 360) obstaclePreviewRotation -= 360;
-                obstacleLastRotationTime = glfwGetTime();
-                obstacleAutoRotate = false;
-            }
-            break;
         case GLFW_KEY_ESCAPE:
             if (currentMode != MODE_MAIN) {
                 currentMode = MODE_MAIN;
@@ -1974,29 +1331,953 @@ void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
     }
 }
 
+void windowSizeCallback(GLFWwindow* window, int width, int height) {
+    windowWidth = width;
+    windowHeight = height;
+    glViewport(0, 0, width, height);
+}
+
+//=============================================================================
+// ГЛАВНОЕ МЕНЮ
+//=============================================================================
+void renderMainMenu() {
+    reset2DProjection();
+
+    renderRussianText("РЕДАКТОР КОНФИГУРАЦИИ ИГРЫ ЗМЕЙКА",
+        windowWidth / 2, windowHeight * 0.08f, 0.6f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
+
+    int buttonWidth = windowWidth * 0.28f; // 28% от ширины
+    int buttonHeight = windowHeight * 0.07f; // 7% от высоты
+    int startY = windowHeight * 0.2f; // 20% от верха
+    int centerX = windowWidth / 2 - buttonWidth / 2;
+    int spacing = windowHeight * 0.08f; // 8% от высоты
+
+    if (drawRussianButton(centerX, startY, buttonWidth, buttonHeight, "1. ЗМЕЯ")) {
+        currentMode = MODE_SNAKE_EDITOR;
+        selectedPart = 0;
+        updatePreviewForCurrentMode();
+        if (!snakeElements.empty()) {
+            std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
+            loadFBXModel(snakeElements[selectedPart]->modelFile, previewModel, folder);
+        }
+    }
+
+    if (drawRussianButton(centerX, startY + spacing, buttonWidth, buttonHeight, "2. ПОЛ И НЕБО")) {
+        currentMode = MODE_GROUND_SKY_EDITOR;
+        selectedGroundSky = 0;
+        updatePreviewForCurrentMode();
+
+        if (!groundSkyElements.empty()) {
+            loadFBXModel(groundSkyElements[0]->modelFile, previewModel, "floor");
+        }
+    }
+
+    if (drawRussianButton(centerX, startY + spacing * 2, buttonWidth, buttonHeight, "3. ПРЕГРАДЫ")) {
+        currentMode = MODE_OBSTACLES_EDITOR;
+        selectedObstacle = 0;
+        updatePreviewForCurrentMode();
+
+        if (!obstaclesElements.empty()) {
+            loadFBXModel(obstaclesElements[0]->modelFile, previewModel, "obstacles");
+        }
+    }
+
+    if (drawRussianButton(centerX, startY + spacing * 3, buttonWidth, buttonHeight, "4. ОКРУЖЕНИЕ")) {
+        currentMode = MODE_ENVIRONMENT_EDITOR;
+        selectedEnv = 0;
+        updatePreviewForCurrentMode();
+
+        if (!environmentElements.empty()) {
+            std::string folder = (selectedEnv == 0) ? "flowers" : (selectedEnv == 1) ? "birds" : "clouds";
+            loadFBXModel(environmentElements[selectedEnv]->modelFile, previewModel, folder);
+        }
+    }
+
+    if (drawRussianButton(centerX, startY + spacing * 4, buttonWidth, buttonHeight, "5. ИГРОВОЕ ПОЛЕ")) {
+        currentMode = MODE_GRID_EDITOR;
+        updatePreviewForCurrentMode();
+
+    }
+
+    if (drawRussianButton(centerX, startY + spacing * 5 + 20, buttonWidth, buttonHeight, "СОХРАНИТЬ И ВЫЙТИ")) {
+        saveConfig();
+        glfwSetWindowShouldClose(window, true);
+    }
+
+    char gridInfo[100];
+    sprintf_s(gridInfo, "Сетка: %dx%d  Размер ячейки: %.2f",
+        currentConfig.gridWidth, currentConfig.gridDepth, currentConfig.cellSize);
+    renderRussianText(gridInfo, windowWidth / 2, windowHeight * 0.9f, 0.3f, glm::vec3(0.8f, 0.8f, 1.0f), true, false);
+}
+
+//=============================================================================
+// РЕДАКТОР ЗМЕЙКИ
+//=============================================================================
+void renderSnakeEditor() {
+    reset2DProjection();
+
+    renderRussianText("РЕДАКТОР ЗМЕЙКИ", windowWidth / 2, windowHeight * 0.05f, 0.6f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
+
+    int listX = windowWidth * 0.03f;
+    int listY = windowHeight * 0.12f;
+    int listWidth = windowWidth * 0.1f;
+    int listHeight = windowHeight * 0.05f;
+
+    // Список частей змеи
+    for (size_t i = 0; i < snakeElements.size(); i++) {
+        char btnText[100];
+        sprintf_s(btnText, "%s", snakeElements[i]->name.c_str());
+        if (drawRussianButton(listX, listY + i * (listHeight + 10), listWidth, listHeight, btnText)) {
+            selectedPart = i;
+            updatePreviewForCurrentMode();
+        }
+    }
+
+    if (selectedPart >= 0 && selectedPart < snakeElements.size()) {
+        VisualElement* el = snakeElements[selectedPart];
+
+        int editX = windowWidth * 0.18f;
+        int editY = windowHeight * 0.12f;
+        int sectionWidth = 300;
+        int buttonWidth = 90;
+        int buttonSpacing = 100;
+
+        renderRussianText(el->name.c_str(), editX, editY - 20, 0.4f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        // ===== МОДЕЛЬ =====
+        int modelY = editY;
+        renderRussianText("Модель:", editX, modelY + 20, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+        renderRussianText(el->modelFile.c_str(), editX + 80, modelY + 20, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // Кнопки для модели
+        if (drawRussianButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
+            std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
+            openFileDialog(el->modelFile, folder);
+        }
+
+        if (drawRussianButton(editX + buttonSpacing, modelY + 40, buttonWidth, 30, "СБРОСИТЬ")) {
+            if (selectedPart == 0) el->modelFile = "snake_head.fbx";
+            else if (selectedPart == 1) el->modelFile = "snake_body.fbx";
+            else el->modelFile = "snake_tail.fbx";
+            updatePreviewForCurrentMode();
+        }
+
+        // ===== ЦВЕТ =====
+        int colorY = modelY + 90;
+        renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        // Прямоугольник с цветом
+        glColor3f(el->color.r, el->color.g, el->color.b);
+        glBegin(GL_QUADS);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        // Слайдеры цвета справа
+        drawSlider(editX + 120, colorY - 10, 150, &el->color.r, 0.0f, 1.0f, "R");
+        drawSlider(editX + 120, colorY + 15, 150, &el->color.g, 0.0f, 1.0f, "G");
+        drawSlider(editX + 120, colorY + 40, 150, &el->color.b, 0.0f, 1.0f, "B");
+
+        // Кнопка сброса цвета
+        if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
+            if (selectedPart == 0) el->color = glm::vec3(0.0f, 1.0f, 0.0f);
+            else if (selectedPart == 1) el->color = glm::vec3(0.0f, 0.7f, 0.0f);
+            else el->color = glm::vec3(0.0f, 0.5f, 0.0f);
+        }
+
+        // ===== МАСШТАБ =====
+        int scaleY = colorY + 80;
+        renderRussianText("Масштаб:", editX, scaleY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        char scaleText[20];
+        sprintf_s(scaleText, "%.2f", el->scale);
+        renderRussianText(scaleText, editX + 100, scaleY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        drawSlider(editX, scaleY + 20, 250, &el->scale, 0.1f, 3.0f, "");
+
+        // Кнопка сброса масштаба
+        if (drawRussianButton(editX + 260, scaleY + 10, 80, 30, "СБРОСИТЬ")) {
+            el->scale = 0.8f;
+        }
+
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для текущей секции) =====
+        if (drawRussianButton(editX, scaleY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
+            if (selectedPart == 0) {
+                el->modelFile = "snake_head.fbx";
+                el->color = glm::vec3(0.0f, 1.0f, 0.0f);
+                el->scale = 0.8f;
+            }
+            else if (selectedPart == 1) {
+                el->modelFile = "snake_body.fbx";
+                el->color = glm::vec3(0.0f, 0.7f, 0.0f);
+                el->scale = 0.8f;
+            }
+            else {
+                el->modelFile = "snake_tail.fbx";
+                el->color = glm::vec3(0.0f, 0.5f, 0.0f);
+                el->scale = 0.8f;
+            }
+            updatePreviewForCurrentMode();
+        }
+    }
+
+    // Предпросмотр
+    renderModelPreview(previewModel, "ПРЕДПРОСМОТР",
+        windowWidth * 0.46f, windowHeight * 0.12f,
+        windowWidth * 0.36f, windowHeight * 0.5f,
+        previewRotation, autoRotate, lastRotationTime);
+
+    if (drawRussianButton(windowWidth * 0.03f, windowHeight * 0.9f, 150, 50, "НАЗАД")) {
+        currentMode = MODE_MAIN;
+        saveConfig();
+    }
+}
+
+//=============================================================================
+// РЕДАКТОР ПОЛА И НЕБА
+//=============================================================================
+void renderGroundSkyEditor() {
+    reset2DProjection();
+
+    renderRussianText("ПОЛ И НЕБО", windowWidth / 2, windowHeight * 0.05f, 0.6f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
+
+    int listX = windowWidth * 0.03f;
+    int listY = windowHeight * 0.12f;
+    int listWidth = windowWidth * 0.1f;
+    int listHeight = windowHeight * 0.05f;
+
+    for (size_t i = 0; i < groundSkyElements.size(); i++) {
+        char btnText[100];
+        sprintf_s(btnText, "%s", groundSkyElements[i]->name.c_str());
+        if (drawRussianButton(listX, listY + i * (listHeight + 10), listWidth, listHeight, btnText)) {
+            selectedGroundSky = i;
+            updatePreviewForCurrentMode();
+        }
+    }
+
+    if (selectedGroundSky == 0) {
+        // ПОЛ
+        VisualElement* ground = groundSkyElements[0];
+
+        int editX = windowWidth * 0.18f;
+        int editY = windowHeight * 0.12f;
+        int buttonWidth = 90;
+        int buttonSpacing = 100;
+
+        renderRussianText(ground->name.c_str(), editX, editY - 20, 0.4f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        // ===== МОДЕЛЬ ПОЛА =====
+        int modelY = editY;
+        renderRussianText("Модель:", editX, modelY + 20, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+        renderRussianText(ground->modelFile.c_str(), editX + 80, modelY + 20, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // Кнопки для модели
+        if (drawRussianButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
+            openFileDialog(ground->modelFile, "floor");
+        }
+
+        if (drawRussianButton(editX + buttonSpacing, modelY + 40, buttonWidth, 30, "СБРОСИТЬ")) {
+            ground->modelFile = "";
+            updatePreviewForCurrentMode();
+        }
+
+        // ===== ТЕКСТУРА ПОЛА =====
+        int textureY = modelY + 90;
+        renderRussianText("Текстура:", editX, textureY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+        renderRussianText(ground->textureFile.c_str(), editX + 100, textureY, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // Кнопки для текстуры
+        if (drawRussianButton(editX, textureY + 20, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
+            openTextureFileDialog(ground->textureFile, floorTexture);
+        }
+
+        if (drawRussianButton(editX + buttonSpacing, textureY + 20, buttonWidth, 30, "СБРОСИТЬ")) {
+            ground->textureFile = "";
+            if (floorTexture.id != 0) {
+                glDeleteTextures(1, &floorTexture.id);
+                floorTexture.id = 0;
+            }
+        }
+
+        // ===== ЦВЕТ ПОЛА =====
+        int colorY = textureY + 70;
+        renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        // Прямоугольник с цветом
+        glColor3f(ground->color.r, ground->color.g, ground->color.b);
+        glBegin(GL_QUADS);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        // Слайдеры цвета справа
+        drawSlider(editX + 120, colorY - 10, 150, &ground->color.r, 0.0f, 1.0f, "R");
+        drawSlider(editX + 120, colorY + 15, 150, &ground->color.g, 0.0f, 1.0f, "G");
+        drawSlider(editX + 120, colorY + 40, 150, &ground->color.b, 0.0f, 1.0f, "B");
+
+        // Кнопка сброса цвета
+        if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
+            ground->color = glm::vec3(0.3f, 0.6f, 0.2f);
+        }
+
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для пола) =====
+        if (drawRussianButton(editX, colorY + 80, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
+            ground->modelFile = "";
+            ground->textureFile = "";
+            ground->color = glm::vec3(0.3f, 0.6f, 0.2f);
+            if (floorTexture.id != 0) {
+                glDeleteTextures(1, &floorTexture.id);
+                floorTexture.id = 0;
+            }
+            updatePreviewForCurrentMode();
+        }
+
+        // Предпросмотр для пола
+        renderModelPreview(previewModel, "ПРЕДПРОСМОТР ПОЛА",
+            windowWidth * 0.46f, windowHeight * 0.12f,
+            windowWidth * 0.36f, windowHeight * 0.5f,
+            previewRotation, autoRotate, lastRotationTime);
+    }
+    else {
+        // НЕБО
+        VisualElement* sky = groundSkyElements[1];
+
+        int editX = windowWidth * 0.18f;
+        int editY = windowHeight * 0.12f;
+        int buttonWidth = 90;
+        int buttonSpacing = 100;
+
+        renderRussianText(sky->name.c_str(), editX, editY - 20, 0.4f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        // ===== ТЕКСТУРА НЕБА =====
+        int textureY = editY;
+        renderRussianText("Текстура:", editX, textureY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+        renderRussianText(sky->textureFile.c_str(), editX + 100, textureY, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // Кнопки для текстуры
+        if (drawRussianButton(editX, textureY + 20, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
+            openTextureFileDialog(sky->textureFile, skyTexture);
+        }
+
+        if (drawRussianButton(editX + buttonSpacing, textureY + 20, buttonWidth, 30, "СБРОСИТЬ")) {
+            sky->textureFile = "";
+            if (skyTexture.id != 0) {
+                glDeleteTextures(1, &skyTexture.id);
+                skyTexture.id = 0;
+            }
+        }
+
+        // ===== ЦВЕТ НЕБА =====
+        int colorY = textureY + 70;
+        renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        // Прямоугольник с цветом
+        glColor3f(sky->color.r, sky->color.g, sky->color.b);
+        glBegin(GL_QUADS);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        // Слайдеры цвета справа
+        drawSlider(editX + 120, colorY - 10, 150, &sky->color.r, 0.0f, 1.0f, "R");
+        drawSlider(editX + 120, colorY + 15, 150, &sky->color.g, 0.0f, 1.0f, "G");
+        drawSlider(editX + 120, colorY + 40, 150, &sky->color.b, 0.0f, 1.0f, "B");
+
+        // Кнопка сброса цвета
+        if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
+            sky->color = glm::vec3(0.53f, 0.81f, 0.92f);
+        }
+
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для неба) =====
+        if (drawRussianButton(editX, colorY + 80, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
+            sky->textureFile = "";
+            sky->color = glm::vec3(0.53f, 0.81f, 0.92f);
+            if (skyTexture.id != 0) {
+                glDeleteTextures(1, &skyTexture.id);
+                skyTexture.id = 0;
+            }
+        }
+
+        // Для неба показываем сообщение
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(windowWidth * 0.46f, windowHeight * 0.12f);
+        glVertex2f(windowWidth * 0.46f + windowWidth * 0.36f, windowHeight * 0.12f);
+        glVertex2f(windowWidth * 0.46f + windowWidth * 0.36f, windowHeight * 0.12f + windowHeight * 0.5f);
+        glVertex2f(windowWidth * 0.46f, windowHeight * 0.12f + windowHeight * 0.5f);
+        glEnd();
+
+        renderRussianText("НЕТ ПРЕДПРОСМОТРА ДЛЯ НЕБА",
+            windowWidth * 0.46f + windowWidth * 0.18f,
+            windowHeight * 0.12f + windowHeight * 0.25f,
+            0.3f, glm::vec3(1.0f, 1.0f, 0.0f), true, true);
+    }
+
+    if (drawRussianButton(windowWidth * 0.03f, windowHeight * 0.9f, 150, 50, "НАЗАД")) {
+        currentMode = MODE_MAIN;
+        saveConfig();
+    }
+}
+
+//=============================================================================
+// РЕДАКТОР ПРЕГРАД
+//=============================================================================
+void renderObstaclesEditor() {
+    reset2DProjection();
+
+    renderRussianText("ПРЕГРАДЫ", windowWidth / 2, windowHeight * 0.05f, 0.6f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
+
+    int listX = windowWidth * 0.03f;
+    int listY = windowHeight * 0.12f;
+    int listWidth = windowWidth * 0.1f;
+    int listHeight = windowHeight * 0.05f;
+
+    for (size_t i = 0; i < obstaclesElements.size(); i++) {
+        char btnText[100];
+        sprintf_s(btnText, "%s", obstaclesElements[i]->name.c_str());
+        if (drawRussianButton(listX, listY + i * (listHeight + 10), listWidth, listHeight, btnText)) {
+            selectedObstacle = i;
+            updatePreviewForCurrentMode();
+        }
+    }
+
+    if (selectedObstacle >= 0 && selectedObstacle < obstaclesElements.size()) {
+        VisualElement* el = obstaclesElements[selectedObstacle];
+
+        int editX = windowWidth * 0.18f;
+        int editY = windowHeight * 0.12f;
+        int buttonWidth = 90;
+        int buttonSpacing = 100;
+
+        renderRussianText(el->name.c_str(), editX, editY - 20, 0.4f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        // ===== МОДЕЛЬ =====
+        int modelY = editY;
+        renderRussianText("Модель:", editX, modelY + 20, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+        renderRussianText(el->modelFile.c_str(), editX + 80, modelY + 20, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // Кнопки для модели
+        if (drawRussianButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
+            openFileDialog(el->modelFile, "obstacles");
+        }
+
+        if (drawRussianButton(editX + buttonSpacing, modelY + 40, buttonWidth, 30, "СБРОСИТЬ")) {
+            if (selectedObstacle == 0) el->modelFile = "tree.fbx";
+            else if (selectedObstacle == 1) el->modelFile = "rock.fbx";
+            else if (selectedObstacle == 2) el->modelFile = "fence.fbx";
+            else el->modelFile = "apple.fbx";
+            updatePreviewForCurrentMode();
+        }
+
+        // ===== ЦВЕТ =====
+        int colorY = modelY + 90;
+        renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        // Прямоугольник с цветом
+        glColor3f(el->color.r, el->color.g, el->color.b);
+        glBegin(GL_QUADS);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        // Слайдеры цвета справа
+        drawSlider(editX + 120, colorY - 10, 150, &el->color.r, 0.0f, 1.0f, "R");
+        drawSlider(editX + 120, colorY + 15, 150, &el->color.g, 0.0f, 1.0f, "G");
+        drawSlider(editX + 120, colorY + 40, 150, &el->color.b, 0.0f, 1.0f, "B");
+
+        // Кнопка сброса цвета
+        if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
+            if (selectedObstacle == 0) el->color = glm::vec3(0.1f, 0.4f, 0.1f);
+            else if (selectedObstacle == 1) el->color = glm::vec3(0.5f, 0.5f, 0.5f);
+            else if (selectedObstacle == 2) el->color = glm::vec3(0.6f, 0.4f, 0.2f);
+            else el->color = glm::vec3(1.0f, 0.0f, 0.0f);
+        }
+
+        // ===== МАСШТАБ =====
+        int scaleY = colorY + 80;
+        renderRussianText("Масштаб:", editX, scaleY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        char scaleText[20];
+        sprintf_s(scaleText, "%.2f", el->scale);
+        renderRussianText(scaleText, editX + 100, scaleY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        drawSlider(editX, scaleY + 20, 250, &el->scale, 0.1f, 3.0f, "");
+
+        // Кнопка сброса масштаба
+        if (drawRussianButton(editX + 260, scaleY + 10, 80, 30, "СБРОСИТЬ")) {
+            if (selectedObstacle == 0) el->scale = 1.5f;
+            else if (selectedObstacle == 1) el->scale = 1.2f;
+            else if (selectedObstacle == 2) el->scale = 1.0f;
+            else el->scale = 0.8f;
+        }
+
+        // ===== КОЛИЧЕСТВО =====
+        int countY = scaleY + 70;
+        renderRussianText("Количество:", editX, countY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        char countText[20];
+        sprintf_s(countText, "%d", el->count);
+        renderRussianText(countText, editX + 120, countY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        drawIntSlider(editX, countY + 20, 250, &el->count, 0, 50, "");
+
+        // Кнопка сброса количества
+        if (drawRussianButton(editX + 260, countY + 10, 80, 30, "СБРОСИТЬ")) {
+            if (selectedObstacle == 0) el->count = 10;
+            else if (selectedObstacle == 1) el->count = 5;
+            else if (selectedObstacle == 2) el->count = 8;
+            else el->count = 10;
+        }
+
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для текущего элемента) =====
+        if (drawRussianButton(editX, countY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
+            if (selectedObstacle == 0) {
+                el->modelFile = "tree.fbx";
+                el->color = glm::vec3(0.1f, 0.4f, 0.1f);
+                el->scale = 1.5f;
+                el->count = 10;
+            }
+            else if (selectedObstacle == 1) {
+                el->modelFile = "rock.fbx";
+                el->color = glm::vec3(0.5f, 0.5f, 0.5f);
+                el->scale = 1.2f;
+                el->count = 5;
+            }
+            else if (selectedObstacle == 2) {
+                el->modelFile = "fence.fbx";
+                el->color = glm::vec3(0.6f, 0.4f, 0.2f);
+                el->scale = 1.0f;
+                el->count = 8;
+            }
+            else {
+                el->modelFile = "apple.fbx";
+                el->color = glm::vec3(1.0f, 0.0f, 0.0f);
+                el->scale = 0.8f;
+                el->count = 10;
+            }
+            updatePreviewForCurrentMode();
+        }
+    }
+
+    renderModelPreview(previewModel, "ПРЕДПРОСМОТР",
+        windowWidth * 0.46f, windowHeight * 0.12f,
+        windowWidth * 0.36f, windowHeight * 0.5f,
+        previewRotation, autoRotate, lastRotationTime);
+
+    if (drawRussianButton(windowWidth * 0.03f, windowHeight * 0.9f, 150, 50, "НАЗАД")) {
+        currentMode = MODE_MAIN;
+        saveConfig();
+    }
+}
+
+//=============================================================================
+// РЕДАКТОР ОКРУЖЕНИЯ
+//=============================================================================
+void renderEnvironmentEditor() {
+    reset2DProjection();
+
+    renderRussianText("ОКРУЖЕНИЕ", windowWidth / 2, windowHeight * 0.05f, 0.6f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
+
+    int listX = windowWidth * 0.03f;
+    int listY = windowHeight * 0.12f;
+    int listWidth = windowWidth * 0.1f;
+    int listHeight = windowHeight * 0.05f;
+
+    for (size_t i = 0; i < environmentElements.size(); i++) {
+        char btnText[100];
+        sprintf_s(btnText, "%s", environmentElements[i]->name.c_str());
+        if (drawRussianButton(listX, listY + i * (listHeight + 10), listWidth, listHeight, btnText)) {
+            selectedEnv = i;
+            updatePreviewForCurrentMode();
+        }
+    }
+
+    if (selectedEnv >= 0 && selectedEnv < environmentElements.size()) {
+        VisualElement* el = environmentElements[selectedEnv];
+
+        int editX = windowWidth * 0.18f;
+        int editY = windowHeight * 0.12f;
+        int buttonWidth = 90;
+        int buttonSpacing = 100;
+
+        renderRussianText(el->name.c_str(), editX, editY - 20, 0.4f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        std::string folder = (selectedEnv == 0) ? "flowers" : (selectedEnv == 1) ? "birds" : "clouds";
+
+        // ===== МОДЕЛЬ =====
+        int modelY = editY;
+        renderRussianText("Модель:", editX, modelY + 20, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+        renderRussianText(el->modelFile.c_str(), editX + 80, modelY + 20, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        // Кнопки для модели
+        if (drawRussianButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
+            openFileDialog(el->modelFile, folder);
+        }
+
+        if (drawRussianButton(editX + buttonSpacing, modelY + 40, buttonWidth, 30, "СБРОСИТЬ")) {
+            if (selectedEnv == 0) el->modelFile = "flower.fbx";
+            else if (selectedEnv == 1) el->modelFile = "bird.fbx";
+            else el->modelFile = "cloud.fbx";
+            updatePreviewForCurrentMode();
+        }
+
+        // ===== ЦВЕТ =====
+        int colorY = modelY + 90;
+        renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        // Прямоугольник с цветом
+        glColor3f(el->color.r, el->color.g, el->color.b);
+        glBegin(GL_QUADS);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(editX + 60, colorY - 15);
+        glVertex2f(editX + 110, colorY - 15);
+        glVertex2f(editX + 110, colorY + 15);
+        glVertex2f(editX + 60, colorY + 15);
+        glEnd();
+
+        // Слайдеры цвета справа
+        drawSlider(editX + 120, colorY - 10, 150, &el->color.r, 0.0f, 1.0f, "R");
+        drawSlider(editX + 120, colorY + 15, 150, &el->color.g, 0.0f, 1.0f, "G");
+        drawSlider(editX + 120, colorY + 40, 150, &el->color.b, 0.0f, 1.0f, "B");
+
+        // Кнопка сброса цвета
+        if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
+            if (selectedEnv == 0) el->color = glm::vec3(1.0f, 0.0f, 1.0f);
+            else if (selectedEnv == 1) el->color = glm::vec3(0.5f, 0.5f, 0.5f);
+            else el->color = glm::vec3(1.0f, 1.0f, 1.0f);
+        }
+
+        // ===== МАСШТАБ =====
+        int scaleY = colorY + 80;
+        renderRussianText("Масштаб:", editX, scaleY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        char scaleText[20];
+        sprintf_s(scaleText, "%.2f", el->scale);
+        renderRussianText(scaleText, editX + 100, scaleY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        drawSlider(editX, scaleY + 20, 250, &el->scale, 0.1f, 3.0f, "");
+
+        // Кнопка сброса масштаба
+        if (drawRussianButton(editX + 260, scaleY + 10, 80, 30, "СБРОСИТЬ")) {
+            if (selectedEnv == 0) el->scale = 0.7f;
+            else if (selectedEnv == 1) el->scale = 0.6f;
+            else el->scale = 1.5f;
+        }
+
+        // ===== КОЛИЧЕСТВО =====
+        int countY = scaleY + 70;
+        renderRussianText("Количество:", editX, countY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+
+        char countText[20];
+        sprintf_s(countText, "%d", el->count);
+        renderRussianText(countText, editX + 120, countY, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+        drawIntSlider(editX, countY + 20, 250, &el->count, 0, 50, "");
+
+        // Кнопка сброса количества
+        if (drawRussianButton(editX + 260, countY + 10, 80, 30, "СБРОСИТЬ")) {
+            if (selectedEnv == 0) el->count = 25;
+            else if (selectedEnv == 1) el->count = 15;
+            else el->count = 20;
+        }
+
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для текущего элемента) =====
+        if (drawRussianButton(editX, countY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
+            if (selectedEnv == 0) {
+                el->modelFile = "flower.fbx";
+                el->color = glm::vec3(1.0f, 0.0f, 1.0f);
+                el->scale = 0.7f;
+                el->count = 25;
+            }
+            else if (selectedEnv == 1) {
+                el->modelFile = "bird.fbx";
+                el->color = glm::vec3(0.5f, 0.5f, 0.5f);
+                el->scale = 0.6f;
+                el->count = 15;
+            }
+            else {
+                el->modelFile = "cloud.fbx";
+                el->color = glm::vec3(1.0f, 1.0f, 1.0f);
+                el->scale = 1.5f;
+                el->count = 20;
+            }
+            updatePreviewForCurrentMode();
+        }
+    }
+
+    renderModelPreview(previewModel, "ПРЕДПРОСМОТР",
+        windowWidth * 0.46f, windowHeight * 0.12f,
+        windowWidth * 0.36f, windowHeight * 0.5f,
+        previewRotation, autoRotate, lastRotationTime);
+
+    if (drawRussianButton(windowWidth * 0.03f, windowHeight * 0.9f, 150, 50, "НАЗАД")) {
+        currentMode = MODE_MAIN;
+        saveConfig();
+    }
+}
+
+//=============================================================================
+// РЕДАКТОР ИГРОВОГО ПОЛЯ
+//=============================================================================
+void renderGridEditor() {
+    reset2DProjection();
+
+    renderRussianText("ИГРОВОЕ ПОЛЕ", windowWidth / 2, windowHeight * 0.05f, 0.6f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
+
+    int startX = windowWidth * 0.14f;
+    int startY = windowHeight * 0.12f;
+    int spacing = windowHeight * 0.08f;
+    int sliderWidth = windowWidth * 0.25f;
+
+    // Включение/выключение сетки
+    renderRussianText("СЕТКА", startX, startY - 30, 0.35f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+    char btnText[50];
+    sprintf_s(btnText, "Сетка: %s", currentConfig.gridEnabled ? "ВКЛ" : "ВЫКЛ");
+    if (drawRussianButton(startX, startY, 150, 40, btnText)) {
+        currentConfig.gridEnabled = !currentConfig.gridEnabled;
+    }
+
+    // Кнопка сброса настроек сетки
+    if (drawRussianButton(startX + 160, startY, 120, 40, "СБРОСИТЬ")) {
+        currentConfig.gridEnabled = true;
+        currentConfig.gridLineWidth = 1.0f;
+        currentConfig.gridWidth = 120;
+        currentConfig.gridDepth = 120;
+        currentConfig.cellSize = 0.1f;
+        currentConfig.gridColor = glm::vec3(0.2f, 0.5f, 0.15f);
+    }
+
+    // Толщина линий (только если сетка включена)
+    if (currentConfig.gridEnabled) {
+        renderRussianText("Толщина линий:", startX, startY + 60, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
+        drawSlider(startX, startY + 90, sliderWidth, &currentConfig.gridLineWidth, 0.5f, 5.0f, "Толщина");
+
+        // Кнопка сброса толщины
+        if (drawRussianButton(startX + sliderWidth + 20, startY + 80, 100, 30, "СБРОСИТЬ")) {
+            currentConfig.gridLineWidth = 1.0f;
+        }
+        startY += 60;
+    }
+
+    startY += spacing;
+
+    // Размер сетки
+    renderRussianText("РАЗМЕР СЕТКИ", startX, startY - 30, 0.35f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+    drawIntSlider(startX, startY, sliderWidth, &currentConfig.gridWidth, 5, 200, "Ширина");
+    drawIntSlider(startX, startY + 50, sliderWidth, &currentConfig.gridDepth, 5, 200, "Глубина");
+
+    // Кнопка сброса размера
+    if (drawRussianButton(startX + sliderWidth + 20, startY + 10, 100, 30, "СБРОСИТЬ")) {
+        currentConfig.gridWidth = 120;
+        currentConfig.gridDepth = 120;
+    }
+
+    // Размер ячейки
+    startY += spacing + 50;
+    renderRussianText("РАЗМЕР ЯЧЕЙКИ", startX, startY - 30, 0.35f, glm::vec3(1.0f, 1.0f, 0.0f));
+    drawSlider(startX, startY, sliderWidth, &currentConfig.cellSize, 0.05f, 1.0f, "Размер");
+
+    // Кнопка сброса размера ячейки
+    if (drawRussianButton(startX + sliderWidth + 20, startY - 10, 100, 30, "СБРОСИТЬ")) {
+        currentConfig.cellSize = 0.1f;
+    }
+
+    // Цвет сетки
+    startY += spacing;
+    drawColorPicker(startX, startY, "Цвет сетки:", currentConfig.gridColor);
+
+    // Кнопка сброса цвета
+    if (drawRussianButton(startX + sliderWidth + 20, startY + 50, 100, 30, "СБРОСИТЬ")) {
+        currentConfig.gridColor = glm::vec3(0.2f, 0.5f, 0.15f);
+    }
+
+    // Кнопка "ОЧИСТИТЬ ВСЕ" внизу
+    if (drawRussianButton(startX, windowHeight * 0.8f, 150, 40, "ОЧИСТИТЬ ВСЕ")) {
+        currentConfig.gridEnabled = true;
+        currentConfig.gridLineWidth = 1.0f;
+        currentConfig.gridWidth = 120;
+        currentConfig.gridDepth = 120;
+        currentConfig.cellSize = 0.1f;
+        currentConfig.gridColor = glm::vec3(0.2f, 0.5f, 0.15f);
+    }
+
+    // Предпросмотр сетки
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+    int previewX = windowWidth * 0.46f;
+    int previewY = windowHeight * 0.12f;
+    int previewW = windowWidth * 0.36f;
+    int previewH = windowHeight * 0.6f;
+
+    glViewport(previewX, windowHeight - previewY - previewH, previewW, previewH);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    glEnable(GL_DEPTH_TEST);
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+
+    float aspect = (float)previewW / previewH;
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+    glLoadMatrixf(glm::value_ptr(projection));
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glm::vec3 eye(10.0f, 8.0f, 15.0f);
+    glm::vec3 center(0.0f);
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+    glm::mat4 view = glm::lookAt(eye, center, up);
+    glLoadMatrixf(glm::value_ptr(view));
+
+    // Рисуем пол
+    glDisable(GL_LIGHTING);
+    glColor3f(0.3f, 0.3f, 0.3f);
+    glBegin(GL_QUADS);
+    float size = currentConfig.gridWidth * currentConfig.cellSize / 2;
+    float depth = currentConfig.gridDepth * currentConfig.cellSize / 2;
+    glVertex3f(-size, -0.5f, -depth);
+    glVertex3f(size, -0.5f, -depth);
+    glVertex3f(size, -0.5f, depth);
+    glVertex3f(-size, -0.5f, depth);
+    glEnd();
+
+    // Рисуем сетку если включена
+    if (currentConfig.gridEnabled) {
+        glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
+
+        // Включаем сглаживание линий
+        glEnable(GL_LINE_SMOOTH);
+        glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+        glLineWidth(currentConfig.gridLineWidth);
+
+        glBegin(GL_LINES);
+        for (int i = -currentConfig.gridWidth / 2; i <= currentConfig.gridWidth / 2; i++) {
+            float x = i * currentConfig.cellSize;
+            glVertex3f(x, -0.4f, -depth);
+            glVertex3f(x, -0.4f, depth);
+        }
+        for (int i = -currentConfig.gridDepth / 2; i <= currentConfig.gridDepth / 2; i++) {
+            float z = i * currentConfig.cellSize;
+            glVertex3f(-size, -0.4f, z);
+            glVertex3f(size, -0.4f, z);
+        }
+        glEnd();
+
+        glLineWidth(1.0f);
+        glDisable(GL_LINE_SMOOTH);
+    }
+
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+
+    glPopAttrib();
+
+    reset2DProjection();
+
+    // Рамка предпросмотра
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(previewX, previewY);
+    glVertex2f(previewX + previewW, previewY);
+    glVertex2f(previewX + previewW, previewY + previewH);
+    glVertex2f(previewX, previewY + previewH);
+    glEnd();
+
+    renderRussianText("ПРЕДПРОСМОТР СЕТКИ", previewX + 10, previewY + 25, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+    if (drawRussianButton(windowWidth * 0.03f, windowHeight * 0.9f, 150, 50, "НАЗАД")) {
+        currentMode = MODE_MAIN;
+        saveConfig();
+    }
+}
+
 //=============================================================================
 // ИНИЦИАЛИЗАЦИЯ OPENGL
 //=============================================================================
 bool initOpenGL() {
     if (!glfwInit()) {
-        std::cerr << "Failed to initialize GLFW" << std::endl;
+        std::cerr << "Не удалось инициализировать GLFW" << std::endl;
         return false;
     }
 
-    window = glfwCreateWindow(windowWidth, windowHeight, "Snake Game Config Editor", NULL, NULL);
+    // Настройки для сглаживания
+    glfwWindowHint(GLFW_SAMPLES, 4); // Мультисэмплинг
+    glfwWindowHint(GLFW_DEPTH_BITS, 24); // 24-битный depth buffer
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
+
+    window = glfwCreateWindow(windowWidth, windowHeight, "Редактор конфигурации игры Змейка", NULL, NULL);
     if (!window) {
-        std::cerr << "Failed to create window" << std::endl;
+        std::cerr << "Не удалось создать окно" << std::endl;
         glfwTerminate();
         return false;
     }
 
     glfwMakeContextCurrent(window);
+
+    // Включаем VSync
+    glfwSwapInterval(1);
+
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetKeyCallback(window, keyCallback);
+    glfwSetWindowSizeCallback(window, windowSizeCallback);
 
     if (glewInit() != GLEW_OK) {
-        std::cerr << "Failed to initialize GLEW" << std::endl;
+        std::cerr << "Не удалось инициализировать GLEW" << std::endl;
         return false;
     }
 
@@ -2005,20 +2286,19 @@ bool initOpenGL() {
     glDepthFunc(GL_LESS);
     glClearDepth(1.0f);
 
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
+    // Включаем мультисэмплинг
+    glEnable(GL_MULTISAMPLE);
+
     glEnable(GL_NORMALIZE);
     glEnable(GL_COLOR_MATERIAL);
-    glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
-
-    glShadeModel(GL_SMOOTH);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     initFreeType();
     initPaths();
-    initObstacles();
-    loadAvailableTextures();
+
+    ConfigManager::loadGameConfig(g_configPath, currentConfig);
+    initElements();
 
     return true;
 }
@@ -2027,94 +2307,16 @@ bool initOpenGL() {
 // MAIN
 //=============================================================================
 int main() {
+    SetConsoleCP(1251);
+    SetConsoleOutputCP(1251);
+
+    std::cout << "\n=========================================" << std::endl;
+    std::cout << "=     РЕДАКТОР КОНФИГУРАЦИИ ИГРЫ      =" << std::endl;
+    std::cout << "=========================================\n" << std::endl;
+
     if (!initOpenGL()) {
         return -1;
     }
-
-    std::cout << "\n========== CONFIG LOAD DEBUG ==========" << std::endl;
-    std::cout << "Config path from initPaths: " << g_configPath << std::endl;
-
-    std::ifstream testFile(g_configPath);
-    if (testFile.is_open()) {
-        std::cout << "✓ Config file EXISTS at: " << g_configPath << std::endl;
-
-        std::cout << "\nFirst 10 lines of config file:" << std::endl;
-        std::string line;
-        int lineCount = 0;
-        while (std::getline(testFile, line) && lineCount < 10) {
-            std::cout << "  " << line << std::endl;
-            lineCount++;
-        }
-        testFile.close();
-    }
-    else {
-        std::cout << "✗ Config file DOES NOT EXIST at: " << g_configPath << std::endl;
-
-        std::string configFolder = g_assetsPath + "config\\";
-        DWORD attrib = GetFileAttributesA(configFolder.c_str());
-        std::cout << "Config folder exists: " << ((attrib != INVALID_FILE_ATTRIBUTES && (attrib & FILE_ATTRIBUTE_DIRECTORY)) ? "✓ YES" : "✗ NO") << std::endl;
-
-        std::cout << "\nContents of assets folder:" << std::endl;
-        std::string searchPath = g_assetsPath + "*";
-        WIN32_FIND_DATAA findData;
-        HANDLE hFind = FindFirstFileA(searchPath.c_str(), &findData);
-        if (hFind != INVALID_HANDLE_VALUE) {
-            do {
-                if (strcmp(findData.cFileName, ".") != 0 && strcmp(findData.cFileName, "..") != 0) {
-                    std::cout << "  - " << findData.cFileName;
-                    if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                        std::cout << " (folder)";
-                    }
-                    std::cout << std::endl;
-                }
-            } while (FindNextFileA(hFind, &findData) != 0);
-            FindClose(hFind);
-        }
-
-        if (attrib != INVALID_FILE_ATTRIBUTES) {
-            std::cout << "\nContents of config folder:" << std::endl;
-            searchPath = configFolder + "*";
-            hFind = FindFirstFileA(searchPath.c_str(), &findData);
-            if (hFind != INVALID_HANDLE_VALUE) {
-                do {
-                    if (strcmp(findData.cFileName, ".") != 0 && strcmp(findData.cFileName, "..") != 0) {
-                        std::cout << "  - " << findData.cFileName << std::endl;
-                    }
-                } while (FindNextFileA(hFind, &findData) != 0);
-                FindClose(hFind);
-            }
-        }
-    }
-
-    std::cout << "\nAttempting to load config with ConfigManager..." << std::endl;
-    if (ConfigManager::loadGameConfig(g_configPath, currentConfig)) {
-        std::cout << "✓ CONFIG LOADED SUCCESSFULLY!" << std::endl;
-        std::cout << "Loaded values:" << std::endl;
-        std::cout << "  Snake head: " << currentConfig.snakeHeadModel << std::endl;
-        std::cout << "  Snake body: " << currentConfig.snakeBodyModel << std::endl;
-        std::cout << "  Snake tail: " << currentConfig.snakeTailModel << std::endl;
-        std::cout << "  Sky color: (" << currentConfig.skyColor.r << ", " << currentConfig.skyColor.g << ", " << currentConfig.skyColor.b << ")" << std::endl;
-        std::cout << "  Floor color: (" << currentConfig.floorColor.r << ", " << currentConfig.floorColor.g << ", " << currentConfig.floorColor.b << ")" << std::endl;
-        std::cout << "  Grid color: (" << currentConfig.gridColor.r << ", " << currentConfig.gridColor.g << ", " << currentConfig.gridColor.b << ")" << std::endl;
-        std::cout << "  Cloud count: " << currentConfig.cloudCount << std::endl;
-        std::cout << "  Bird count: " << currentConfig.birdCount << std::endl;
-        std::cout << "  Flower count: " << currentConfig.flowerCount << std::endl;
-        std::cout << "  Apple model: " << currentConfig.appleModel << std::endl;
-        std::cout << "  Tree model: " << currentConfig.treeModel << std::endl;
-        std::cout << "  Cloud model: " << currentConfig.cloudModel << std::endl;
-        std::cout << "  Bird model: " << currentConfig.birdModel << std::endl;
-        std::cout << "  Flower model: " << currentConfig.flowerModel << std::endl;
-        std::cout << "  Floor model: " << currentConfig.floorModel << std::endl;
-        std::cout << "  Floor texture: " << currentConfig.floorTexture << std::endl;
-    }
-    else {
-        std::cout << "✗ FAILED TO LOAD CONFIG!" << std::endl;
-        std::cout << "Creating new config at: " << g_configPath << std::endl;
-    }
-    std::cout << "=====================================\n" << std::endl;
-
-    std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-    loadFBXModel(currentConfig.snakeHeadModel, currentModelData, folder);
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -2123,8 +2325,10 @@ int main() {
         switch (currentMode) {
         case MODE_MAIN: renderMainMenu(); break;
         case MODE_SNAKE_EDITOR: renderSnakeEditor(); break;
-        case MODE_OBSTACLE_EDITOR: renderObstacleEditor(); break;
+        case MODE_GROUND_SKY_EDITOR: renderGroundSkyEditor(); break;
+        case MODE_OBSTACLES_EDITOR: renderObstaclesEditor(); break;
         case MODE_ENVIRONMENT_EDITOR: renderEnvironmentEditor(); break;
+        case MODE_GRID_EDITOR: renderGridEditor(); break;
         }
 
         glfwSwapBuffers(window);
@@ -2132,5 +2336,10 @@ int main() {
 
     glfwDestroyWindow(window);
     glfwTerminate();
+
+    std::cout << "\n=========================================" << std::endl;
+    std::cout << "=         РАБОТА ЗАВЕРШЕНА             =" << std::endl;
+    std::cout << "=========================================\n" << std::endl;
+
     return 0;
 }

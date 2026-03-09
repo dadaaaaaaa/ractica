@@ -48,12 +48,12 @@ struct GameConfig {
     float cellSize = 0.1f;
     int initialFoodCount = 10;
     int obstacleCount = 10;
-
+    bool gridEnabled = true;
+    float gridLineWidth = 1.0f;
     // Настройки окружения
     int cloudCount = 20;
     int birdCount = 15;
     int flowerCount = 25;
-
     // Цвета
     glm::vec3 skyColor = glm::vec3(0.53f, 0.81f, 0.92f);
     glm::vec3 floorColor = glm::vec3(0.3f, 0.6f, 0.2f);

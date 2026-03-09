@@ -19,6 +19,12 @@ static glm::vec3 parseVec3(const std::string& str) {
     return glm::vec3(x, y, z);
 }
 
+static bool parseBool(const std::string& str) {
+    std::string lower = str;
+    for (auto& c : lower) c = tolower(c);
+    return (lower == "true" || lower == "1" || lower == "yes");
+}
+
 bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& config) {
     std::ifstream file(filename);
     if (!file.is_open()) {
@@ -42,6 +48,12 @@ bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& conf
         else if (key == "CELL_SIZE") config.cellSize = std::stof(value);
         else if (key == "INITIAL_FOOD_COUNT") config.initialFoodCount = std::stoi(value);
         else if (key == "OBSTACLE_COUNT") config.obstacleCount = std::stoi(value);
+
+        // Grid settings
+        else if (key == "GRID_ENABLED") config.gridEnabled = parseBool(value);
+        else if (key == "GRID_LINE_WIDTH") config.gridLineWidth = std::stof(value);
+
+        // Environment counts
         else if (key == "CLOUD_COUNT") config.cloudCount = std::stoi(value);
         else if (key == "BIRD_COUNT") config.birdCount = std::stoi(value);
         else if (key == "FLOWER_COUNT") config.flowerCount = std::stoi(value);
@@ -73,7 +85,7 @@ bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& conf
         else if (key == "FLOOR_MODEL") config.floorModel = value;
         else if (key == "FLOOR_TEXTURE") config.floorTexture = value;
 
-        // Дополнительные модели для окружения (если нужны)
+        // Additional Models
         else if (key == "FENCE_MODEL") config.fenceModel = value;
         else if (key == "ROCK_MODEL") config.rockModel = value;
         else if (key == "GRASS_MODEL") config.grassModel = value;
@@ -98,7 +110,13 @@ bool ConfigManager::saveGameConfig(const std::string& filename, const GameConfig
     file << "GRID_DEPTH = " << config.gridDepth << "\n";
     file << "CELL_SIZE = " << config.cellSize << "\n";
     file << "INITIAL_FOOD_COUNT = " << config.initialFoodCount << "\n";
-    file << "OBSTACLE_COUNT = " << config.obstacleCount << "\n";
+    file << "OBSTACLE_COUNT = " << config.obstacleCount << "\n\n";
+
+    file << "# Grid Settings\n";
+    file << "GRID_ENABLED = " << (config.gridEnabled ? "true" : "false") << "\n";
+    file << "GRID_LINE_WIDTH = " << config.gridLineWidth << "\n\n";
+
+    file << "# Environment Counts\n";
     file << "CLOUD_COUNT = " << config.cloudCount << "\n";
     file << "BIRD_COUNT = " << config.birdCount << "\n";
     file << "FLOWER_COUNT = " << config.flowerCount << "\n\n";
@@ -130,7 +148,6 @@ bool ConfigManager::saveGameConfig(const std::string& filename, const GameConfig
     file << "FLOOR_MODEL = " << config.floorModel << "\n";
     file << "FLOOR_TEXTURE = " << config.floorTexture << "\n\n";
 
-    // Дополнительные модели (опционально)
     file << "# Additional Models (optional)\n";
     file << "FENCE_MODEL = " << config.fenceModel << "\n";
     file << "ROCK_MODEL = " << config.rockModel << "\n";

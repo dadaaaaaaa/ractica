@@ -13,6 +13,4 @@ public:
     // Методы для работы с препятствиями
     static bool loadObstacles(const std::string& filename, std::vector<ObstacleData>& obstacles);
     static bool saveObstacles(const std::string& filename, const std::vector<ObstacleData>& obstacles);
-
-
 };
