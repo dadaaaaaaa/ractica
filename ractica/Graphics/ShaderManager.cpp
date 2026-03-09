@@ -26,6 +26,7 @@ const char* vertexShaderSource = R"(
     }
 )";
 
+// Обновите фрагментный шейдер для правильной работы с текстурами
 const char* fragmentShaderSource = R"(
     #version 330 core
     out vec4 FragColor;
@@ -39,7 +40,6 @@ const char* fragmentShaderSource = R"(
     uniform bool isFloor;             // Специальный флаг для пола
     uniform float cellSize;           // Размер клетки для сетки пола
     
-    uniform bool hasTexture;          // Есть ли текстура у модели
     uniform sampler2D modelTexture;   // Текстура модели
     
     void main() {
@@ -47,9 +47,10 @@ const char* fragmentShaderSource = R"(
         vec3 finalColor = color;       // Базовый цвет из конфига
         
         // Если есть текстура - используем её
-        if (hasTexture) {
+        if (useTexture) {
             vec4 texColor = texture(modelTexture, TexCoords);
-            finalColor = texColor.rgb;
+            // Умножаем на цвет из конфига для возможности тонирования
+            finalColor = texColor.rgb * color;
         }
         
         // Специальная обработка для пола (сетка)
@@ -179,10 +180,6 @@ void ShaderManager::setProjectionMatrix(const glm::mat4& projection) const {
 }
 
 void ShaderManager::setColor(const glm::vec3& color) const {
-    std::cout << "ShaderManager::setColor: ("
-        << color.r << ", "
-        << color.g << ", "
-        << color.b << ")" << std::endl;
     glUniform3fv(colorLoc, 1, &color[0]);
 }
 

@@ -7,15 +7,16 @@
 #include "ShaderManager.h"
 #include "Camera.h"
 #include "../Objects/GameObjects.h"
-#include "../Objects/Sprite.h"      // Добавьте это
-#include "../Objects/Bird.h"        // Добавьте это
-#include "../Objects/Obstacle.h"    // Добавьте это
+#include "../Objects/Sprite.h"
+#include "../Objects/Bird.h"
+#include "../Objects/Obstacle.h"
 #include "../UI/GameUI.h"
 #include <GLFW/glfw3.h>
 #include <string>
 #include <functional>
 #include <filesystem>
 #include "ModelLoader.h"
+
 // Структура для текстуры
 struct Texture {
     unsigned int id;
@@ -25,7 +26,6 @@ struct Texture {
 
     Texture() : id(0), width(0), height(0), path("") {}
 };
-
 
 class GameRenderer {
 private:
@@ -66,6 +66,10 @@ private:
     Texture floorTexture;
     bool useFloorTexture;
 
+    // Настройки сетки
+    bool gridEnabled;
+    float gridLineWidth;
+
 public:
     GameRenderer();
 
@@ -77,6 +81,14 @@ public:
     void setSkyColor(const glm::vec3& color) { skyColor = color; }
     void setFloorColor(const glm::vec3& color) { floorColor = color; }
     void setGridColor(const glm::vec3& color) { gridColor = color; }
+
+    // Методы для настроек сетки
+    void setGridSettings(bool enabled, float lineWidth) {
+        gridEnabled = enabled;
+        gridLineWidth = lineWidth;
+    }
+    bool isGridEnabled() const { return gridEnabled; }
+    float getGridLineWidth() const { return gridLineWidth; }
 
     // Метод для установки текстуры пола
     void setFloorTexture(const std::string& texturePath);
@@ -121,6 +133,7 @@ public:
     bool loadModelWithFallback(Model& model, const std::string& modelPath,
         const std::string& subFolder,
         std::function<void(Model&)> fallbackCreator);
+    bool loadTextureForModel(Model& model, const std::string& texturePath, const std::string& modelFolder);
 
     void loadAllModels();
     bool loadModelFromFile(Model& model, const std::string& modelPath, const std::string& texturePath);

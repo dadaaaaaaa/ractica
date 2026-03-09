@@ -188,6 +188,63 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
 bool loadTexture(const std::string& filename, Texture& texture);
 GLuint loadTextureFromFile(const std::string& path);
 
+// Функция для извлечения имени файла из пути
+std::string extractFilename(const std::string& path) {
+    // Ищем последний слеш или обратный слеш
+    size_t pos = path.find_last_of("\\/");
+    if (pos != std::string::npos) {
+        return path.substr(pos + 1);
+    }
+    return path;
+}
+
+// Функция для загрузки текстуры из памяти
+GLuint loadTextureFromMemory(unsigned char* data, int width, int height, int channels) {
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+
+    GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    return textureID;
+}
+
+// Функция для загрузки встроенной текстуры из FBX
+GLuint loadEmbeddedTexture(const aiTexture* texture) {
+    if (texture->mHeight == 0) {
+        // Сжатая текстура (PNG, JPG и т.д.)
+        int width, height, channels;
+        unsigned char* data = stbi_load_from_memory(
+            reinterpret_cast<unsigned char*>(texture->pcData),
+            texture->mWidth,
+            &width, &height, &channels, 0
+        );
+
+        if (data) {
+            GLuint texID = loadTextureFromMemory(data, width, height, channels);
+            stbi_image_free(data);
+            return texID;
+        }
+    }
+    else {
+        // Несжатая текстура (RAW)
+        return loadTextureFromMemory(
+            reinterpret_cast<unsigned char*>(texture->pcData),
+            texture->mWidth,
+            texture->mHeight,
+            4 // Предполагаем RGBA
+        );
+    }
+    return 0;
+}
+
 // Функция для очистки модели предпросмотра
 void clearPreview() {
     previewModel.loaded = false;
@@ -197,7 +254,7 @@ void clearPreview() {
     previewModel.materials.clear();
     previewModel.materialIndices.clear();
 }
-// Функция для обновления предпросмотра текущего элемента
+
 // Функция для обновления предпросмотра текущего элемента
 void updatePreviewForCurrentMode() {
     // Сначала очищаем предпросмотр
@@ -239,15 +296,14 @@ void updatePreviewForCurrentMode() {
         break;
     }
 }
+
 //=============================================================================
-// ФУНКЦИИ ДЛЯ РАБОТЫ С РУССКИМ ТЕКСТОМ (ПОЛНОСТЬЮ СОХРАНЕНЫ)
+// ФУНКЦИИ ДЛЯ РАБОТЫ С РУССКИМ ТЕКСТОМ
 //=============================================================================
-// Просто обертка для renderText, которая принимает русский текст в CP1251
 void renderRussianText(const char* text, float x, float y, float scale, glm::vec3 color, bool centerX = false, bool centerY = false) {
     renderText(text, x, y, scale, color, centerX, centerY);
 }
 
-// Обертка для кнопок
 bool drawRussianButton(int x, int y, int w, int h, const char* text, bool enabled = true) {
     return drawButton(x, y, w, h, text, enabled);
 }
@@ -394,6 +450,13 @@ void initPaths() {
 // ЗАГРУЗКА ТЕКСТУР
 //=============================================================================
 GLuint loadTextureFromFile(const std::string& path) {
+    std::cout << "  Loading texture from file: " << path << std::endl;
+
+    if (!std::filesystem::exists(path)) {
+        std::cout << "  ✗ Texture file not found" << std::endl;
+        return 0;
+    }
+
     GLuint textureID;
     glGenTextures(1, &textureID);
 
@@ -413,9 +476,13 @@ GLuint loadTextureFromFile(const std::string& path) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
         stbi_image_free(data);
+
+        std::cout << "  ✓ Texture loaded: " << width << "x" << height << std::endl;
         return textureID;
     }
 
+    std::cout << "  ✗ Failed to load texture: " << stbi_failure_reason() << std::endl;
+    stbi_image_free(data);
     glDeleteTextures(1, &textureID);
     return 0;
 }
@@ -465,14 +532,19 @@ void openTextureFileDialog(std::string& destVar, Texture& texture) {
 }
 
 //=============================================================================
-// ЗАГРУЗКА МОДЕЛЕЙ
+// ЗАГРУЗКА МОДЕЛЕЙ (ИСПРАВЛЕННАЯ)
 //=============================================================================
 bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder) {
-    if (filename.empty()) return false;
+    if (filename.empty()) {
+        std::cout << "  ✗ Filename is empty" << std::endl;
+        return false;
+    }
 
     std::string fullPath = g_modelsPath + subFolder + "\\" + filename;
+    std::cout << "\nLoading FBX: " << fullPath << std::endl;
 
     if (!std::filesystem::exists(fullPath)) {
+        std::cout << "  ✗ File not found" << std::endl;
         return false;
     }
 
@@ -482,9 +554,19 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
         aiProcess_Triangulate |
         aiProcess_GenSmoothNormals |
         aiProcess_FlipUVs |
+        aiProcess_JoinIdenticalVertices |
+        aiProcess_OptimizeMeshes |
         aiProcess_CalcTangentSpace);
 
-    if (!scene) return false;
+    if (!scene) {
+        std::cout << "  ✗ Assimp error: " << importer.GetErrorString() << std::endl;
+        return false;
+    }
+
+    std::cout << "  ✓ Scene loaded" << std::endl;
+    std::cout << "    - Meshes: " << scene->mNumMeshes << std::endl;
+    std::cout << "    - Materials: " << scene->mNumMaterials << std::endl;
+    std::cout << "    - Textures: " << scene->mNumTextures << std::endl;
 
     model.vertices.clear();
     model.normals.clear();
@@ -492,13 +574,47 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
     model.materials.clear();
     model.materialIndices.clear();
 
+    // Получаем базовое имя модели
+    std::string baseName = filename;
+    size_t dotPos = baseName.find_last_of('.');
+    if (dotPos != std::string::npos) {
+        baseName = baseName.substr(0, dotPos);
+    }
+
+    // Загружаем материалы
     for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
         aiMaterial* mat = scene->mMaterials[i];
         Material material;
+        material.textureID = 0;
 
         aiColor3D color(1.0f, 1.0f, 1.0f);
         mat->Get(AI_MATKEY_COLOR_DIFFUSE, color);
         material.diffuse = glm::vec3(color.r, color.g, color.b);
+
+        // Ищем диффузную текстуру
+        aiString texPath;
+        if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
+            std::string textureFile = texPath.C_Str();
+
+            // Извлекаем имя файла из URL или пути
+            size_t lastSlash = textureFile.find_last_of("\\/");
+            if (lastSlash != std::string::npos) {
+                textureFile = textureFile.substr(lastSlash + 1);
+            }
+
+            std::cout << "  Found texture: " << textureFile << std::endl;
+
+            // Ищем текстуру в папке с моделью
+            std::string basePath = fullPath.substr(0, fullPath.find_last_of("\\/") + 1);
+            std::string texFullPath = basePath + textureFile;
+
+            if (std::filesystem::exists(texFullPath)) {
+                material.textureID = loadTextureFromFile(texFullPath);
+                if (material.textureID) {
+                    std::cout << "  ✓ Texture loaded" << std::endl;
+                }
+            }
+        }
 
         model.materials.push_back(material);
     }
@@ -506,55 +622,95 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
     if (model.materials.empty()) {
         Material defaultMat;
         defaultMat.diffuse = glm::vec3(0.8f, 0.8f, 0.8f);
+        defaultMat.textureID = 0;
         model.materials.push_back(defaultMat);
     }
 
+    // Загружаем меши с правильной индексацией
+    std::cout << "\n  --- Loading Meshes ---" << std::endl;
+
+    int totalVertices = 0;
+    int totalTriangles = 0;
+
     for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
         aiMesh* mesh = scene->mMeshes[i];
+        std::cout << "  Mesh " << i << ": " << mesh->mNumVertices << " vertices, "
+            << mesh->mNumFaces << " faces" << std::endl;
 
         int materialIndex = mesh->mMaterialIndex;
         if (materialIndex >= (int)model.materials.size()) {
             materialIndex = 0;
         }
 
-        for (unsigned int j = 0; j < mesh->mNumVertices; j++) {
-            model.vertices.push_back(mesh->mVertices[j].x);
-            model.vertices.push_back(mesh->mVertices[j].y);
-            model.vertices.push_back(mesh->mVertices[j].z);
-
-            if (mesh->HasNormals()) {
-                model.normals.push_back(mesh->mNormals[j].x);
-                model.normals.push_back(mesh->mNormals[j].y);
-                model.normals.push_back(mesh->mNormals[j].z);
-            }
-            else {
-                model.normals.push_back(0.0f);
-                model.normals.push_back(1.0f);
-                model.normals.push_back(0.0f);
-            }
-
-            if (mesh->HasTextureCoords(0)) {
-                model.texCoords.push_back(mesh->mTextureCoords[0][j].x);
-                model.texCoords.push_back(mesh->mTextureCoords[0][j].y);
-            }
-            else {
-                model.texCoords.push_back(0.0f);
-                model.texCoords.push_back(0.0f);
-            }
-        }
-
+        // Для каждой грани (треугольника)
         for (unsigned int j = 0; j < mesh->mNumFaces; j++) {
             aiFace face = mesh->mFaces[j];
-            if (face.mNumIndices == 3) {
-                model.materialIndices.push_back(materialIndex);
+
+            // Добавляем индекс материала для этого треугольника
+            model.materialIndices.push_back(materialIndex);
+
+            // Для каждой вершины треугольника
+            for (unsigned int k = 0; k < face.mNumIndices; k++) {
+                unsigned int vertexIdx = face.mIndices[k];
+
+                // Вершина
+                model.vertices.push_back(mesh->mVertices[vertexIdx].x);
+                model.vertices.push_back(mesh->mVertices[vertexIdx].y);
+                model.vertices.push_back(mesh->mVertices[vertexIdx].z);
+
+                // Нормаль
+                if (mesh->HasNormals()) {
+                    model.normals.push_back(mesh->mNormals[vertexIdx].x);
+                    model.normals.push_back(mesh->mNormals[vertexIdx].y);
+                    model.normals.push_back(mesh->mNormals[vertexIdx].z);
+                }
+
+                // Текстурные координаты
+                if (mesh->HasTextureCoords(0)) {
+                    model.texCoords.push_back(mesh->mTextureCoords[0][vertexIdx].x);
+                    model.texCoords.push_back(mesh->mTextureCoords[0][vertexIdx].y);
+                }
+
+                totalVertices++;
             }
+        }
+        totalTriangles += mesh->mNumFaces;
+    }
+
+    // Если нормалей нет, генерируем простые
+    if (model.normals.empty()) {
+        for (size_t i = 0; i < model.vertices.size() / 3; i++) {
+            model.normals.push_back(0.0f);
+            model.normals.push_back(1.0f);
+            model.normals.push_back(0.0f);
+        }
+    }
+
+    // Если текстурных координат нет, добавляем нулевые
+    if (model.texCoords.empty()) {
+        for (size_t i = 0; i < model.vertices.size() / 3; i++) {
+            model.texCoords.push_back(0.0f);
+            model.texCoords.push_back(0.0f);
         }
     }
 
     model.loaded = (model.vertices.size() > 0);
+
+    if (model.loaded) {
+        std::cout << "\n  ✓ Model loaded successfully!" << std::endl;
+        std::cout << "    Total vertices: " << model.vertices.size() / 3 << std::endl;
+        std::cout << "    Total triangles: " << totalTriangles << std::endl;
+        std::cout << "    Total materials: " << model.materials.size() << std::endl;
+
+        int texturesLoaded = 0;
+        for (const auto& mat : model.materials) {
+            if (mat.textureID != 0) texturesLoaded++;
+        }
+        std::cout << "    Textures loaded: " << texturesLoaded << "/" << model.materials.size() << std::endl;
+    }
+
     return model.loaded;
 }
-
 void openFileDialog(std::string& destVar, const std::string& subFolder) {
     std::string folderPath = g_modelsPath + subFolder + "\\";
 
@@ -589,35 +745,74 @@ void openFileDialog(std::string& destVar, const std::string& subFolder) {
 }
 
 //=============================================================================
-// ОТРИСОВКА
+// ОТРИСОВКА (ИСПРАВЛЕННАЯ)
 //=============================================================================
 void drawModel(ModelData& model) {
     if (!model.loaded || model.vertices.empty()) return;
 
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_NORMAL_ARRAY);
-    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    size_t numVertices = model.vertices.size() / 3;
+    if (numVertices == 0) return;
 
-    glVertexPointer(3, GL_FLOAT, 0, model.vertices.data());
-    glNormalPointer(GL_FLOAT, 0, model.normals.data());
-    glTexCoordPointer(2, GL_FLOAT, 0, model.texCoords.data());
+    // Проходим по всем треугольникам
+    glBegin(GL_TRIANGLES);
 
-    int vertexIndex = 0;
-    for (size_t i = 0; i < model.materialIndices.size(); i++) {
-        int materialIdx = model.materialIndices[i];
-        if (materialIdx >= 0 && materialIdx < model.materials.size()) {
-            Material& mat = model.materials[materialIdx];
-            glColor3f(mat.diffuse.r, mat.diffuse.g, mat.diffuse.b);
+    int lastMaterial = -1;
+
+    for (size_t i = 0; i < numVertices / 3; i++) {
+        // Определяем материал для этого треугольника
+        int materialIdx = 0;
+        if (!model.materialIndices.empty() && i < model.materialIndices.size()) {
+            materialIdx = model.materialIndices[i];
         }
 
-        glDrawArrays(GL_TRIANGLES, vertexIndex, 3);
-        vertexIndex += 3;
+        // Если материал изменился, меняем состояние
+        if (materialIdx != lastMaterial && materialIdx < (int)model.materials.size()) {
+            // Завершаем текущий блок
+            glEnd();
+
+            lastMaterial = materialIdx;
+            Material& mat = model.materials[materialIdx];
+
+            // Устанавливаем новый материал
+            if (mat.textureID != 0) {
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, mat.textureID);
+                glColor3f(1.0f, 1.0f, 1.0f);
+            }
+            else {
+                glDisable(GL_TEXTURE_2D);
+                glColor3f(mat.diffuse.r, mat.diffuse.g, mat.diffuse.b);
+            }
+
+            // Начинаем новый блок
+            glBegin(GL_TRIANGLES);
+        }
+
+        // Рисуем треугольник
+        for (int j = 0; j < 3; j++) {
+            size_t idx = i * 3 + j;
+            if (idx < numVertices) {
+                // Текстурные координаты
+                if (!model.texCoords.empty() && idx < model.texCoords.size() / 2) {
+                    glTexCoord2f(model.texCoords[idx * 2], model.texCoords[idx * 2 + 1]);
+                }
+
+                // Нормаль
+                if (!model.normals.empty() && idx < model.normals.size() / 3) {
+                    glNormal3f(model.normals[idx * 3], model.normals[idx * 3 + 1], model.normals[idx * 3 + 2]);
+                }
+
+                // Вершина
+                glVertex3f(model.vertices[idx * 3], model.vertices[idx * 3 + 1], model.vertices[idx * 3 + 2]);
+            }
+        }
     }
 
-    glDisableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_NORMAL_ARRAY);
-    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    glEnd();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
 }
+
 
 void drawTexturedFloor() {
     glEnable(GL_TEXTURE_2D);
@@ -670,66 +865,136 @@ void drawGrid() {
     glLineWidth(1.0f);
 }
 
-void renderModelPreview(ModelData& model, const char* title, float x, float y, float w, float h, float& rotation, bool& autoRotate, float& lastTime) {
+void renderModelPreview(ModelData& model, const char* title, float x, float y, float w, float h,
+    float& rotation, bool& autoRotate, float& lastTime, float scale = 1.0f) {
     // Сохраняем текущий viewport
     GLint viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
 
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
-
-    glViewport(x, windowHeight - y - h, w, h);
-    glScissor(x, windowHeight - y - h, w, h);
+    // Устанавливаем viewport для предпросмотра
+    glViewport((GLint)x, windowHeight - (GLint)y - (GLint)h, (GLint)w, (GLint)h);
+    glScissor((GLint)x, windowHeight - (GLint)y - (GLint)h, (GLint)w, (GLint)h);
     glEnable(GL_SCISSOR_TEST);
-    glClear(GL_DEPTH_BUFFER_BIT);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
+    // Настройки 3D
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDisable(GL_BLEND);
 
+    // Проекционная матрица
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
-
     float aspect = w / h;
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     glLoadMatrixf(glm::value_ptr(projection));
 
+    // Видовая матрица
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
-
     glm::vec3 eye(3.0f, 2.0f, 5.0f);
-    glm::vec3 center(0.0f);
+    glm::vec3 center(0.0f, 0.0f, 0.0f);
     glm::vec3 up(0.0f, 1.0f, 0.0f);
     glm::mat4 view = glm::lookAt(eye, center, up);
     glLoadMatrixf(glm::value_ptr(view));
 
-    glRotatef(rotation, 0.0f, 1.0f, 0.0f);
+    // Рисуем пол
+    glDisable(GL_TEXTURE_2D);
+    glColor3f(0.3f, 0.3f, 0.3f);
+    glBegin(GL_QUADS);
+    glVertex3f(-2.0f, -0.5f, -2.0f);
+    glVertex3f(2.0f, -0.5f, -2.0f);
+    glVertex3f(2.0f, -0.5f, 2.0f);
+    glVertex3f(-2.0f, -0.5f, 2.0f);
+    glEnd();
 
-    glDisable(GL_LIGHTING);
+    // Рисуем сетку
+    glColor3f(0.5f, 0.5f, 0.5f);
+    glBegin(GL_LINES);
+    for (int i = -4; i <= 4; i++) {
+        float pos = i * 0.5f;
+        glVertex3f(pos, -0.4f, -2.0f);
+        glVertex3f(pos, -0.4f, 2.0f);
+        glVertex3f(-2.0f, -0.4f, pos);
+        glVertex3f(2.0f, -0.4f, pos);
+    }
+    glEnd();
 
-    drawGrid();
-    drawTexturedFloor();
+    // Рисуем модель
+    if (model.loaded && !model.vertices.empty()) {
+        glPushMatrix();
+        glRotatef(rotation, 0.0f, 1.0f, 0.0f);
+        glScalef(scale, scale, scale);
 
-    if (!model.loaded) {
-        glColor3f(1.0f, 0.0f, 0.0f);
+        // Центрируем модель
+        float minX = model.vertices[0], maxX = model.vertices[0];
+        float minY = model.vertices[1], maxY = model.vertices[1];
+        float minZ = model.vertices[2], maxZ = model.vertices[2];
+
+        for (size_t i = 0; i < model.vertices.size() / 3; i++) {
+            float vx = model.vertices[i * 3];
+            float vy = model.vertices[i * 3 + 1];
+            float vz = model.vertices[i * 3 + 2];
+
+            minX = min(minX, vx);
+            minY = min(minY, vy);
+            minZ = min(minZ, vz);
+            maxX = max(maxX, vx);
+            maxY = max(maxY, vy);
+            maxZ = max(maxZ, vz);
+        }
+
+        float centerX = (minX + maxX) / 2.0f;
+        float centerY = (minY + maxY) / 2.0f;
+        float centerZ = (minZ + maxZ) / 2.0f;
+
+        glTranslatef(-centerX, -centerY, -centerZ);
+
+        drawModel(model);
+        glPopMatrix();
     }
     else {
-        drawModel(model);
+        // Рисуем тестовый куб
+        glPushMatrix();
+        glRotatef(rotation, 0.0f, 1.0f, 0.0f);
+        glScalef(scale, scale, scale);
+
+        glDisable(GL_TEXTURE_2D);
+        glColor3f(1.0f, 0.0f, 0.0f);
+
+        glBegin(GL_QUADS);
+        // Передняя грань
+        glVertex3f(-0.5f, -0.5f, 0.5f);
+        glVertex3f(0.5f, -0.5f, 0.5f);
+        glVertex3f(0.5f, 0.5f, 0.5f);
+        glVertex3f(-0.5f, 0.5f, 0.5f);
+        // Задняя грань
+        glVertex3f(-0.5f, -0.5f, -0.5f);
+        glVertex3f(-0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, 0.5f, -0.5f);
+        glVertex3f(0.5f, -0.5f, -0.5f);
+        glEnd();
+
+        glPopMatrix();
     }
 
+    // Восстанавливаем матрицы
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
 
-    glPopAttrib();
+    // Восстанавливаем viewport
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
     glDisable(GL_SCISSOR_TEST);
 
-    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-
+    // Возвращаемся к 2D проекции для UI
     reset2DProjection();
 
+    // Рисуем рамку и кнопки
+    glDisable(GL_TEXTURE_2D);
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f(x, y);
@@ -740,24 +1005,28 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
 
     renderRussianText(title, x + 10, y + 25, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
 
-    int arrowY = y + h + 25;
-    int arrowCenterX = x + w / 2;
+    char scaleText[50];
+    sprintf_s(scaleText, "Scale: %.2f", scale);
+    renderRussianText(scaleText, x + w - 100, y + 25, 0.25f, glm::vec3(1.0f, 1.0f, 0.0f));
+
+    int arrowY = (int)(y + h + 25);
+    int arrowCenterX = (int)(x + w / 2);
     int arrowWidth = 60;
     int arrowHeight = 35;
 
     if (drawButton(arrowCenterX - arrowWidth - 10, arrowY, arrowWidth, arrowHeight, "<-")) {
         rotation -= 15.0f;
-        lastTime = glfwGetTime();
+        lastTime = (float)glfwGetTime();
         autoRotate = false;
     }
 
     if (drawButton(arrowCenterX + 10, arrowY, arrowWidth, arrowHeight, "->")) {
         rotation += 15.0f;
-        lastTime = glfwGetTime();
+        lastTime = (float)glfwGetTime();
         autoRotate = false;
     }
 
-    float currentTime = glfwGetTime();
+    float currentTime = (float)glfwGetTime();
     if (!autoRotate) {
         if (currentTime - lastTime >= autoRotateDelay) {
             autoRotate = true;
@@ -769,7 +1038,59 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
         if (rotation >= 360) rotation -= 360;
     }
 }
+void debugTexture(GLuint textureID, const std::string& name) {
+    if (textureID == 0) {
+        std::cout << "Texture " << name << " is NULL" << std::endl;
+        return;
+    }
 
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    GLint width, height, format;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
+
+    std::cout << "Texture " << name << " ID: " << textureID
+        << " Size: " << width << "x" << height
+        << " Format: " << format << std::endl;
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void validateModelData(ModelData& model) {
+    std::cout << "\n=== VALIDATING MODEL DATA ===" << std::endl;
+
+    size_t numVerts = model.vertices.size() / 3;
+    std::cout << "Vertices: " << numVerts << std::endl;
+    std::cout << "Normals: " << model.normals.size() / 3 << std::endl;
+    std::cout << "TexCoords: " << model.texCoords.size() / 2 << std::endl;
+    std::cout << "Materials: " << model.materials.size() << std::endl;
+    std::cout << "Material indices: " << model.materialIndices.size() << std::endl;
+
+    // Проверяем соответствие
+    if (numVerts > 0) {
+        if (model.normals.size() / 3 != numVerts) {
+            std::cout << "⚠ WARNING: Normal count mismatch!" << std::endl;
+        }
+        if (!model.texCoords.empty() && model.texCoords.size() / 2 != numVerts) {
+            std::cout << "⚠ WARNING: TexCoord count mismatch!" << std::endl;
+        }
+    }
+
+    // Проверяем индексы материалов
+    if (!model.materialIndices.empty()) {
+        int maxIndex = 0;
+        for (int idx : model.materialIndices) {
+            if (idx > maxIndex) maxIndex = idx;
+        }
+        std::cout << "Max material index: " << maxIndex << std::endl;
+        if (maxIndex >= (int)model.materials.size()) {
+            std::cout << "⚠ WARNING: Material index out of range!" << std::endl;
+        }
+    }
+
+    std::cout << "============================\n" << std::endl;
+}
 //=============================================================================
 // СОХРАНЕНИЕ КОНФИГА
 //=============================================================================
@@ -820,6 +1141,7 @@ void saveConfig() {
     }
 
     ConfigManager::saveGameConfig(g_configPath, currentConfig);
+    std::cout << "✓ Config saved to: " << g_configPath << std::endl;
 }
 
 //=============================================================================
@@ -839,7 +1161,7 @@ void reset2DProjection() {
 }
 
 //=============================================================================
-// ШРИФТЫ И ТЕКСТ (ПОЛНОСТЬЮ СОХРАНЕНЫ)
+// ШРИФТЫ И ТЕКСТ
 //=============================================================================
 GLuint compileShader(GLenum type, const char* source) {
     GLuint shader = glCreateShader(type);
@@ -1346,57 +1668,39 @@ void renderMainMenu() {
     renderRussianText("РЕДАКТОР КОНФИГУРАЦИИ ИГРЫ ЗМЕЙКА",
         windowWidth / 2, windowHeight * 0.08f, 0.6f, glm::vec3(1.0f, 1.0f, 0.0f), true, false);
 
-    int buttonWidth = windowWidth * 0.28f; // 28% от ширины
-    int buttonHeight = windowHeight * 0.07f; // 7% от высоты
-    int startY = windowHeight * 0.2f; // 20% от верха
+    int buttonWidth = windowWidth * 0.28f;
+    int buttonHeight = windowHeight * 0.07f;
+    int startY = windowHeight * 0.2f;
     int centerX = windowWidth / 2 - buttonWidth / 2;
-    int spacing = windowHeight * 0.08f; // 8% от высоты
+    int spacing = windowHeight * 0.08f;
 
     if (drawRussianButton(centerX, startY, buttonWidth, buttonHeight, "1. ЗМЕЯ")) {
         currentMode = MODE_SNAKE_EDITOR;
         selectedPart = 0;
         updatePreviewForCurrentMode();
-        if (!snakeElements.empty()) {
-            std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
-            loadFBXModel(snakeElements[selectedPart]->modelFile, previewModel, folder);
-        }
     }
 
     if (drawRussianButton(centerX, startY + spacing, buttonWidth, buttonHeight, "2. ПОЛ И НЕБО")) {
         currentMode = MODE_GROUND_SKY_EDITOR;
         selectedGroundSky = 0;
         updatePreviewForCurrentMode();
-
-        if (!groundSkyElements.empty()) {
-            loadFBXModel(groundSkyElements[0]->modelFile, previewModel, "floor");
-        }
     }
 
     if (drawRussianButton(centerX, startY + spacing * 2, buttonWidth, buttonHeight, "3. ПРЕГРАДЫ")) {
         currentMode = MODE_OBSTACLES_EDITOR;
         selectedObstacle = 0;
         updatePreviewForCurrentMode();
-
-        if (!obstaclesElements.empty()) {
-            loadFBXModel(obstaclesElements[0]->modelFile, previewModel, "obstacles");
-        }
     }
 
     if (drawRussianButton(centerX, startY + spacing * 3, buttonWidth, buttonHeight, "4. ОКРУЖЕНИЕ")) {
         currentMode = MODE_ENVIRONMENT_EDITOR;
         selectedEnv = 0;
         updatePreviewForCurrentMode();
-
-        if (!environmentElements.empty()) {
-            std::string folder = (selectedEnv == 0) ? "flowers" : (selectedEnv == 1) ? "birds" : "clouds";
-            loadFBXModel(environmentElements[selectedEnv]->modelFile, previewModel, folder);
-        }
     }
 
     if (drawRussianButton(centerX, startY + spacing * 4, buttonWidth, buttonHeight, "5. ИГРОВОЕ ПОЛЕ")) {
         currentMode = MODE_GRID_EDITOR;
         updatePreviewForCurrentMode();
-
     }
 
     if (drawRussianButton(centerX, startY + spacing * 5 + 20, buttonWidth, buttonHeight, "СОХРАНИТЬ И ВЫЙТИ")) {
@@ -1438,7 +1742,6 @@ void renderSnakeEditor() {
 
         int editX = windowWidth * 0.18f;
         int editY = windowHeight * 0.12f;
-        int sectionWidth = 300;
         int buttonWidth = 90;
         int buttonSpacing = 100;
 
@@ -1449,7 +1752,6 @@ void renderSnakeEditor() {
         renderRussianText("Модель:", editX, modelY + 20, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
         renderRussianText(el->modelFile.c_str(), editX + 80, modelY + 20, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // Кнопки для модели
         if (drawRussianButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
             openFileDialog(el->modelFile, folder);
@@ -1466,7 +1768,6 @@ void renderSnakeEditor() {
         int colorY = modelY + 90;
         renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
 
-        // Прямоугольник с цветом
         glColor3f(el->color.r, el->color.g, el->color.b);
         glBegin(GL_QUADS);
         glVertex2f(editX + 60, colorY - 15);
@@ -1483,12 +1784,10 @@ void renderSnakeEditor() {
         glVertex2f(editX + 60, colorY + 15);
         glEnd();
 
-        // Слайдеры цвета справа
         drawSlider(editX + 120, colorY - 10, 150, &el->color.r, 0.0f, 1.0f, "R");
         drawSlider(editX + 120, colorY + 15, 150, &el->color.g, 0.0f, 1.0f, "G");
         drawSlider(editX + 120, colorY + 40, 150, &el->color.b, 0.0f, 1.0f, "B");
 
-        // Кнопка сброса цвета
         if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
             if (selectedPart == 0) el->color = glm::vec3(0.0f, 1.0f, 0.0f);
             else if (selectedPart == 1) el->color = glm::vec3(0.0f, 0.7f, 0.0f);
@@ -1505,12 +1804,11 @@ void renderSnakeEditor() {
 
         drawSlider(editX, scaleY + 20, 250, &el->scale, 0.1f, 3.0f, "");
 
-        // Кнопка сброса масштаба
         if (drawRussianButton(editX + 260, scaleY + 10, 80, 30, "СБРОСИТЬ")) {
             el->scale = 0.8f;
         }
 
-        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для текущей секции) =====
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ =====
         if (drawRussianButton(editX, scaleY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             if (selectedPart == 0) {
                 el->modelFile = "snake_head.fbx";
@@ -1531,11 +1829,13 @@ void renderSnakeEditor() {
         }
     }
 
-    // Предпросмотр
-    renderModelPreview(previewModel, "ПРЕДПРОСМОТР",
-        windowWidth * 0.46f, windowHeight * 0.12f,
-        windowWidth * 0.36f, windowHeight * 0.5f,
-        previewRotation, autoRotate, lastRotationTime);
+    if (selectedPart >= 0 && selectedPart < snakeElements.size()) {
+        renderModelPreview(previewModel, "ПРЕДПРОСМОТР",
+            windowWidth * 0.46f, windowHeight * 0.12f,
+            windowWidth * 0.36f, windowHeight * 0.5f,
+            previewRotation, autoRotate, lastRotationTime,
+            snakeElements[selectedPart]->scale);  // ← передаем масштаб
+    }
 
     if (drawRussianButton(windowWidth * 0.03f, windowHeight * 0.9f, 150, 50, "НАЗАД")) {
         currentMode = MODE_MAIN;
@@ -1581,7 +1881,6 @@ void renderGroundSkyEditor() {
         renderRussianText("Модель:", editX, modelY + 20, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
         renderRussianText(ground->modelFile.c_str(), editX + 80, modelY + 20, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // Кнопки для модели
         if (drawRussianButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openFileDialog(ground->modelFile, "floor");
         }
@@ -1596,7 +1895,6 @@ void renderGroundSkyEditor() {
         renderRussianText("Текстура:", editX, textureY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
         renderRussianText(ground->textureFile.c_str(), editX + 100, textureY, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // Кнопки для текстуры
         if (drawRussianButton(editX, textureY + 20, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openTextureFileDialog(ground->textureFile, floorTexture);
         }
@@ -1613,7 +1911,6 @@ void renderGroundSkyEditor() {
         int colorY = textureY + 70;
         renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
 
-        // Прямоугольник с цветом
         glColor3f(ground->color.r, ground->color.g, ground->color.b);
         glBegin(GL_QUADS);
         glVertex2f(editX + 60, colorY - 15);
@@ -1630,17 +1927,15 @@ void renderGroundSkyEditor() {
         glVertex2f(editX + 60, colorY + 15);
         glEnd();
 
-        // Слайдеры цвета справа
         drawSlider(editX + 120, colorY - 10, 150, &ground->color.r, 0.0f, 1.0f, "R");
         drawSlider(editX + 120, colorY + 15, 150, &ground->color.g, 0.0f, 1.0f, "G");
         drawSlider(editX + 120, colorY + 40, 150, &ground->color.b, 0.0f, 1.0f, "B");
 
-        // Кнопка сброса цвета
         if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
             ground->color = glm::vec3(0.3f, 0.6f, 0.2f);
         }
 
-        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для пола) =====
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ =====
         if (drawRussianButton(editX, colorY + 80, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             ground->modelFile = "";
             ground->textureFile = "";
@@ -1652,11 +1947,13 @@ void renderGroundSkyEditor() {
             updatePreviewForCurrentMode();
         }
 
-        // Предпросмотр для пола
-        renderModelPreview(previewModel, "ПРЕДПРОСМОТР ПОЛА",
-            windowWidth * 0.46f, windowHeight * 0.12f,
-            windowWidth * 0.36f, windowHeight * 0.5f,
-            previewRotation, autoRotate, lastRotationTime);
+        if (selectedGroundSky == 0) {
+            renderModelPreview(previewModel, "ПРЕДПРОСМОТР ПОЛА",
+                windowWidth * 0.46f, windowHeight * 0.12f,
+                windowWidth * 0.36f, windowHeight * 0.5f,
+                previewRotation, autoRotate, lastRotationTime,
+                groundSkyElements[0]->scale);  // ← передаем масштаб пола
+        }
     }
     else {
         // НЕБО
@@ -1674,7 +1971,6 @@ void renderGroundSkyEditor() {
         renderRussianText("Текстура:", editX, textureY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
         renderRussianText(sky->textureFile.c_str(), editX + 100, textureY, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // Кнопки для текстуры
         if (drawRussianButton(editX, textureY + 20, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openTextureFileDialog(sky->textureFile, skyTexture);
         }
@@ -1691,7 +1987,6 @@ void renderGroundSkyEditor() {
         int colorY = textureY + 70;
         renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
 
-        // Прямоугольник с цветом
         glColor3f(sky->color.r, sky->color.g, sky->color.b);
         glBegin(GL_QUADS);
         glVertex2f(editX + 60, colorY - 15);
@@ -1708,17 +2003,15 @@ void renderGroundSkyEditor() {
         glVertex2f(editX + 60, colorY + 15);
         glEnd();
 
-        // Слайдеры цвета справа
         drawSlider(editX + 120, colorY - 10, 150, &sky->color.r, 0.0f, 1.0f, "R");
         drawSlider(editX + 120, colorY + 15, 150, &sky->color.g, 0.0f, 1.0f, "G");
         drawSlider(editX + 120, colorY + 40, 150, &sky->color.b, 0.0f, 1.0f, "B");
 
-        // Кнопка сброса цвета
         if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
             sky->color = glm::vec3(0.53f, 0.81f, 0.92f);
         }
 
-        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для неба) =====
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ =====
         if (drawRussianButton(editX, colorY + 80, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             sky->textureFile = "";
             sky->color = glm::vec3(0.53f, 0.81f, 0.92f);
@@ -1786,7 +2079,6 @@ void renderObstaclesEditor() {
         renderRussianText("Модель:", editX, modelY + 20, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
         renderRussianText(el->modelFile.c_str(), editX + 80, modelY + 20, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // Кнопки для модели
         if (drawRussianButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openFileDialog(el->modelFile, "obstacles");
         }
@@ -1803,7 +2095,6 @@ void renderObstaclesEditor() {
         int colorY = modelY + 90;
         renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
 
-        // Прямоугольник с цветом
         glColor3f(el->color.r, el->color.g, el->color.b);
         glBegin(GL_QUADS);
         glVertex2f(editX + 60, colorY - 15);
@@ -1820,12 +2111,10 @@ void renderObstaclesEditor() {
         glVertex2f(editX + 60, colorY + 15);
         glEnd();
 
-        // Слайдеры цвета справа
         drawSlider(editX + 120, colorY - 10, 150, &el->color.r, 0.0f, 1.0f, "R");
         drawSlider(editX + 120, colorY + 15, 150, &el->color.g, 0.0f, 1.0f, "G");
         drawSlider(editX + 120, colorY + 40, 150, &el->color.b, 0.0f, 1.0f, "B");
 
-        // Кнопка сброса цвета
         if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
             if (selectedObstacle == 0) el->color = glm::vec3(0.1f, 0.4f, 0.1f);
             else if (selectedObstacle == 1) el->color = glm::vec3(0.5f, 0.5f, 0.5f);
@@ -1843,7 +2132,6 @@ void renderObstaclesEditor() {
 
         drawSlider(editX, scaleY + 20, 250, &el->scale, 0.1f, 3.0f, "");
 
-        // Кнопка сброса масштаба
         if (drawRussianButton(editX + 260, scaleY + 10, 80, 30, "СБРОСИТЬ")) {
             if (selectedObstacle == 0) el->scale = 1.5f;
             else if (selectedObstacle == 1) el->scale = 1.2f;
@@ -1861,7 +2149,6 @@ void renderObstaclesEditor() {
 
         drawIntSlider(editX, countY + 20, 250, &el->count, 0, 50, "");
 
-        // Кнопка сброса количества
         if (drawRussianButton(editX + 260, countY + 10, 80, 30, "СБРОСИТЬ")) {
             if (selectedObstacle == 0) el->count = 10;
             else if (selectedObstacle == 1) el->count = 5;
@@ -1869,7 +2156,7 @@ void renderObstaclesEditor() {
             else el->count = 10;
         }
 
-        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для текущего элемента) =====
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ =====
         if (drawRussianButton(editX, countY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             if (selectedObstacle == 0) {
                 el->modelFile = "tree.fbx";
@@ -1899,10 +2186,13 @@ void renderObstaclesEditor() {
         }
     }
 
-    renderModelPreview(previewModel, "ПРЕДПРОСМОТР",
-        windowWidth * 0.46f, windowHeight * 0.12f,
-        windowWidth * 0.36f, windowHeight * 0.5f,
-        previewRotation, autoRotate, lastRotationTime);
+    if (selectedObstacle >= 0 && selectedObstacle < obstaclesElements.size()) {
+        renderModelPreview(previewModel, "ПРЕДПРОСМОТР",
+            windowWidth * 0.46f, windowHeight * 0.12f,
+            windowWidth * 0.36f, windowHeight * 0.5f,
+            previewRotation, autoRotate, lastRotationTime,
+            obstaclesElements[selectedObstacle]->scale);  // ← передаем масштаб
+    }
 
     if (drawRussianButton(windowWidth * 0.03f, windowHeight * 0.9f, 150, 50, "НАЗАД")) {
         currentMode = MODE_MAIN;
@@ -1949,7 +2239,6 @@ void renderEnvironmentEditor() {
         renderRussianText("Модель:", editX, modelY + 20, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
         renderRussianText(el->modelFile.c_str(), editX + 80, modelY + 20, 0.3f, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        // Кнопки для модели
         if (drawRussianButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openFileDialog(el->modelFile, folder);
         }
@@ -1965,7 +2254,6 @@ void renderEnvironmentEditor() {
         int colorY = modelY + 90;
         renderRussianText("Цвет:", editX, colorY, 0.3f, glm::vec3(1.0f, 1.0f, 1.0f));
 
-        // Прямоугольник с цветом
         glColor3f(el->color.r, el->color.g, el->color.b);
         glBegin(GL_QUADS);
         glVertex2f(editX + 60, colorY - 15);
@@ -1982,12 +2270,10 @@ void renderEnvironmentEditor() {
         glVertex2f(editX + 60, colorY + 15);
         glEnd();
 
-        // Слайдеры цвета справа
         drawSlider(editX + 120, colorY - 10, 150, &el->color.r, 0.0f, 1.0f, "R");
         drawSlider(editX + 120, colorY + 15, 150, &el->color.g, 0.0f, 1.0f, "G");
         drawSlider(editX + 120, colorY + 40, 150, &el->color.b, 0.0f, 1.0f, "B");
 
-        // Кнопка сброса цвета
         if (drawRussianButton(editX + 280, colorY + 15, 80, 30, "СБРОСИТЬ")) {
             if (selectedEnv == 0) el->color = glm::vec3(1.0f, 0.0f, 1.0f);
             else if (selectedEnv == 1) el->color = glm::vec3(0.5f, 0.5f, 0.5f);
@@ -2004,7 +2290,6 @@ void renderEnvironmentEditor() {
 
         drawSlider(editX, scaleY + 20, 250, &el->scale, 0.1f, 3.0f, "");
 
-        // Кнопка сброса масштаба
         if (drawRussianButton(editX + 260, scaleY + 10, 80, 30, "СБРОСИТЬ")) {
             if (selectedEnv == 0) el->scale = 0.7f;
             else if (selectedEnv == 1) el->scale = 0.6f;
@@ -2021,14 +2306,13 @@ void renderEnvironmentEditor() {
 
         drawIntSlider(editX, countY + 20, 250, &el->count, 0, 50, "");
 
-        // Кнопка сброса количества
         if (drawRussianButton(editX + 260, countY + 10, 80, 30, "СБРОСИТЬ")) {
             if (selectedEnv == 0) el->count = 25;
             else if (selectedEnv == 1) el->count = 15;
             else el->count = 20;
         }
 
-        // ===== КНОПКА ОЧИСТИТЬ ВСЕ (для текущего элемента) =====
+        // ===== КНОПКА ОЧИСТИТЬ ВСЕ =====
         if (drawRussianButton(editX, countY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             if (selectedEnv == 0) {
                 el->modelFile = "flower.fbx";
@@ -2052,10 +2336,13 @@ void renderEnvironmentEditor() {
         }
     }
 
-    renderModelPreview(previewModel, "ПРЕДПРОСМОТР",
-        windowWidth * 0.46f, windowHeight * 0.12f,
-        windowWidth * 0.36f, windowHeight * 0.5f,
-        previewRotation, autoRotate, lastRotationTime);
+    if (selectedEnv >= 0 && selectedEnv < environmentElements.size()) {
+        renderModelPreview(previewModel, "ПРЕДПРОСМОТР",
+            windowWidth * 0.46f, windowHeight * 0.12f,
+            windowWidth * 0.36f, windowHeight * 0.5f,
+            previewRotation, autoRotate, lastRotationTime,
+            environmentElements[selectedEnv]->scale);  // ← передаем масштаб
+    }
 
     if (drawRussianButton(windowWidth * 0.03f, windowHeight * 0.9f, 150, 50, "НАЗАД")) {
         currentMode = MODE_MAIN;
@@ -2197,7 +2484,6 @@ void renderGridEditor() {
     if (currentConfig.gridEnabled) {
         glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
 
-        // Включаем сглаживание линий
         glEnable(GL_LINE_SMOOTH);
         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
         glLineWidth(currentConfig.gridLineWidth);
@@ -2254,9 +2540,8 @@ bool initOpenGL() {
         return false;
     }
 
-    // Настройки для сглаживания
-    glfwWindowHint(GLFW_SAMPLES, 4); // Мультисэмплинг
-    glfwWindowHint(GLFW_DEPTH_BITS, 24); // 24-битный depth buffer
+    glfwWindowHint(GLFW_SAMPLES, 4);
+    glfwWindowHint(GLFW_DEPTH_BITS, 24);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
 
     window = glfwCreateWindow(windowWidth, windowHeight, "Редактор конфигурации игры Змейка", NULL, NULL);
@@ -2267,8 +2552,6 @@ bool initOpenGL() {
     }
 
     glfwMakeContextCurrent(window);
-
-    // Включаем VSync
     glfwSwapInterval(1);
 
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
@@ -2285,10 +2568,7 @@ bool initOpenGL() {
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glClearDepth(1.0f);
-
-    // Включаем мультисэмплинг
     glEnable(GL_MULTISAMPLE);
-
     glEnable(GL_NORMALIZE);
     glEnable(GL_COLOR_MATERIAL);
     glEnable(GL_BLEND);

@@ -2,23 +2,27 @@
 #include "Game.h"
 #include "../Graphics/ShaderManager.h"
 #include "../Graphics/Camera.h"
-#include "../ConfigEditor/ConfigManager.h"  // ПРАВИЛЬНЫЙ ПУТЬ!
+#include "../ConfigEditor/ConfigManager.h"
 #include "../Shared/ConfigTypes.h"
 #include <windows.h>
 #include <iostream>
+
 // Внешние глобальные переменные
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
 extern GLuint uiVAO, uiVBO;
 extern bool g_shouldExitGame;
-extern GLFWwindow* g_mainWindow; // ДОБАВЛЕНО
+extern GLFWwindow* g_mainWindow;
+
 std::string g_assetsPath;
 std::string g_modelsPath;
 std::string g_texturesPath;
 std::string g_configPath;
+
 Game::Game() {
     // Инициализация делегируется компонентам
 }
+
 void Game::initPaths() {
     char currentDir[MAX_PATH];
     GetCurrentDirectoryA(MAX_PATH, currentDir);
@@ -45,9 +49,8 @@ void Game::initPaths() {
         std::cout << "Found Release, root: " << rootPath << std::endl;
     }
 
-    // Убираем лишний "\ractica" если он есть
+    // Убираем лишний сегмент если есть
     if (rootPath.find("\\ractica") != std::string::npos) {
-        // Убираем последний сегмент пути
         size_t lastSlash = rootPath.find_last_of("\\");
         if (lastSlash != std::string::npos) {
             rootPath = rootPath.substr(0, lastSlash);
@@ -93,6 +96,15 @@ void Game::loadConfig() {
         std::cout << "FLOOR_COLOR = " << config.floorColor.r << " " << config.floorColor.g << " " << config.floorColor.b << std::endl;
         std::cout << "GRID_COLOR = " << config.gridColor.r << " " << config.gridColor.g << " " << config.gridColor.b << std::endl;
 
+        // Настройки сетки
+        std::cout << "GRID_WIDTH = " << config.gridWidth << std::endl;
+        std::cout << "GRID_DEPTH = " << config.gridDepth << std::endl;
+        std::cout << "CELL_SIZE = " << config.cellSize << std::endl;
+        std::cout << "INITIAL_FOOD_COUNT = " << config.initialFoodCount << std::endl;
+        std::cout << "OBSTACLE_COUNT = " << config.obstacleCount << std::endl;
+        std::cout << "GRID_ENABLED = " << (config.gridEnabled ? "true" : "false") << std::endl;
+        std::cout << "GRID_LINE_WIDTH = " << config.gridLineWidth << std::endl;
+
         // Модели змейки
         std::cout << "SNAKE_HEAD_MODEL = " << config.snakeHeadModel << std::endl;
         std::cout << "SNAKE_BODY_MODEL = " << config.snakeBodyModel << std::endl;
@@ -108,25 +120,38 @@ void Game::loadConfig() {
         std::cout << "SNAKE_BODY_SCALE = " << config.snakeBodyScale << std::endl;
         std::cout << "SNAKE_TAIL_SCALE = " << config.snakeTailScale << std::endl;
 
+        // Настройки окружения
+        std::cout << "CLOUD_COUNT = " << config.cloudCount << std::endl;
+        std::cout << "BIRD_COUNT = " << config.birdCount << std::endl;
+        std::cout << "FLOWER_COUNT = " << config.flowerCount << std::endl;
+
         // Модели окружения
         std::cout << "APPLE_MODEL = " << config.appleModel << std::endl;
         std::cout << "TREE_MODEL = " << config.treeModel << std::endl;
         std::cout << "CLOUD_MODEL = " << config.cloudModel << std::endl;
         std::cout << "BIRD_MODEL = " << config.birdModel << std::endl;
         std::cout << "FLOWER_MODEL = " << config.flowerModel << std::endl;
+        std::cout << "FENCE_MODEL = " << config.fenceModel << std::endl;
+        std::cout << "ROCK_MODEL = " << config.rockModel << std::endl;
+        std::cout << "GRASS_MODEL = " << config.grassModel << std::endl;
         std::cout << "FLOOR_MODEL = " << config.floorModel << std::endl;
         std::cout << "FLOOR_TEXTURE = " << config.floorTexture << std::endl;
-
-        // Количество объектов
-        std::cout << "CLOUD_COUNT = " << config.cloudCount << std::endl;
-        std::cout << "BIRD_COUNT = " << config.birdCount << std::endl;
-        std::cout << "FLOWER_COUNT = " << config.flowerCount << std::endl;
 
         std::cout << "----------------------------\n" << std::endl;
 
         // ПРИМЕНЯЕМ К GameObjects
         std::cout << "--- ПРИМЕНЯЕМ К GameObjects ---" << std::endl;
 
+        // Настройки сетки
+        objects.setGridWidth(config.gridWidth);
+        objects.setGridDepth(config.gridDepth);
+        objects.setCellSize(config.cellSize);
+        objects.setInitialFoodCount(config.initialFoodCount);
+        objects.setObstacleCount(config.obstacleCount);
+        objects.setGridEnabled(config.gridEnabled);
+        objects.setGridLineWidth(config.gridLineWidth);
+
+        // Модели змейки
         objects.setSnakeModels(
             config.snakeHeadModel,
             config.snakeBodyModel,
@@ -136,6 +161,28 @@ void Game::loadConfig() {
             << " Body=" << config.snakeBodyModel
             << " Tail=" << config.snakeTailModel << std::endl;
 
+        // Цвета змейки
+        objects.setSnakeColors(
+            config.snakeHeadColor,
+            config.snakeBodyColor,
+            config.snakeTailColor
+        );
+        std::cout << "  setSnakeColors: Head=("
+            << config.snakeHeadColor.r << "," << config.snakeHeadColor.g << "," << config.snakeHeadColor.b << ") "
+            << "Body=(" << config.snakeBodyColor.r << "," << config.snakeBodyColor.g << "," << config.snakeBodyColor.b << ") "
+            << "Tail=(" << config.snakeTailColor.r << "," << config.snakeTailColor.g << "," << config.snakeTailColor.b << ")" << std::endl;
+
+        // Масштабы змейки
+        objects.setSnakeScales(
+            config.snakeHeadScale,
+            config.snakeBodyScale,
+            config.snakeTailScale
+        );
+        std::cout << "  setSnakeScales: Head=" << config.snakeHeadScale
+            << " Body=" << config.snakeBodyScale
+            << " Tail=" << config.snakeTailScale << std::endl;
+
+        // Модели окружения
         objects.setAppleModel(config.appleModel);
         std::cout << "  setAppleModel: " << config.appleModel << std::endl;
 
@@ -151,22 +198,16 @@ void Game::loadConfig() {
         objects.setFlowerModel(config.flowerModel);
         std::cout << "  setFlowerModel: " << config.flowerModel << std::endl;
 
-        objects.setFloorModel(config.floorModel);
-        std::cout << "  setFloorModel: " << config.floorModel << std::endl;
+        objects.setFenceModel(config.fenceModel);
+        std::cout << "  setFenceModel: " << config.fenceModel << std::endl;
 
-        objects.setSnakeColors(
-            config.snakeHeadColor,
-            config.snakeBodyColor,
-            config.snakeTailColor
-        );
-        std::cout << "  setSnakeColors: Head=("
-            << config.snakeHeadColor.r << "," << config.snakeHeadColor.g << "," << config.snakeHeadColor.b << ") "
-            << "Body=(" << config.snakeBodyColor.r << "," << config.snakeBodyColor.g << "," << config.snakeBodyColor.b << ") "
-            << "Tail=(" << config.snakeTailColor.r << "," << config.snakeTailColor.g << "," << config.snakeTailColor.b << ")" << std::endl;
+        objects.setRockModel(config.rockModel);
+        std::cout << "  setRockModel: " << config.rockModel << std::endl;
 
-        objects.setSnakeScale(config.snakeHeadScale);
-        std::cout << "  setSnakeScale: " << config.snakeHeadScale << std::endl;
+        objects.setGrassModel(config.grassModel);
+        std::cout << "  setGrassModel: " << config.grassModel << std::endl;
 
+        // Настройки окружения (количество)
         objects.setCloudCount(config.cloudCount);
         std::cout << "  setCloudCount: " << config.cloudCount << std::endl;
 
@@ -175,6 +216,20 @@ void Game::loadConfig() {
 
         objects.setFlowerCount(config.flowerCount);
         std::cout << "  setFlowerCount: " << config.flowerCount << std::endl;
+
+        // Настройки пола
+        objects.setFloorModel(config.floorModel);
+        std::cout << "  setFloorModel: " << config.floorModel << std::endl;
+
+        objects.setFloorColor(config.floorColor);
+        std::cout << "  setFloorColor: (" << config.floorColor.r << "," << config.floorColor.g << "," << config.floorColor.b << ")" << std::endl;
+
+        objects.setFloorTexture(config.floorTexture);
+        std::cout << "  setFloorTexture: " << (config.floorTexture.empty() ? "none" : config.floorTexture) << std::endl;
+
+        // Цвета неба и сетки
+        objects.setSkyColor(config.skyColor);
+        objects.setGridColor(config.gridColor);
 
         // ПРИМЕНЯЕМ К Renderer
         std::cout << "\n--- ПРИМЕНЯЕМ К Renderer ---" << std::endl;
@@ -188,14 +243,12 @@ void Game::loadConfig() {
         renderer.setGridColor(config.gridColor);
         std::cout << "  setGridColor: (" << config.gridColor.r << "," << config.gridColor.g << "," << config.gridColor.b << ")" << std::endl;
 
+        // Передаем настройки сетки в рендерер
+        renderer.setGridSettings(config.gridEnabled, config.gridLineWidth);
+
         // ЗАГРУЖАЕМ МОДЕЛИ
         std::cout << "\n--- ЗАГРУЖАЕМ МОДЕЛИ ---" << std::endl;
         renderer.loadModelsFromConfig(objects);
-
-        if (!config.floorTexture.empty()) {
-            std::cout << "  setFloorTexture: " << config.floorTexture << std::endl;
-            renderer.setFloorTexture(config.floorTexture);
-        }
 
         std::cout << "===============================\n" << std::endl;
     }
@@ -205,6 +258,7 @@ void Game::loadConfig() {
         renderer.createPrimitives();
     }
 }
+
 void Game::initialize() {
     std::cout << "=== GAME INITIALIZATION START ===" << std::endl;
 
@@ -239,7 +293,6 @@ void Game::continueGame() {
     }
 }
 
-
 void Game::update() {
     if (objects.isGameOver() || objects.getGameState() != PLAYING) return;
 
@@ -273,7 +326,7 @@ void Game::render() {
             objects.getSpeedMultiplier(),
             objects.getSpeedDisplayText(),
             objects.isNameInputActive(),
-            true); // Всегда true, так как теперь только двойная буферизация
+            true);
         break;
     case HIGH_SCORES:
         ui.drawHighScoresMenu(objects.getHighScores());
@@ -283,6 +336,7 @@ void Game::render() {
         break;
     }
 }
+
 void Game::forceRedraw() {
     // Принудительно перерисовываем текущее состояние
     if (g_mainWindow) {
@@ -291,6 +345,7 @@ void Game::forceRedraw() {
         glfwSwapBuffers(g_mainWindow);
     }
 }
+
 void Game::handleKeyPress(int key) {
     // Делегируем обработку ввода соответствующим компонентам
     switch (objects.getGameState()) {

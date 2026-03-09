@@ -28,13 +28,13 @@ extern Game g_game;
 extern std::string g_modelsPath;
 extern std::string g_texturesPath;
 
-
-
 GameRenderer::GameRenderer()
     : skyColor(0.53f, 0.81f, 0.92f)
     , floorColor(0.3f, 0.6f, 0.2f)
     , gridColor(0.2f, 0.5f, 0.15f)
-    , useFloorTexture(false) {
+    , useFloorTexture(false)
+    , gridEnabled(true)
+    , gridLineWidth(1.0f) {
 }
 
 void GameRenderer::initialize() {
@@ -99,11 +99,73 @@ void GameRenderer::createPrimitives() {
     std::cout << "Primitives created successfully" << std::endl;
 }
 
+// НОВЫЙ МЕТОД: загрузка текстуры для модели
+bool GameRenderer::loadTextureForModel(Model& model, const std::string& texturePath, const std::string& modelFolder) {
+    if (texturePath.empty()) {
+        model.hasTexture = false;
+        return false;
+    }
+
+    std::string fullPath;
+
+    // Сначала пробуем в папке с моделью
+    fullPath = g_modelsPath + modelFolder + "\\" + texturePath;
+    std::cout << "  Trying texture in model folder: " << fullPath << std::endl;
+
+    if (!std::filesystem::exists(fullPath)) {
+        // Пробуем в папке текстур
+        fullPath = g_texturesPath + texturePath;
+        std::cout << "  Trying texture in textures folder: " << fullPath << std::endl;
+    }
+
+    if (!std::filesystem::exists(fullPath)) {
+        std::cout << "  ✗ Texture not found: " << texturePath << std::endl;
+        model.hasTexture = false;
+        return false;
+    }
+
+    // Загружаем текстуру
+    int width, height, channels;
+    unsigned char* data = stbi_load(fullPath.c_str(), &width, &height, &channels, 0);
+
+    if (data) {
+        if (model.textureID != 0) {
+            glDeleteTextures(1, &model.textureID);
+        }
+
+        glGenTextures(1, &model.textureID);
+        glBindTexture(GL_TEXTURE_2D, model.textureID);
+
+        GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        stbi_image_free(data);
+
+        model.hasTexture = true;
+        std::cout << "  ✓ Texture loaded: " << texturePath << " (" << width << "x" << height << ")" << std::endl;
+        return true;
+    }
+    else {
+        std::cout << "  ✗ Failed to load texture: " << stbi_failure_reason() << std::endl;
+        stbi_image_free(data);
+        model.hasTexture = false;
+        return false;
+    }
+}
+
 bool GameRenderer::loadModelWithFallback(Model& model, const std::string& modelPath,
     const std::string& subFolder,
     std::function<void(Model&)> fallbackCreator) {
+
     // Очищаем предыдущую модель
     model.cleanup();
+    model.hasTexture = false;
 
     // Если путь пустой - сразу используем примитив
     if (modelPath.empty()) {
@@ -153,9 +215,24 @@ bool GameRenderer::loadModelWithFallback(Model& model, const std::string& modelP
                 }
                 model.vertices.push_back(v);
             }
-            model.hasTexture = false;
+
             model.setupBuffers();
             std::cout << "✓ Model loaded from file: " << modelPath << std::endl;
+
+            // Пытаемся загрузить текстуру, если она есть в материалах
+            if (!tempData.materials.empty() && !tempData.materials[0].texturePath.empty()) {
+                std::cout << "  Attempting to load texture: " << tempData.materials[0].texturePath << std::endl;
+
+                // Извлекаем только имя файла из пути
+                std::string texPath = tempData.materials[0].texturePath;
+                size_t pos = texPath.find_last_of("\\/");
+                if (pos != std::string::npos) {
+                    texPath = texPath.substr(pos + 1);
+                }
+
+                loadTextureForModel(model, texPath, subFolder);
+            }
+
             return true;
         }
     }
@@ -226,9 +303,18 @@ void GameRenderer::loadModelsFromConfig(const GameObjects& objects) {
                         v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
                     }
 
-                    v.texCoords = glm::vec2(0.0f, 0.0f);
+                    if (i < tempData.texCoords.size() / 2) {
+                        v.texCoords = glm::vec2(
+                            tempData.texCoords[i * 2],
+                            tempData.texCoords[i * 2 + 1]
+                        );
+                    }
+                    else {
+                        v.texCoords = glm::vec2(0.0f, 0.0f);
+                    }
                     floorModel.vertices.push_back(v);
                 }
+
                 floorModel.hasTexture = false;
                 floorModel.setupBuffers();
                 std::cout << "✓ Floor model loaded from file: " << objects.getFloorModel() << std::endl;
@@ -243,6 +329,11 @@ void GameRenderer::loadModelsFromConfig(const GameObjects& objects) {
     }
     else {
         createTexturedFloorModel(floorModel);
+    }
+
+    // Загружаем текстуру пола, если есть
+    if (objects.isUsingFloorTexture()) {
+        setFloorTexture(objects.getFloorTexture());
     }
 
     std::cout << "================================================\n" << std::endl;

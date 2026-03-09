@@ -16,4 +16,8 @@ public:
     void setupBuffers();
     void draw() const;
     void cleanup();
+    void setTexture(GLuint texID) {
+        textureID = texID;
+        hasTexture = (texID != 0);
+    }
 };

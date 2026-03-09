@@ -28,34 +28,55 @@ GameObjects::GameObjects()
     gameTimer(0.0f),
     nameInputActive(false),
 
-    // Эти значения будут перезаписаны из конфига в Game::loadConfig()
-    snakeHeadModel("snake_head.obj"),
-    snakeBodyModel("snake_body.obj"),
-    snakeTailModel("snake_tail.obj"),
+    // Настройки сетки (будут перезаписаны из конфига)
+    gridWidth(120),
+    gridDepth(120),
+    cellSize(0.1f),
+    initialFoodCount(10),
+    obstacleCount(10),
+    gridEnabled(true),
+    gridLineWidth(1.0f),
+
+    // Настройки змейки (будут перезаписаны из конфига)
+    snakeHeadModel("snake_head.fbx"),
+    snakeBodyModel("snake_body.fbx"),
+    snakeTailModel("snake_tail.fbx"),
     snakeHeadColor(0.0f, 1.0f, 0.0f),
     snakeBodyColor(0.0f, 0.7f, 0.0f),
     snakeTailColor(0.0f, 0.5f, 0.0f),
-    snakeScale(0.8f),
+    snakeHeadScale(0.8f),
+    snakeBodyScale(0.8f),
+    snakeTailScale(0.8f),
 
-    // Модели окружения
+    // Настройки окружения (будут перезаписаны из конфига)
+    cloudCount(20),
+    birdCount(15),
+    flowerCount(25),
+
+    // Модели окружения (будут перезаписаны из конфига)
     appleModel("apple.fbx"),
     treeModel("tree.fbx"),
     cloudModel("cloud.fbx"),
     birdModel("bird.fbx"),
     flowerModel("flower.fbx"),
+    fenceModel("fence.fbx"),
+    rockModel("rock.fbx"),
+    grassModel("grass.fbx"),
 
-    cloudCount(20),
-    birdCount(15),
-    flowerCount(25),
-    floorModel("floor.obj"),
+    // Настройки пола (будут перезаписаны из конфига)
+    floorModel("floor.fbx"),
     floorColor(0.3f, 0.6f, 0.2f),
     floorScale(1.0f),
     useFloorTexture(false),
     floorTexture(""),
-    floorPosition(0.0f, -0.5f, 0.0f) {
+    floorPosition(0.0f, -0.5f, 0.0f),
+
+    // Настройки неба и сетки (будут перезаписаны из конфига)
+    skyColor(0.53f, 0.81f, 0.92f),
+    gridColor(0.2f, 0.5f, 0.15f) {
 
     speedMultipliers = { 0.1f, 0.25f, 0.5f, 1.0f, 2.0f, 4.0f, 6.0f, 8.0f, 10.0f };
-    currentSpeedIndex = 3;
+    currentSpeedIndex = 3; // x1.0 по умолчанию
 
     loadSettings(); // загружает настройки игрока (имя, скорость)
     updateGameSpeedFromMultiplier();
@@ -149,6 +170,80 @@ void GameObjects::setPlayerName(const std::string& name) {
 }
 
 //=============================================================================
+// СЕТТЕРЫ ДЛЯ ЗМЕЙКИ
+//=============================================================================
+void GameObjects::setSnakeModels(const std::string& head, const std::string& body, const std::string& tail) {
+    std::cout << "GameObjects::setSnakeModels: было ("
+        << snakeHeadModel << ", " << snakeBodyModel << ", " << snakeTailModel << ") -> "
+        << "стало (" << head << ", " << body << ", " << tail << ")" << std::endl;
+    snakeHeadModel = head;
+    snakeBodyModel = body;
+    snakeTailModel = tail;
+}
+
+void GameObjects::setSnakeColors(const glm::vec3& head, const glm::vec3& body, const glm::vec3& tail) {
+    std::cout << "GameObjects::setSnakeColors: Head ("
+        << head.r << "," << head.g << "," << head.b << ") "
+        << "Body (" << body.r << "," << body.g << "," << body.b << ") "
+        << "Tail (" << tail.r << "," << tail.g << "," << tail.b << ")" << std::endl;
+    snakeHeadColor = head;
+    snakeBodyColor = body;
+    snakeTailColor = tail;
+}
+
+void GameObjects::setSnakeScales(float headScale, float bodyScale, float tailScale) {
+    std::cout << "GameObjects::setSnakeScales: Head=" << headScale
+        << " Body=" << bodyScale << " Tail=" << tailScale << std::endl;
+    snakeHeadScale = headScale;
+    snakeBodyScale = bodyScale;
+    snakeTailScale = tailScale;
+}
+
+//=============================================================================
+// СЕТТЕРЫ ДЛЯ ОКРУЖЕНИЯ
+//=============================================================================
+void GameObjects::setCloudCount(int count) {
+    std::cout << "GameObjects::setCloudCount: " << count << std::endl;
+    cloudCount = count;
+}
+
+void GameObjects::setBirdCount(int count) {
+    std::cout << "GameObjects::setBirdCount: " << count << std::endl;
+    birdCount = count;
+}
+
+void GameObjects::setFlowerCount(int count) {
+    std::cout << "GameObjects::setFlowerCount: " << count << std::endl;
+    flowerCount = count;
+}
+
+//=============================================================================
+// СЕТТЕРЫ ДЛЯ ПОЛА
+//=============================================================================
+void GameObjects::setFloorModel(const std::string& model) {
+    floorModel = model;
+    std::cout << "Floor model set to: " << model << std::endl;
+}
+
+void GameObjects::setFloorColor(const glm::vec3& color) {
+    floorColor = color;
+}
+
+void GameObjects::setFloorScale(float scale) {
+    floorScale = scale;
+}
+
+void GameObjects::setFloorTexture(const std::string& texture) {
+    floorTexture = texture;
+    useFloorTexture = !texture.empty();
+    std::cout << "Floor texture set to: " << (texture.empty() ? "none" : texture) << std::endl;
+}
+
+void GameObjects::setFloorPosition(const glm::vec3& pos) {
+    floorPosition = pos;
+}
+
+//=============================================================================
 // УПРАВЛЕНИЕ СОСТОЯНИЕМ
 //=============================================================================
 void GameObjects::pauseGame() {
@@ -192,9 +287,9 @@ void GameObjects::handleSettingsKeyPress(int key) {
 //=============================================================================
 void GameObjects::initGame() {
     snake.clear();
-    snake.push_back(Point(GRID_WIDTH / 2, 0, GRID_DEPTH / 2));
-    snake.push_back(Point(GRID_WIDTH / 2 - 1, 0, GRID_DEPTH / 2));
-    snake.push_back(Point(GRID_WIDTH / 2 - 2, 0, GRID_DEPTH / 2));
+    snake.push_back(Point(gridWidth / 2, 0, gridDepth / 2));
+    snake.push_back(Point(gridWidth / 2 - 1, 0, gridDepth / 2));
+    snake.push_back(Point(gridWidth / 2 - 2, 0, gridDepth / 2));
 
     generateFence();
     generateInitialFood();
@@ -213,6 +308,7 @@ void GameObjects::initGame() {
     g_camera.setTargetDistance(5.0f);
 
     std::cout << "Game initialized with config values:" << std::endl;
+    std::cout << "  Grid: " << gridWidth << "x" << gridDepth << " cell size: " << cellSize << std::endl;
     std::cout << "  Cloud count: " << cloudCount << std::endl;
     std::cout << "  Bird count: " << birdCount << std::endl;
     std::cout << "  Flower count: " << flowerCount << std::endl;
@@ -256,9 +352,9 @@ void GameObjects::update() {
     }
     newHead.y = 0;
 
-    // Проверка столкновения со стенками
-    if (newHead.x <= 0 || newHead.x >= GRID_WIDTH - 1 ||
-        newHead.z <= 0 || newHead.z >= GRID_DEPTH - 1) {
+    // Проверка столкновения со стенками (используем gridWidth и gridDepth из конфига)
+    if (newHead.x <= 0 || newHead.x >= gridWidth - 1 ||
+        newHead.z <= 0 || newHead.z >= gridDepth - 1) {
         gameOver = true;
         gameState = GAME_OVER;
         updateHighScores();
@@ -302,16 +398,16 @@ void GameObjects::update() {
 }
 
 //=============================================================================
-// ГЕНЕРАЦИЯ ОБЪЕКТОВ (ИСПОЛЬЗУЮТ ЗНАЧЕНИЯ ИЗ КОНФИГА)
+// ГЕНЕРАЦИЯ ОБЪЕКТОВ
 //=============================================================================
 void GameObjects::generateClouds() {
     cloudSprites.clear();
     std::cout << "Generating " << cloudCount << " clouds (from config)" << std::endl;
 
-    float gameFieldMinX = -GRID_WIDTH * CELL_SIZE * 0.5f;
-    float gameFieldMaxX = GRID_WIDTH * CELL_SIZE * 0.5f;
-    float gameFieldMinZ = -GRID_DEPTH * CELL_SIZE * 0.5f;
-    float gameFieldMaxZ = GRID_DEPTH * CELL_SIZE * 0.5f;
+    float gameFieldMinX = -gridWidth * cellSize * 0.5f;
+    float gameFieldMaxX = gridWidth * cellSize * 0.5f;
+    float gameFieldMinZ = -gridDepth * cellSize * 0.5f;
+    float gameFieldMaxZ = gridDepth * cellSize * 0.5f;
     float safeDistance = 2.0f;
 
     for (int i = 0; i < cloudCount; i++) {
@@ -358,10 +454,10 @@ void GameObjects::generateBirds() {
     birds.clear();
     std::cout << "Generating " << birdCount << " birds (from config)" << std::endl;
 
-    float gameFieldMinX = -GRID_WIDTH * CELL_SIZE * 0.5f;
-    float gameFieldMaxX = GRID_WIDTH * CELL_SIZE * 0.5f;
-    float gameFieldMinZ = -GRID_DEPTH * CELL_SIZE * 0.5f;
-    float gameFieldMaxZ = GRID_DEPTH * CELL_SIZE * 0.5f;
+    float gameFieldMinX = -gridWidth * cellSize * 0.5f;
+    float gameFieldMaxX = gridWidth * cellSize * 0.5f;
+    float gameFieldMinZ = -gridDepth * cellSize * 0.5f;
+    float gameFieldMaxZ = gridDepth * cellSize * 0.5f;
     float safeDistance = 1.5f;
 
     for (int i = 0; i < birdCount; i++) {
@@ -438,42 +534,45 @@ void GameObjects::generateGroundSprites() {
 void GameObjects::generateFence() {
     fenceBlocks.clear();
 
+    // Используем gridWidth и gridDepth из конфига
     fenceBlocks.push_back(Point(0, 0, 0));
-    fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, 0));
-    fenceBlocks.push_back(Point(0, 0, GRID_DEPTH - 1));
-    fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, GRID_DEPTH - 1));
+    fenceBlocks.push_back(Point(gridWidth - 1, 0, 0));
+    fenceBlocks.push_back(Point(0, 0, gridDepth - 1));
+    fenceBlocks.push_back(Point(gridWidth - 1, 0, gridDepth - 1));
 
-    for (int x = 1; x < GRID_WIDTH - 1; x++) {
+    for (int x = 1; x < gridWidth - 1; x++) {
         fenceBlocks.push_back(Point(x, 0, 0));
     }
-    for (int x = 1; x < GRID_WIDTH - 1; x++) {
-        fenceBlocks.push_back(Point(x, 0, GRID_DEPTH - 1));
+    for (int x = 1; x < gridWidth - 1; x++) {
+        fenceBlocks.push_back(Point(x, 0, gridDepth - 1));
     }
-    for (int z = 1; z < GRID_DEPTH - 1; z++) {
+    for (int z = 1; z < gridDepth - 1; z++) {
         fenceBlocks.push_back(Point(0, 0, z));
     }
-    for (int z = 1; z < GRID_DEPTH - 1; z++) {
-        fenceBlocks.push_back(Point(GRID_WIDTH - 1, 0, z));
+    for (int z = 1; z < gridDepth - 1; z++) {
+        fenceBlocks.push_back(Point(gridWidth - 1, 0, z));
     }
 }
 
 void GameObjects::generateObstacles() {
     obstacles.clear();
-    for (int i = 0; i < OBSTACLE_COUNT; i++) {
+
+    // Используем obstacleCount из конфига
+    for (int i = 0; i < obstacleCount; i++) {
         Point center;
         bool validPosition = false;
         int attempts = 0;
 
         do {
-            center.x = 10 + rand() % (GRID_WIDTH - 20);
+            center.x = 10 + rand() % (gridWidth - 20);
             center.y = 0;
-            center.z = 10 + rand() % (GRID_DEPTH - 20);
+            center.z = 10 + rand() % (gridDepth - 20);
 
             validPosition = true;
             Obstacle tempObstacle(center);
 
             for (const auto& block : tempObstacle.blocks) {
-                if (block.x < 0 || block.x >= GRID_WIDTH || block.z < 0 || block.z >= GRID_DEPTH) {
+                if (block.x < 0 || block.x >= gridWidth || block.z < 0 || block.z >= gridDepth) {
                     validPosition = false;
                     break;
                 }
@@ -526,9 +625,9 @@ void GameObjects::generateSingleFood() {
     int attempts = 0;
 
     do {
-        newFood.x = 5 + rand() % (GRID_WIDTH - 10);
+        newFood.x = 5 + rand() % (gridWidth - 10);
         newFood.y = 0;
-        newFood.z = 5 + rand() % (GRID_DEPTH - 10);
+        newFood.z = 5 + rand() % (gridDepth - 10);
 
         validPosition = true;
 
@@ -572,7 +671,8 @@ void GameObjects::generateSingleFood() {
 
 void GameObjects::generateInitialFood() {
     food.clear();
-    for (int i = 0; i < INITIAL_FOOD_COUNT; i++) {
+    // Используем initialFoodCount из конфига
+    for (int i = 0; i < initialFoodCount; i++) {
         generateSingleFood();
     }
 }
@@ -798,7 +898,6 @@ void GameObjects::addHighScore(const std::string& playerName, int score) {
     auto now = std::chrono::system_clock::now();
     auto time_t = std::chrono::system_clock::to_time_t(now);
 
-    // Используем localtime_s вместо localtime
     struct tm timeinfo;
     localtime_s(&timeinfo, &time_t);
 
@@ -839,74 +938,6 @@ void GameObjects::updateHighScores() {
             std::cout << "Failed to send high score to server" << std::endl;
         }
     }
-}
-
-//=============================================================================
-// МЕТОДЫ ДЛЯ КОНФИГА
-//=============================================================================
-void GameObjects::setSnakeModels(const std::string& head, const std::string& body, const std::string& tail) {
-    std::cout << "GameObjects::setSnakeModels: было ("
-        << snakeHeadModel << ", " << snakeBodyModel << ", " << snakeTailModel << ") -> "
-        << "стало (" << head << ", " << body << ", " << tail << ")" << std::endl;
-    snakeHeadModel = head;
-    snakeBodyModel = body;
-    snakeTailModel = tail;
-}
-
-void GameObjects::setSnakeColors(const glm::vec3& head, const glm::vec3& body, const glm::vec3& tail) {
-    std::cout << "GameObjects::setSnakeColors: Head ("
-        << head.r << "," << head.g << "," << head.b << ") "
-        << "Body (" << body.r << "," << body.g << "," << body.b << ") "
-        << "Tail (" << tail.r << "," << tail.g << "," << tail.b << ")" << std::endl;
-    snakeHeadColor = head;
-    snakeBodyColor = body;
-    snakeTailColor = tail;
-}
-
-void GameObjects::setSnakeScale(float scale) {
-    std::cout << "GameObjects::setSnakeScale: " << scale << std::endl;
-    snakeScale = scale;
-}
-
-void GameObjects::setCloudCount(int count) {
-    std::cout << "GameObjects::setCloudCount: " << count << std::endl;
-    cloudCount = count;
-}
-
-void GameObjects::setBirdCount(int count) {
-    std::cout << "GameObjects::setBirdCount: " << count << std::endl;
-    birdCount = count;
-}
-
-
-void GameObjects::setFlowerCount(int count) {
-    flowerCount = count;
-}
-
-//=============================================================================
-// МЕТОДЫ ДЛЯ ПОЛА
-//=============================================================================
-void GameObjects::setFloorModel(const std::string& model) {
-    floorModel = model;
-    std::cout << "Floor model set to: " << model << std::endl;
-}
-
-void GameObjects::setFloorColor(const glm::vec3& color) {
-    floorColor = color;
-}
-
-void GameObjects::setFloorScale(float scale) {
-    floorScale = scale;
-}
-
-void GameObjects::setFloorTexture(const std::string& texture) {
-    floorTexture = texture;
-    useFloorTexture = !texture.empty();
-    std::cout << "Floor texture set to: " << (texture.empty() ? "none" : texture) << std::endl;
-}
-
-void GameObjects::setFloorPosition(const glm::vec3& pos) {
-    floorPosition = pos;
 }
 
 //=============================================================================
@@ -1011,7 +1042,7 @@ bool GameObjects::saveGame() {
     file.write(reinterpret_cast<char*>(&save), sizeof(SaveData));
     file.close();
 
-    std::cout << " Game saved successfully! (" << std::endl;
+    std::cout << " Game saved successfully!" << std::endl;
     return true;
 }
 
