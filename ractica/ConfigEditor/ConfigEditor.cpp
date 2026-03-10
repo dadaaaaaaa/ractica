@@ -574,106 +574,176 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
     model.materials.clear();
     model.materialIndices.clear();
 
-    // Получаем базовое имя модели
+    // Получаем базовое имя модели без расширения
     std::string baseName = filename;
     size_t dotPos = baseName.find_last_of('.');
     if (dotPos != std::string::npos) {
         baseName = baseName.substr(0, dotPos);
     }
+    std::cout << "  Base name for textures: " << baseName << std::endl;
 
     // Загружаем материалы
+    std::cout << "\n  --- Loading Materials ---" << std::endl;
+
     for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
         aiMaterial* mat = scene->mMaterials[i];
         Material material;
         material.textureID = 0;
 
-        aiColor3D color(1.0f, 1.0f, 1.0f);
-        mat->Get(AI_MATKEY_COLOR_DIFFUSE, color);
-        material.diffuse = glm::vec3(color.r, color.g, color.b);
+        // Получаем имя материала
+        aiString matName;
+        if (mat->Get(AI_MATKEY_NAME, matName) == AI_SUCCESS) {
+            std::cout << "  Material " << i << ": " << matName.C_Str() << std::endl;
+        }
 
-        // Ищем диффузную текстуру
+        // Диффузный цвет
+        aiColor3D color(1.0f, 1.0f, 1.0f);
+        if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
+            material.diffuse = glm::vec3(color.r, color.g, color.b);
+            std::cout << "    Diffuse color: (" << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
+        }
+
+        // Пытаемся загрузить текстуру из материала
         aiString texPath;
         if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS) {
             std::string textureFile = texPath.C_Str();
+            std::cout << "    Found texture path in material: " << textureFile << std::endl;
 
-            // Извлекаем имя файла из URL или пути
+            // Извлекаем имя файла из пути
             size_t lastSlash = textureFile.find_last_of("\\/");
             if (lastSlash != std::string::npos) {
                 textureFile = textureFile.substr(lastSlash + 1);
             }
 
-            std::cout << "  Found texture: " << textureFile << std::endl;
+            std::cout << "    Extracted filename: " << textureFile << std::endl;
 
-            // Ищем текстуру в папке с моделью
+            // Ищем текстуру рядом с моделью
             std::string basePath = fullPath.substr(0, fullPath.find_last_of("\\/") + 1);
             std::string texFullPath = basePath + textureFile;
 
             if (std::filesystem::exists(texFullPath)) {
+                std::cout << "    Loading texture from model folder: " << texFullPath << std::endl;
                 material.textureID = loadTextureFromFile(texFullPath);
                 if (material.textureID) {
-                    std::cout << "  ✓ Texture loaded" << std::endl;
+                    std::cout << "    ✓ Texture loaded! ID: " << material.textureID << std::endl;
+                    material.texturePath = textureFile;
                 }
             }
-            // После загрузки материалов, если текстуры не найдены в FBX
-          // После загрузки материалов, если текстуры не найдены в FBX
-            for (auto& material : model.materials) {
-                if (material.textureID == 0) {
-                    // Путь к папке с моделью
-                    std::string basePath = fullPath.substr(0, fullPath.find_last_of("\\/") + 1);
-
-                    // Список возможных имен текстур для этой конкретной модели
-                    std::vector<std::string> possibleTextures = {
-                        "StoneFloor_diffuse.jpg",
-                        "StoneFloor_diffuse.png",
-                        "StoneFloor_diffuse.tga",
-                        "StoneFloor_diffuse.bmp",
-                        "StoneFloor_Normal.jpg",
-                        "StoneFloor_Normal.png",
-                        "StoneFloor_Specular.jpg",
-                        "StoneFloor_Specular.png",
-                        // Также пробуем без суффиксов
-                        "StoneFloor.jpg",
-                        "StoneFloor.png",
-                        "StoneFloor.tga"
-                    };
-
-                    std::cout << "  Searching for textures in: " << basePath << std::endl;
-
-                    for (const auto& texName : possibleTextures) {
-                        std::string texPath = basePath + texName;
-                        if (std::filesystem::exists(texPath)) {
-                            std::cout << "  Found texture: " << texName << std::endl;
-                            material.textureID = loadTextureFromFile(texPath);
-                            if (material.textureID) {
-                                std::cout << "  ✓ Texture loaded successfully!" << std::endl;
-                                material.texturePath = texName;
-                                break;  // Загружаем первую найденную текстуру
-                            }
-                        }
-                    }
-
-                    if (material.textureID == 0) {
-                        std::cout << "  ✗ No texture found for this material" << std::endl;
+            else {
+                // Пробуем в папке текстур
+                texFullPath = g_texturesPath + textureFile;
+                if (std::filesystem::exists(texFullPath)) {
+                    std::cout << "    Loading texture from textures folder: " << texFullPath << std::endl;
+                    material.textureID = loadTextureFromFile(texFullPath);
+                    if (material.textureID) {
+                        std::cout << "    ✓ Texture loaded! ID: " << material.textureID << std::endl;
+                        material.texturePath = textureFile;
                     }
                 }
             }
-        
-            }
+        }
 
         model.materials.push_back(material);
     }
 
+    // Если материалов нет, создаем дефолтный
     if (model.materials.empty()) {
+        std::cout << "  No materials found, creating default" << std::endl;
         Material defaultMat;
         defaultMat.diffuse = glm::vec3(0.8f, 0.8f, 0.8f);
         defaultMat.textureID = 0;
         model.materials.push_back(defaultMat);
     }
 
-    // Загружаем меши с правильной индексацией
+    // ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА ТЕКСТУР ТОЛЬКО ДЛЯ ПОЛА
+    if (subFolder == "floor") {
+        std::cout << "\n  --- Forced Texture Loading for FLOOR ---" << std::endl;
+        std::string basePath = fullPath.substr(0, fullPath.find_last_of("\\/") + 1);
+        std::cout << "  Searching for textures in: " << basePath << std::endl;
+
+        // Список всех возможных текстур
+        std::vector<std::string> textureFiles = {
+            // Диффузные текстуры
+            baseName + "_diffuse.jpg",
+            baseName + "_diffuse.png",
+            baseName + "_diffuse.tga",
+            baseName + "_color.jpg",
+            baseName + "_color.png",
+            baseName + "_albedo.jpg",
+            baseName + "_albedo.png",
+            baseName + "_basecolor.jpg",
+            baseName + "_basecolor.png",
+
+            // Обычные текстуры
+            baseName + ".jpg",
+            baseName + ".png",
+            baseName + ".tga",
+
+            // Специфичные для StoneFloor
+            "StoneFloor_diffuse.jpg",
+            "StoneFloor_diffuse.png",
+            "StoneFloor_Normal.jpg",
+            "StoneFloor_Normal.png",
+            "StoneFloor_Specular.jpg",
+            "StoneFloor_Specular.png",
+
+            // Общие названия
+            "diffuse.jpg",
+            "diffuse.png",
+            "albedo.jpg",
+            "albedo.png",
+            "color.jpg",
+            "color.png",
+            "basecolor.jpg",
+            "basecolor.png",
+            "col.jpg",
+            "col.png"
+        };
+
+        GLuint loadedTextureID = 0;
+        std::string loadedTextureName;
+
+        // Ищем любую подходящую текстуру
+        for (const auto& texFile : textureFiles) {
+            std::string texPath = basePath + texFile;
+            if (std::filesystem::exists(texPath)) {
+                std::cout << "  Found texture: " << texFile << std::endl;
+                loadedTextureID = loadTextureFromFile(texPath);
+                if (loadedTextureID) {
+                    std::cout << "  ✓ Texture loaded successfully! ID: " << loadedTextureID << std::endl;
+                    loadedTextureName = texFile;
+                    break;
+                }
+            }
+        }
+
+        // Если текстура найдена, применяем её ко всем материалам
+        if (loadedTextureID != 0) {
+            std::cout << "  Applying texture to all " << model.materials.size() << " materials" << std::endl;
+            for (auto& material : model.materials) {
+                material.textureID = loadedTextureID;
+                material.texturePath = loadedTextureName;
+            }
+        }
+        else {
+            std::cout << "  ✗ No textures found in: " << basePath << std::endl;
+
+            // Выводим список файлов в папке для отладки
+            std::cout << "  Files in directory:" << std::endl;
+            try {
+                for (const auto& entry : std::filesystem::directory_iterator(basePath)) {
+                    std::cout << "    - " << entry.path().filename().string() << std::endl;
+                }
+            }
+            catch (...) {
+                std::cout << "    Could not list directory" << std::endl;
+            }
+        }
+    }
+
+    // Загружаем меши
     std::cout << "\n  --- Loading Meshes ---" << std::endl;
 
-    int totalVertices = 0;
     int totalTriangles = 0;
 
     for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
@@ -683,6 +753,8 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
 
         int materialIndex = mesh->mMaterialIndex;
         if (materialIndex >= (int)model.materials.size()) {
+            std::cout << "    Warning: Material index " << materialIndex
+                << " out of range, using 0" << std::endl;
             materialIndex = 0;
         }
 
@@ -714,8 +786,6 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
                     model.texCoords.push_back(mesh->mTextureCoords[0][vertexIdx].x);
                     model.texCoords.push_back(mesh->mTextureCoords[0][vertexIdx].y);
                 }
-
-                totalVertices++;
             }
         }
         totalTriangles += mesh->mNumFaces;
@@ -723,6 +793,7 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
 
     // Если нормалей нет, генерируем простые
     if (model.normals.empty()) {
+        std::cout << "  Generating default normals" << std::endl;
         for (size_t i = 0; i < model.vertices.size() / 3; i++) {
             model.normals.push_back(0.0f);
             model.normals.push_back(1.0f);
@@ -732,6 +803,7 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
 
     // Если текстурных координат нет, добавляем нулевые
     if (model.texCoords.empty()) {
+        std::cout << "  Generating default texcoords" << std::endl;
         for (size_t i = 0; i < model.vertices.size() / 3; i++) {
             model.texCoords.push_back(0.0f);
             model.texCoords.push_back(0.0f);
@@ -746,16 +818,19 @@ bool loadFBXModel(const std::string& filename, ModelData& model, const std::stri
         std::cout << "    Total triangles: " << totalTriangles << std::endl;
         std::cout << "    Total materials: " << model.materials.size() << std::endl;
 
+        // Подсчитываем загруженные текстуры
         int texturesLoaded = 0;
         for (const auto& mat : model.materials) {
             if (mat.textureID != 0) texturesLoaded++;
         }
         std::cout << "    Textures loaded: " << texturesLoaded << "/" << model.materials.size() << std::endl;
+        if (texturesLoaded > 0) {
+            std::cout << "    Texture name: " << model.materials[0].texturePath << std::endl;
+        }
     }
 
     return model.loaded;
-}
-void openFileDialog(std::string& destVar, const std::string& subFolder) {
+}void openFileDialog(std::string& destVar, const std::string& subFolder) {
     std::string folderPath = g_modelsPath + subFolder + "\\";
 
     CreateDirectoryA(folderPath.c_str(), NULL);
@@ -874,7 +949,7 @@ void drawGrid() {
 
 void renderModelPreview(ModelData& model, const char* title, float x, float y, float w, float h,
     float& rotation, bool& autoRotate, float& lastTime, float scale = 1.0f,
-    bool isFloor = false) {  // Новый параметр для определения, это пол или нет
+    bool isFloor = false) {
     // Сохраняем текущий viewport
     GLint viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
@@ -911,45 +986,47 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
     // Поворачиваем всю сцену
     glRotatef(rotation, 0.0f, 1.0f, 0.0f);
 
-    if (isFloor) {
-        // ===== ЭТО ПОЛ - рисуем модель как горизонтальный пол =====
-        if (model.loaded && !model.vertices.empty()) {
-            glPushMatrix();
+    // ===== РИСУЕМ ПОЛ =====
+    glDisable(GL_TEXTURE_2D);
 
-            // Просто поворачиваем на -90 градусов вокруг X
+    // Пол (серый)
+    glColor3f(0.3f, 0.3f, 0.3f);
+    glBegin(GL_QUADS);
+    glVertex3f(-3.0f, -0.5f, -3.0f);
+    glVertex3f(3.0f, -0.5f, -3.0f);
+    glVertex3f(3.0f, -0.5f, 3.0f);
+    glVertex3f(-3.0f, -0.5f, 3.0f);
+    glEnd();
+
+    // Сетка (светло-серая)
+    glColor3f(0.5f, 0.5f, 0.5f);
+    glBegin(GL_LINES);
+    for (int i = -3; i <= 3; i++) {
+        float pos = i * 0.5f;
+        glVertex3f(pos, -0.45f, -3.0f);
+        glVertex3f(pos, -0.45f, 3.0f);
+        glVertex3f(-3.0f, -0.45f, pos);
+        glVertex3f(3.0f, -0.45f, pos);
+    }
+    glEnd();
+
+    // ===== РИСУЕМ МОДЕЛЬ =====
+    if (model.loaded && !model.vertices.empty()) {
+        glPushMatrix();
+
+        if (isFloor) {
+            // СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ ПОЛА
+            // Поворачиваем вертикальную модель в горизонтальное положение
             glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
 
             // Масштабируем до разумного размера
-            glScalef(0.01f, 0.01f, 0.01f);  // Модель очень большая (382 единицы)
+            glScalef(0.01f, 0.01f, 0.01f);
 
             // Центрируем
             glTranslatef(0.0f, 0.0f, 0.0f);
-
-            // Рисуем модель
-            drawModel(model);
-
-            glPopMatrix();
         }
-
-        // Сетка
-        glDisable(GL_TEXTURE_2D);
-        glColor3f(0.5f, 0.5f, 0.5f);
-        glBegin(GL_LINES);
-        for (int i = -3; i <= 3; i++) {
-            float pos = i * 0.5f;
-            glVertex3f(pos, -0.45f, -3.0f);
-            glVertex3f(pos, -0.45f, 3.0f);
-            glVertex3f(-3.0f, -0.45f, pos);
-            glVertex3f(3.0f, -0.45f, pos);
-        }
-        
-        glEnd();
-    
-
-        // Рисуем модель
-        if (model.loaded && !model.vertices.empty()) {
-            glPushMatrix();
-
+        else {
+            // ОБЫЧНАЯ МОДЕЛЬ
             // Масштаб
             glScalef(scale, scale, scale);
 
@@ -976,10 +1053,10 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
 
             // Ставим модель на пол
             glTranslatef(-centerX, -minY + 0.1f, -centerZ);
-
-            drawModel(model);
-            glPopMatrix();
         }
+
+        drawModel(model);
+        glPopMatrix();
     }
 
     // Восстанавливаем матрицы
@@ -1007,9 +1084,8 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
 
     renderRussianText(title, x + 10, y + 25, 0.3f, glm::vec3(1.0f, 1.0f, 0.0f));
 
-    // Для пола показываем другой текст
     if (isFloor) {
-        renderRussianText("Модель пола с текстурой", x + 10, y + 50, 0.25f, glm::vec3(0.5f, 1.0f, 0.5f));
+        renderRussianText("Модель пола", x + 10, y + 50, 0.25f, glm::vec3(0.5f, 1.0f, 0.5f));
     }
     else {
         // Отображаем текущий масштаб только для обычных моделей

@@ -70,6 +70,11 @@ private:
     bool gridEnabled;
     float gridLineWidth;
 
+    // Размеры игрового поля из конфига
+    int m_gridWidth;
+    int m_gridDepth;
+    float m_cellSize;
+
 public:
     GameRenderer();
 
@@ -87,8 +92,19 @@ public:
         gridEnabled = enabled;
         gridLineWidth = lineWidth;
     }
+
+    // Метод для установки размеров игрового поля
+    void setGridDimensions(int width, int depth, float cellSize) {
+        m_gridWidth = width;
+        m_gridDepth = depth;
+        m_cellSize = cellSize;
+    }
+
     bool isGridEnabled() const { return gridEnabled; }
     float getGridLineWidth() const { return gridLineWidth; }
+    int getGridWidth() const { return m_gridWidth; }
+    int getGridDepth() const { return m_gridDepth; }
+    float getCellSize() const { return m_cellSize; }
 
     // Метод для установки текстуры пола
     void setFloorTexture(const std::string& texturePath);

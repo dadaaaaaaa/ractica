@@ -150,7 +150,7 @@ void Game::loadConfig() {
         objects.setObstacleCount(config.obstacleCount);
         objects.setGridEnabled(config.gridEnabled);
         objects.setGridLineWidth(config.gridLineWidth);
-
+        objects.setFloorTileSize(config.floorTileSize);
         // Модели змейки
         objects.setSnakeModels(
             config.snakeHeadModel,
@@ -249,7 +249,11 @@ void Game::loadConfig() {
         // ЗАГРУЖАЕМ МОДЕЛИ
         std::cout << "\n--- ЗАГРУЖАЕМ МОДЕЛИ ---" << std::endl;
         renderer.loadModelsFromConfig(objects);
-
+        renderer.setGridDimensions(
+            objects.getGridWidth(),
+            objects.getGridDepth(),
+            objects.getCellSize()
+        );
         std::cout << "===============================\n" << std::endl;
     }
     else {

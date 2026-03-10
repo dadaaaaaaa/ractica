@@ -21,19 +21,24 @@ public:
     void setColor(const glm::vec3& color) const;
     void setUseTexture(bool useTexture) const;
 
-    // Новый метод для получения ID шейдерной программы
-    GLuint getShaderProgram() const { return shaderProgram; }
-    GLuint getUIShaderProgram() const { return uiShaderProgram; }
+    // Новые методы для управления сеткой
+    void setIsFloor(bool isFloor) const;
+    void setCellSize(float cellSize) const;
+    void setGridEnabled(bool enabled) const;
+    void setGridLineWidth(float width) const;
+    void setGridWidth(float width) const;
+    void setGridDepth(float depth) const;
 
-    // Методы для установки uniform переменных UI шейдера
+    // Методы для UI шейдера
     void setUIProjection(const glm::mat4& projection) const;
     void setUIModel(const glm::mat4& model) const;
     void setUIColor(const glm::vec3& color) const;
     void setUIAlpha(float alpha) const;
-    void setIsFloor(bool isFloor) const;
-    void setCellSize(float cellSize) const;
-    void setGridWidth(float width) const;
-    void setGridDepth(float depth) const;
+
+    // Геттеры для ID шейдерных программ
+    GLuint getShaderProgram() const { return shaderProgram; }
+    GLuint getUIShaderProgram() const { return uiShaderProgram; }
+
 private:
     GLuint shaderProgram;
     GLuint uiShaderProgram;
@@ -54,7 +59,6 @@ private:
     GLuint compileShader(GLenum type, const char* source);
     bool createShaderProgram();
     bool createUIShaderProgram();
-
 };
 
 #endif // SHADER_MANAGER_H

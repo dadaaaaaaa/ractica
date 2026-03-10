@@ -54,6 +54,7 @@ struct GameConfig {
     int cloudCount = 20;
     int birdCount = 15;
     int flowerCount = 25;
+    int floorTileSize = 2;
     // Цвета
     glm::vec3 skyColor = glm::vec3(0.53f, 0.81f, 0.92f);
     glm::vec3 floorColor = glm::vec3(0.3f, 0.6f, 0.2f);

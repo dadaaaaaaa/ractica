@@ -34,7 +34,10 @@ GameRenderer::GameRenderer()
     , gridColor(0.2f, 0.5f, 0.15f)
     , useFloorTexture(false)
     , gridEnabled(true)
-    , gridLineWidth(1.0f) {
+    , gridLineWidth(1.0f)
+    , m_gridWidth(120)
+    , m_gridDepth(120)
+    , m_cellSize(0.1f) {
 }
 
 void GameRenderer::initialize() {
@@ -99,7 +102,6 @@ void GameRenderer::createPrimitives() {
     std::cout << "Primitives created successfully" << std::endl;
 }
 
-// НОВЫЙ МЕТОД: загрузка текстуры для модели
 bool GameRenderer::loadTextureForModel(Model& model, const std::string& texturePath, const std::string& modelFolder) {
     if (texturePath.empty()) {
         model.hasTexture = false;
@@ -184,55 +186,60 @@ bool GameRenderer::loadModelWithFallback(Model& model, const std::string& modelP
         if (loadFBXModel(modelPath, tempData, subFolder)) {
             // Конвертируем ModelData в Model
             model.vertices.clear();
-            size_t vertexCount = tempData.vertices.size() / 3;
-            for (size_t i = 0; i < vertexCount; i++) {
-                Vertex v;
-                v.position = glm::vec3(
-                    tempData.vertices[i * 3],
-                    tempData.vertices[i * 3 + 1],
-                    tempData.vertices[i * 3 + 2]
-                );
 
-                if (i < tempData.normals.size() / 3) {
-                    v.normal = glm::vec3(
-                        tempData.normals[i * 3],
-                        tempData.normals[i * 3 + 1],
-                        tempData.normals[i * 3 + 2]
-                    );
-                }
-                else {
-                    v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
-                }
+            // Используем индексы для правильного построения треугольников
+            size_t numTriangles = tempData.materialIndices.size();
+            size_t vertexIdx = 0;
 
-                if (i < tempData.texCoords.size() / 2) {
-                    v.texCoords = glm::vec2(
-                        tempData.texCoords[i * 2],
-                        tempData.texCoords[i * 2 + 1]
+            for (size_t i = 0; i < numTriangles; i++) {
+                for (int j = 0; j < 3; j++) {
+                    Vertex v;
+
+                    // Позиция
+                    v.position = glm::vec3(
+                        tempData.vertices[vertexIdx * 3],
+                        tempData.vertices[vertexIdx * 3 + 1],
+                        tempData.vertices[vertexIdx * 3 + 2]
                     );
+
+                    // Нормаль
+                    if (vertexIdx < tempData.normals.size() / 3) {
+                        v.normal = glm::vec3(
+                            tempData.normals[vertexIdx * 3],
+                            tempData.normals[vertexIdx * 3 + 1],
+                            tempData.normals[vertexIdx * 3 + 2]
+                        );
+                    }
+                    else {
+                        v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                    }
+
+                    // Текстурные координаты
+                    if (vertexIdx < tempData.texCoords.size() / 2) {
+                        v.texCoords = glm::vec2(
+                            tempData.texCoords[vertexIdx * 2],
+                            tempData.texCoords[vertexIdx * 2 + 1]
+                        );
+                    }
+                    else {
+                        v.texCoords = glm::vec2(0.0f, 0.0f);
+                    }
+
+                    model.vertices.push_back(v);
+                    vertexIdx++;
                 }
-                else {
-                    v.texCoords = glm::vec2(0.0f, 0.0f);
-                }
-                model.vertices.push_back(v);
+            }
+
+            // Копируем текстуры из материалов
+            if (!tempData.materials.empty() && tempData.materials[0].textureID != 0) {
+                model.textureID = tempData.materials[0].textureID;
+                model.hasTexture = true;
+                std::cout << "  ✓ Model has texture: ID=" << model.textureID << std::endl;
             }
 
             model.setupBuffers();
             std::cout << "✓ Model loaded from file: " << modelPath << std::endl;
-
-            // Пытаемся загрузить текстуру, если она есть в материалах
-            if (!tempData.materials.empty() && !tempData.materials[0].texturePath.empty()) {
-                std::cout << "  Attempting to load texture: " << tempData.materials[0].texturePath << std::endl;
-
-                // Извлекаем только имя файла из пути
-                std::string texPath = tempData.materials[0].texturePath;
-                size_t pos = texPath.find_last_of("\\/");
-                if (pos != std::string::npos) {
-                    texPath = texPath.substr(pos + 1);
-                }
-
-                loadTextureForModel(model, texPath, subFolder);
-            }
-
+            std::cout << "  Vertices: " << model.vertices.size() << std::endl;
             return true;
         }
     }
@@ -278,63 +285,87 @@ void GameRenderer::loadModelsFromConfig(const GameObjects& objects) {
     // Загружаем модель пола
     if (!objects.getFloorModel().empty()) {
         std::string floorPath = g_modelsPath + "floor\\" + objects.getFloorModel();
+        std::cout << "Loading floor model from: " << floorPath << std::endl;
+
         if (std::filesystem::exists(floorPath)) {
             ModelData tempData;
             if (loadFBXModel(objects.getFloorModel(), tempData, "floor")) {
                 // Конвертируем ModelData в Model
                 floorModel.vertices.clear();
-                size_t vertexCount = tempData.vertices.size() / 3;
-                for (size_t i = 0; i < vertexCount; i++) {
-                    Vertex v;
-                    v.position = glm::vec3(
-                        tempData.vertices[i * 3],
-                        tempData.vertices[i * 3 + 1],
-                        tempData.vertices[i * 3 + 2]
-                    );
 
-                    if (i < tempData.normals.size() / 3) {
-                        v.normal = glm::vec3(
-                            tempData.normals[i * 3],
-                            tempData.normals[i * 3 + 1],
-                            tempData.normals[i * 3 + 2]
-                        );
-                    }
-                    else {
-                        v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
-                    }
+                size_t numTriangles = tempData.materialIndices.size();
+                size_t vertexIdx = 0;
 
-                    if (i < tempData.texCoords.size() / 2) {
-                        v.texCoords = glm::vec2(
-                            tempData.texCoords[i * 2],
-                            tempData.texCoords[i * 2 + 1]
+                for (size_t i = 0; i < numTriangles; i++) {
+                    for (int j = 0; j < 3; j++) {
+                        Vertex v;
+
+                        v.position = glm::vec3(
+                            tempData.vertices[vertexIdx * 3],
+                            tempData.vertices[vertexIdx * 3 + 1],
+                            tempData.vertices[vertexIdx * 3 + 2]
                         );
+
+                        if (vertexIdx < tempData.normals.size() / 3) {
+                            v.normal = glm::vec3(
+                                tempData.normals[vertexIdx * 3],
+                                tempData.normals[vertexIdx * 3 + 1],
+                                tempData.normals[vertexIdx * 3 + 2]
+                            );
+                        }
+                        else {
+                            v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                        }
+
+                        if (vertexIdx < tempData.texCoords.size() / 2) {
+                            v.texCoords = glm::vec2(
+                                tempData.texCoords[vertexIdx * 2],
+                                tempData.texCoords[vertexIdx * 2 + 1]
+                            );
+                        }
+                        else {
+                            v.texCoords = glm::vec2(0.0f, 0.0f);
+                        }
+
+                        floorModel.vertices.push_back(v);
+                        vertexIdx++;
                     }
-                    else {
-                        v.texCoords = glm::vec2(0.0f, 0.0f);
-                    }
-                    floorModel.vertices.push_back(v);
                 }
 
+                // Копируем текстуры из материалов
                 floorModel.hasTexture = false;
+                for (const auto& mat : tempData.materials) {
+                    if (mat.textureID != 0) {
+                        floorModel.textureID = mat.textureID;
+                        floorModel.hasTexture = true;
+                        std::cout << "  ✓ Floor model has texture: ID=" << floorModel.textureID << std::endl;
+                        break;
+                    }
+                }
+
+                if (!floorModel.hasTexture) {
+                    std::cout << "  ✗ Floor model has no texture" << std::endl;
+                }
+
                 floorModel.setupBuffers();
                 std::cout << "✓ Floor model loaded from file: " << objects.getFloorModel() << std::endl;
+                std::cout << "  Vertices: " << floorModel.vertices.size() << std::endl;
             }
             else {
+                std::cout << "✗ Failed to load floor model, creating simple floor" << std::endl;
                 createTexturedFloorModel(floorModel);
             }
         }
         else {
+            std::cout << "✗ Floor model file not found: " << floorPath << std::endl;
             createTexturedFloorModel(floorModel);
         }
     }
     else {
+        std::cout << "No floor model specified, creating simple floor" << std::endl;
         createTexturedFloorModel(floorModel);
     }
 
-    // Загружаем текстуру пола, если есть
-    if (objects.isUsingFloorTexture()) {
-        setFloorTexture(objects.getFloorTexture());
-    }
 
     std::cout << "================================================\n" << std::endl;
 }
@@ -375,39 +406,49 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
             << g_game.getSnakeTailColor().r << ", "
             << g_game.getSnakeTailColor().g << ", "
             << g_game.getSnakeTailColor().b << ")" << std::endl;
-        std::cout << "snakeScale из Game: " << g_game.getSnakeScale() << std::endl;
+        std::cout << "snakeHeadScale из Game: " << g_game.getSnakeHeadScale() << std::endl;
+        std::cout << "snakeBodyScale из Game: " << g_game.getSnakeBodyScale() << std::endl;
+        std::cout << "snakeTailScale из Game: " << g_game.getSnakeTailScale() << std::endl;
         firstDraw = false;
     }
 
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(2.0f, 4.0f);
 
+    // Используем размеры из конфига
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
     for (size_t i = 0; i < snake.size(); i++) {
         const Point& segment = snake[i];
-        float x = (segment.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = segment.y * CELL_SIZE + 0.1f;
-        float z = (segment.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+
+        // Конвертируем координаты сетки в мировые координаты
+        float x = segment.x * m_cellSize - offsetX;
+        float y = segment.y * m_cellSize + 0.1f;
+        float z = segment.z * m_cellSize - offsetZ;
 
         const Model* modelToDraw = &snakeBodyModel;
         glm::vec3 color;
+        float scale = m_cellSize * 0.8f; // Базовый масштаб от размера ячейки
 
         if (i == 0) {
             modelToDraw = &snakeHeadModel;
             color = g_game.getSnakeHeadColor();
+            scale *= g_game.getSnakeHeadScale();
         }
         else if (i == snake.size() - 1) {
             modelToDraw = &snakeTailModel;
             color = g_game.getSnakeTailColor();
+            scale *= g_game.getSnakeTailScale();
         }
         else {
             modelToDraw = &snakeBodyModel;
             color = g_game.getSnakeBodyColor();
+            scale *= g_game.getSnakeBodyScale();
         }
 
         float rotationAngle = calculateSegmentRotation(snake, i);
-        drawModelWithRotation(*modelToDraw, x, y, z,
-            CELL_SIZE * 0.8f * g_game.getSnakeScale(),
-            color, rotationAngle);
+        drawModelWithRotation(*modelToDraw, x, y, z, scale, color, rotationAngle);
     }
 
     glDisable(GL_POLYGON_OFFSET_FILL);
@@ -457,12 +498,15 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(1.5f, 3.0f);
 
-    for (const auto& apple : food) {
-        float x = (apple.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = apple.y * CELL_SIZE + 0.1f;
-        float z = (apple.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-        drawModel(appleModel, x, y, z, CELL_SIZE * 0.8f, glm::vec3(1.0f, 0.8f, 0.2f));
+    for (const auto& apple : food) {
+        float x = apple.x * m_cellSize - offsetX;
+        float y = apple.y * m_cellSize + 0.1f;
+        float z = apple.z * m_cellSize - offsetZ;
+
+        drawModel(appleModel, x, y, z, m_cellSize * 0.8f, glm::vec3(1.0f, 0.8f, 0.2f));
     }
 
     glDisable(GL_POLYGON_OFFSET_FILL);
@@ -472,13 +516,16 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(1.2f, 2.5f);
 
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
     for (const auto& obstacle : obstacles) {
         for (const auto& block : obstacle.blocks) {
-            float x = (block.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-            float y = block.y * CELL_SIZE;
-            float z = (block.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+            float x = block.x * m_cellSize - offsetX;
+            float y = block.y * m_cellSize;
+            float z = block.z * m_cellSize - offsetZ;
 
-            drawModel(treeModel, x, y, z, CELL_SIZE * 1.5f, glm::vec3(0.1f, 0.4f, 0.1f));
+            drawModel(treeModel, x, y, z, m_cellSize * 1.5f, glm::vec3(0.1f, 0.4f, 0.1f));
         }
     }
 
@@ -486,69 +533,80 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
 }
 
 void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
+    if (fenceBlocks.empty()) return;
+
     std::vector<Vertex> allFenceVertices;
 
+    // Используем размеры из конфига
+    float cellSize = m_cellSize;
+    float gridWidth = m_gridWidth;
+    float gridDepth = m_gridDepth;
+
+    float offsetX = gridWidth * cellSize / 2.0f;
+    float offsetZ = gridDepth * cellSize / 2.0f;
+
     for (const auto& fenceBlock : fenceBlocks) {
-        float x = (fenceBlock.x - GRID_WIDTH / 2.0f) * CELL_SIZE;
-        float y = fenceBlock.y * CELL_SIZE;
-        float z = (fenceBlock.z - GRID_DEPTH / 2.0f) * CELL_SIZE;
+        // Конвертируем координаты сетки в мировые координаты
+        float x = fenceBlock.x * cellSize - offsetX;
+        float y = fenceBlock.y * cellSize;
+        float z = fenceBlock.z * cellSize - offsetZ;
 
         glm::vec3 fenceColor(0.55f, 0.27f, 0.07f);
         glm::vec3 darkColor(0.45f, 0.17f, 0.05f);
 
         bool isCorner = (fenceBlock.x == 0 && fenceBlock.z == 0) ||
-            (fenceBlock.x == GRID_WIDTH - 1 && fenceBlock.z == 0) ||
-            (fenceBlock.x == 0 && fenceBlock.z == GRID_DEPTH - 1) ||
-            (fenceBlock.x == GRID_WIDTH - 1 && fenceBlock.z == GRID_DEPTH - 1);
+            (fenceBlock.x == gridWidth - 1 && fenceBlock.z == 0) ||
+            (fenceBlock.x == 0 && fenceBlock.z == gridDepth - 1) ||
+            (fenceBlock.x == gridWidth - 1 && fenceBlock.z == gridDepth - 1);
 
         bool isNorth = (fenceBlock.z == 0);
-        bool isSouth = (fenceBlock.z == GRID_DEPTH - 1);
+        bool isSouth = (fenceBlock.z == gridDepth - 1);
         bool isWest = (fenceBlock.x == 0);
-        bool isEast = (fenceBlock.x == GRID_WIDTH - 1);
+        bool isEast = (fenceBlock.x == gridWidth - 1);
 
         if (isCorner) {
-            float postSize = CELL_SIZE * 0.8f;
+            float postSize = cellSize * 0.8f;
             createFencePost(allFenceVertices, x, y, z,
                 postSize, 0.28f, fenceColor);
 
             if (fenceBlock.x == 0) {
                 createFenceRailHorizontal(allFenceVertices,
-                    x + CELL_SIZE / 2.0f, y + 0.2f, z,
-                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+                    x + cellSize / 2.0f, y + 0.2f, z,
+                    cellSize / 2.0f, 0.03f, darkColor);
             }
             else {
                 createFenceRailHorizontal(allFenceVertices,
-                    x - CELL_SIZE / 2.0f, y + 0.2f, z,
-                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+                    x - cellSize / 2.0f, y + 0.2f, z,
+                    cellSize / 2.0f, 0.03f, darkColor);
             }
 
             if (fenceBlock.z == 0) {
                 createFenceRailVertical(allFenceVertices,
-                    x, y + 0.2f, z + CELL_SIZE / 2.0f,
-                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+                    x, y + 0.2f, z + cellSize / 2.0f,
+                    cellSize / 2.0f, 0.03f, darkColor);
             }
             else {
                 createFenceRailVertical(allFenceVertices,
-                    x, y + 0.2f, z - CELL_SIZE / 2.0f,
-                    CELL_SIZE / 2.0f, 0.03f, darkColor);
+                    x, y + 0.2f, z - cellSize / 2.0f,
+                    cellSize / 2.0f, 0.03f, darkColor);
             }
         }
         else if (isNorth || isSouth || isWest || isEast) {
-            float postSize = CELL_SIZE * 0.6f;
+            float postSize = cellSize * 0.6f;
             createFencePost(allFenceVertices, x, y, z,
                 postSize, 0.25f, fenceColor);
 
             if (isNorth || isSouth) {
                 createFenceRailHorizontal(allFenceVertices, x, y + 0.2f, z,
-                    CELL_SIZE, 0.03f, darkColor);
+                    cellSize, 0.03f, darkColor);
                 createFenceRailHorizontal(allFenceVertices, x, y + 0.1f, z,
-                    CELL_SIZE, 0.03f, darkColor);
+                    cellSize, 0.03f, darkColor);
             }
             else if (isWest || isEast) {
                 createFenceRailVertical(allFenceVertices, x, y + 0.2f, z,
-                    CELL_SIZE, 0.03f, darkColor);
+                    cellSize, 0.03f, darkColor);
                 createFenceRailVertical(allFenceVertices, x, y + 0.1f, z,
-                    CELL_SIZE, 0.03f, darkColor);
+                    cellSize, 0.03f, darkColor);
             }
         }
     }
@@ -708,36 +766,130 @@ void GameRenderer::drawFloor() {
         << floorColor.g << ", "
         << floorColor.b << ")" << std::endl;
     std::cout << "useFloorTexture: " << (useFloorTexture ? "ДА" : "НЕТ") << std::endl;
+    std::cout << "Grid size: " << m_gridWidth << " x " << m_gridDepth << " cell: " << m_cellSize << std::endl;
+    std::cout << "Floor model has texture: " << (floorModel.hasTexture ? "ДА" : "НЕТ") << std::endl;
+    std::cout << "Floor model vertices: " << floorModel.vertices.size() << std::endl;
+    std::cout << "Floor texture ID: " << floorModel.textureID << std::endl;
 
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(5.0f, 10.0f);
 
-    glm::mat4 model = glm::mat4(1.0f);
+    // Размер игрового поля в мировых координатах
+    float worldWidth = m_gridWidth * m_cellSize;   // 120 * 0.1 = 12
+    float worldDepth = m_gridDepth * m_cellSize;   // 120 * 0.1 = 12
 
-    float floorScale = GRID_WIDTH * CELL_SIZE * 3.0f;
-    model = glm::scale(model, glm::vec3(floorScale, 1.0f, floorScale));
-    model = glm::translate(model, glm::vec3(0.0f, -0.05f, 0.0f));
+    // Границы поля (центр в 0,0)
+    float minX = -worldWidth / 2.0f;
+    float maxX = worldWidth / 2.0f;
+    float minZ = -worldDepth / 2.0f;
+    float maxZ = worldDepth / 2.0f;
 
-    g_shaderManager.setModelMatrix(model);
+    std::cout << "World bounds: X[" << minX << "," << maxX << "] Z[" << minZ << "," << maxZ << "]" << std::endl;
 
-    std::cout << "Устанавливаем цвет шейдера: ("
-        << floorColor.r << ", "
-        << floorColor.g << ", "
-        << floorColor.b << ")" << std::endl;
+    if (floorModel.vertices.size() > 0) {
+        // Вычисляем оригинальные границы модели
+        float modelMinX = 999999, modelMaxX = -999999;
+        float modelMinY = 999999, modelMaxY = -999999;
+        float modelMinZ = 999999, modelMaxZ = -999999;
 
-    g_shaderManager.setColor(floorColor);
-    g_shaderManager.setUseTexture(false);
-    g_shaderManager.setIsFloor(true);
-    g_shaderManager.setCellSize(CELL_SIZE);
+        for (const auto& vertex : floorModel.vertices) {
+            modelMinX = std::min(modelMinX, vertex.position.x);
+            modelMaxX = std::max(modelMaxX, vertex.position.x);
+            modelMinY = std::min(modelMinY, vertex.position.y);
+            modelMaxY = std::max(modelMaxY, vertex.position.y);
+            modelMinZ = std::min(modelMinZ, vertex.position.z);
+            modelMaxZ = std::max(modelMaxZ, vertex.position.z);
+        }
 
-    floorModel.draw();
+        float modelSizeX = modelMaxX - modelMinX;
+        float modelSizeY = modelMaxY - modelMinY;
+        float modelSizeZ = modelMaxZ - modelMinZ;
+
+        float modelCenterX = (modelMinX + modelMaxX) / 2.0f;
+        float modelCenterY = (modelMinY + modelMaxY) / 2.0f;
+        float modelCenterZ = (modelMinZ + modelMaxZ) / 2.0f;
+
+        std::cout << "  Model original size: X=" << modelSizeX << " Y=" << modelSizeY << " Z=" << modelSizeZ << std::endl;
+        std::cout << "  Model center: (" << modelCenterX << ", " << modelCenterY << ", " << modelCenterZ << ")" << std::endl;
+
+        // Масштаб как в редакторе
+        float scale = 0.01f;
+
+        // ПОСЛЕ ПОВОРОТА НА -90° ВОКРУГ X:
+        // Бывшая ось Y становится Z (вертикаль)
+        // Бывшая ось Z становится -Y (горизонталь)
+        // Бывшая ось X остается X (горизонталь)
+
+        // Размеры после поворота:
+        float tileSizeX = modelSizeX * scale;           // по X остается X
+        float tileSizeZ = modelSizeY * scale;           // по Z становится Y (бывшая высота)
+
+        std::cout << "  Tile size after rotation: X=" << tileSizeX << " Z=" << tileSizeZ << std::endl;
+
+        // Вычисляем количество плиток для покрытия поля
+        int tilesX = static_cast<int>(std::ceil(worldWidth / tileSizeX)) + 1;
+        int tilesZ = static_cast<int>(std::ceil(worldDepth / tileSizeZ)) + 1;
+
+        std::cout << "  Tiles needed: " << tilesX << " x " << tilesZ << std::endl;
+
+        // Начальная позиция (левый нижний угол)
+        float startX = minX;
+        float startZ = minZ;
+
+        int drawnTiles = 0;
+
+        // Временная матрица для отладки первой плитки
+        bool firstTile = true;
+
+        // Рисуем плитки рядами
+        for (int i = 0; i < tilesX; i++) {
+            for (int j = 0; j < tilesZ; j++) {
+                glm::mat4 modelMatrix = glm::mat4(1.0f);
+
+                // 1. Сначала смещаем модель так, чтобы её центр был в начале координат
+                modelMatrix = glm::translate(modelMatrix, glm::vec3(-modelCenterX, -modelCenterY, -modelCenterZ));
+
+                // 2. Поворачиваем модель горизонтально (вокруг X)
+                modelMatrix = glm::rotate(modelMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+                // 3. Масштабируем
+                modelMatrix = glm::scale(modelMatrix, glm::vec3(scale, scale, scale));
+
+                // 4. Позиционируем на поле
+                float posX = startX + i * tileSizeX + tileSizeX / 2;
+                float posZ = startZ + j * tileSizeZ + tileSizeZ / 2;
+
+                modelMatrix = glm::translate(modelMatrix, glm::vec3(posX, -0.1f, posZ));
+
+                // Отладка первой плитки
+                if (firstTile) {
+                    std::cout << "  First tile position: (" << posX << ", -0.1, " << posZ << ")" << std::endl;
+                    firstTile = false;
+                }
+
+                // Устанавливаем белый цвет для правильного отображения текстуры
+                g_shaderManager.setModelMatrix(modelMatrix);
+                g_shaderManager.setColor(glm::vec3(1.0f, 1.0f, 1.0f));
+                g_shaderManager.setUseTexture(floorModel.hasTexture);
+                g_shaderManager.setIsFloor(true);
+                g_shaderManager.setCellSize(m_cellSize);
+                g_shaderManager.setGridEnabled(gridEnabled);
+                g_shaderManager.setGridLineWidth(gridLineWidth);
+
+                floorModel.draw();
+                drawnTiles++;
+            }
+        }
+
+        std::cout << "  Total tiles drawn: " << drawnTiles << std::endl;
+        std::cout << "  Expected coverage: " << tilesX * tileSizeX << " x " << tilesZ * tileSizeZ << std::endl;
+    }
 
     g_shaderManager.setIsFloor(false);
     glDisable(GL_POLYGON_OFFSET_FILL);
 
     std::cout << "=== END DRAW FLOOR ===\n" << std::endl;
 }
-
 // Методы для создания примитивов забора
 void GameRenderer::createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
     float width, float height, const glm::vec3& color) {
@@ -810,17 +962,17 @@ void GameRenderer::createFenceRailVertical(std::vector<Vertex>& vertices, float 
 void GameRenderer::createFenceCorner(std::vector<Vertex>& vertices, float x, float y, float z,
     const glm::vec3& color) {
     createFencePost(vertices, x, y, z, 0.1f, 0.3f, color);
-    createFenceRailHorizontal(vertices, x + CELL_SIZE / 2.0f, y + 0.25f, z,
-        CELL_SIZE, 0.04f, color);
-    createFenceRailHorizontal(vertices, x - CELL_SIZE / 2.0f, y + 0.25f, z,
-        CELL_SIZE, 0.04f, color);
-    createFenceRailVertical(vertices, x, y + 0.25f, z + CELL_SIZE / 2.0f,
-        CELL_SIZE, 0.04f, color);
-    createFenceRailVertical(vertices, x, y + 0.25f, z - CELL_SIZE / 2.0f,
-        CELL_SIZE, 0.04f, color);
+    createFenceRailHorizontal(vertices, x + m_cellSize / 2.0f, y + 0.25f, z,
+        m_cellSize, 0.04f, color);
+    createFenceRailHorizontal(vertices, x - m_cellSize / 2.0f, y + 0.25f, z,
+        m_cellSize, 0.04f, color);
+    createFenceRailVertical(vertices, x, y + 0.25f, z + m_cellSize / 2.0f,
+        m_cellSize, 0.04f, color);
+    createFenceRailVertical(vertices, x, y + 0.25f, z - m_cellSize / 2.0f,
+        m_cellSize, 0.04f, color);
 }
 
-// Заглушки для остальных методов, которые должны быть определены
+// Заглушки для остальных методов
 void GameRenderer::createSnakeHeadModel(Model& model) { PrimitiveBase::createCube(model); }
 void GameRenderer::createSnakeBodyModel(Model& model) { PrimitiveBase::createCube(model); }
 void GameRenderer::createSnakeTailModel(Model& model) { PrimitiveBase::createCube(model); }

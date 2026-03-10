@@ -47,7 +47,7 @@ private:
     int obstacleCount;
     bool gridEnabled;
     float gridLineWidth;
-
+    int floorTileSize;
     // === Õ¿—“–Œ… » «Ã≈… » (»«  ŒÕ‘»√¿) ===
     std::string snakeHeadModel;
     std::string snakeBodyModel;
@@ -106,7 +106,8 @@ public:
     // === »Õ»÷»¿À»«¿÷»ﬂ ===
     void initGame();
     void update();
-
+    int getFloorTileSize() const { return floorTileSize; }
+    void setFloorTileSize(int size) { floorTileSize = size; }
     // === √≈““≈–€ »√–Œ¬€’ Œ¡⁄≈ “Œ¬ ===
     const std::vector<Point>& getSnake() const { return snake; }
     const std::vector<Point>& getFood() const { return food; }

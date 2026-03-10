@@ -12,8 +12,8 @@ Camera::Camera()
     targetDistance(5.0f),
     height(3.0f),
     smoothness(0.1f),
-    minDistance(2.0f),
-    maxDistance(8.0f),
+    minDistance(-1.0f),
+    maxDistance(10.0f),
     zoomSpeed(0.5f),
     angle(0.0f),
     targetAngle(0.0f) {

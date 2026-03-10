@@ -16,7 +16,6 @@ const char* vertexShaderSource = R"(
     out vec3 Normal;
     out vec3 FragPos;
     out vec2 TexCoords;
-    out vec3 ModelColor; // Для передачи цвета модели
     
     void main() {
         FragPos = vec3(model * vec4(aPos, 1.0));
@@ -26,7 +25,7 @@ const char* vertexShaderSource = R"(
     }
 )";
 
-// Обновите фрагментный шейдер для правильной работы с текстурами
+// Обновленный фрагментный шейдер с поддержкой включения/выключения сетки
 const char* fragmentShaderSource = R"(
     #version 330 core
     out vec4 FragColor;
@@ -39,6 +38,10 @@ const char* fragmentShaderSource = R"(
     uniform bool useTexture;          // Использовать ли текстуру
     uniform bool isFloor;             // Специальный флаг для пола
     uniform float cellSize;           // Размер клетки для сетки пола
+    uniform bool gridEnabled;         // Включена ли сетка
+    uniform float gridLineWidth;      // Толщина линий сетки
+    uniform float gridWidth;          // Ширина сетки
+    uniform float gridDepth;          // Глубина сетки
     
     uniform sampler2D modelTexture;   // Текстура модели
     
@@ -53,50 +56,53 @@ const char* fragmentShaderSource = R"(
             finalColor = texColor.rgb * color;
         }
         
-        // Специальная обработка для пола (сетка)
+        // Специальная обработка для пола
         if (isFloor) {
-            // АБСОЛЮТНО ЧЕТКАЯ СЕТКА БЕЗ МЕРЦАНИЯ
-            float stableX = FragPos.x + 1000.0;
-            float stableZ = FragPos.z + 1000.0;
-            
-            ivec2 cellIdx = ivec2(
-                int(floor((stableX + 0.001) / cellSize)),
-                int(floor((stableZ + 0.001) / cellSize))
-            );
-            
-            vec2 cellPos = vec2(
-                (stableX - float(cellIdx.x) * cellSize) / cellSize,
-                (stableZ - float(cellIdx.y) * cellSize) / cellSize
-            );
-            
-            float gridLineWidth = 0.1;
-            float epsilon = 0.001;
-            
-            float distToVertical = min(cellPos.x, 1.0 - cellPos.x);
-            float distToHorizontal = min(cellPos.y, 1.0 - cellPos.y);
-            
-            float isVerticalLine = step(distToVertical, gridLineWidth + epsilon);
-            float isHorizontalLine = step(distToHorizontal, gridLineWidth + epsilon);
-            float isAnyLine = min(1.0, isVerticalLine + isHorizontalLine);
-            
-            // ИСПОЛЬЗУЕМ ЦВЕТ ИЗ UNIFORM ДЛЯ КЛЕТОК
-            vec3 lightCellColor = finalColor * 1.2;      // Светлые клетки
-            vec3 darkCellColor = finalColor * 0.8;       // Темные клетки
-            vec3 gridColor = finalColor * 0.5;            // Цвет сетки (темнее)
-            
-            int patternX = cellIdx.x + 10000;
-            int patternZ = cellIdx.y + 10000;
-            bool isDarkCell = ((patternX + patternZ) & 1) == 0;
-            
-            vec3 cellColor = isDarkCell ? darkCellColor : lightCellColor;
-            
-            float lineBlend = smoothstep(gridLineWidth - 0.005, gridLineWidth + 0.005, 
-                                        min(distToVertical, distToHorizontal));
-            result = mix(gridColor, cellColor, lineBlend);
-            
-            float lightFactor = 0.9 + 0.1 * clamp(Normal.y, 0.0, 1.0);
-            result *= lightFactor;
-            
+            if (gridEnabled) {
+                // АБСОЛЮТНО ЧЕТКАЯ СЕТКА БЕЗ МЕРЦАНИЯ
+                float stableX = FragPos.x + 1000.0;
+                float stableZ = FragPos.z + 1000.0;
+                
+                ivec2 cellIdx = ivec2(
+                    int(floor((stableX + 0.001) / cellSize)),
+                    int(floor((stableZ + 0.001) / cellSize))
+                );
+                
+                vec2 cellPos = vec2(
+                    (stableX - float(cellIdx.x) * cellSize) / cellSize,
+                    (stableZ - float(cellIdx.y) * cellSize) / cellSize
+                );
+                
+                float epsilon = 0.001;
+                
+                float distToVertical = min(cellPos.x, 1.0 - cellPos.x);
+                float distToHorizontal = min(cellPos.y, 1.0 - cellPos.y);
+                
+                float isVerticalLine = step(distToVertical, gridLineWidth + epsilon);
+                float isHorizontalLine = step(distToHorizontal, gridLineWidth + epsilon);
+                float isAnyLine = min(1.0, isVerticalLine + isHorizontalLine);
+                
+                // Используем цвет из конфига для клеток
+                vec3 lightCellColor = finalColor * 1.2;      // Светлые клетки
+                vec3 darkCellColor = finalColor * 0.8;       // Темные клетки
+                vec3 gridColor = finalColor * 0.5;            // Цвет сетки (темнее)
+                
+                int patternX = cellIdx.x + 10000;
+                int patternZ = cellIdx.y + 10000;
+                bool isDarkCell = ((patternX + patternZ) & 1) == 0;
+                
+                vec3 cellColor = isDarkCell ? darkCellColor : lightCellColor;
+                
+                float lineBlend = smoothstep(gridLineWidth - 0.005, gridLineWidth + 0.005, 
+                                            min(distToVertical, distToHorizontal));
+                result = mix(gridColor, cellColor, lineBlend);
+                
+                float lightFactor = 0.9 + 0.1 * clamp(Normal.y, 0.0, 1.0);
+                result *= lightFactor;
+            } else {
+                // Сетка выключена - просто цвет
+                result = finalColor;
+            }
         } else {
             // Обычное освещение для всех 3D моделей
             vec3 lightDir = vec3(0.5, -1.0, 0.3);
@@ -198,6 +204,34 @@ void ShaderManager::setCellSize(float cellSize) const {
     GLint cellSizeLoc = glGetUniformLocation(shaderProgram, "cellSize");
     if (cellSizeLoc != -1) {
         glUniform1f(cellSizeLoc, cellSize);
+    }
+}
+
+void ShaderManager::setGridEnabled(bool enabled) const {
+    GLint gridEnabledLoc = glGetUniformLocation(shaderProgram, "gridEnabled");
+    if (gridEnabledLoc != -1) {
+        glUniform1i(gridEnabledLoc, enabled);
+    }
+}
+
+void ShaderManager::setGridLineWidth(float width) const {
+    GLint gridLineWidthLoc = glGetUniformLocation(shaderProgram, "gridLineWidth");
+    if (gridLineWidthLoc != -1) {
+        glUniform1f(gridLineWidthLoc, width);
+    }
+}
+
+void ShaderManager::setGridWidth(float width) const {
+    GLint gridWidthLoc = glGetUniformLocation(shaderProgram, "gridWidth");
+    if (gridWidthLoc != -1) {
+        glUniform1f(gridWidthLoc, width);
+    }
+}
+
+void ShaderManager::setGridDepth(float depth) const {
+    GLint gridDepthLoc = glGetUniformLocation(shaderProgram, "gridDepth");
+    if (gridDepthLoc != -1) {
+        glUniform1f(gridDepthLoc, depth);
     }
 }
 
@@ -307,18 +341,4 @@ bool ShaderManager::createUIShaderProgram() {
     std::cout << "  alpha: " << uiAlphaLoc << std::endl;
 
     return true;
-}
-
-void ShaderManager::setGridWidth(float width) const {
-    GLint gridWidthLoc = glGetUniformLocation(shaderProgram, "gridWidth");
-    if (gridWidthLoc != -1) {
-        glUniform1f(gridWidthLoc, width);
-    }
-}
-
-void ShaderManager::setGridDepth(float depth) const {
-    GLint gridDepthLoc = glGetUniformLocation(shaderProgram, "gridDepth");
-    if (gridDepthLoc != -1) {
-        glUniform1f(gridDepthLoc, depth);
-    }
 }

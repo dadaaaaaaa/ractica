@@ -52,7 +52,7 @@ GameObjects::GameObjects()
     cloudCount(20),
     birdCount(15),
     flowerCount(25),
-
+     floorTileSize(2),
     // Модели окружения (будут перезаписаны из конфига)
     appleModel("apple.fbx"),
     treeModel("tree.fbx"),
