@@ -25,99 +25,61 @@ const char* vertexShaderSource = R"(
     }
 )";
 
-// Обновленный фрагментный шейдер с поддержкой включения/выключения сетки
+// ИСПРАВЛЕННЫЙ ФРАГМЕНТНЫЙ ШЕЙДЕР
+// ПРОСТЕЙШАЯ ВЕРСИЯ С ФИКСИРОВАННЫМ РАЗМЕРОМ КЛЕТКИ
+// ИСПРАВЛЕННЫЙ ФРАГМЕНТНЫЙ ШЕЙДЕР
 const char* fragmentShaderSource = R"(
     #version 330 core
     out vec4 FragColor;
     
-    in vec3 Normal;
-    in vec3 FragPos;
     in vec2 TexCoords;
+    in vec3 FragPos;
     
     uniform vec3 color;              // Цвет модели из конфига
+    uniform vec3 gridColor;           // Цвет сетки из конфига
     uniform bool useTexture;          // Использовать ли текстуру
-    uniform bool isFloor;             // Специальный флаг для пола
-    uniform float cellSize;           // Размер клетки для сетки пола
     uniform bool gridEnabled;         // Включена ли сетка
-    uniform float gridLineWidth;      // Толщина линий сетки
-    uniform float gridWidth;          // Ширина сетки
-    uniform float gridDepth;          // Глубина сетки
+    uniform float cellSize;           // Размер клетки
+    uniform float gridWidth;          // Ширина сетки в клетках
+    uniform float gridDepth;          // Глубина сетки в клетках
+    uniform bool isFloor=false;             // Флаг: это пол или другой объект
     
     uniform sampler2D modelTexture;   // Текстура модели
     
     void main() {
-        vec3 result;
-        vec3 finalColor = color;       // Базовый цвет из конфига
+        vec3 finalColor = color;
         
         // Если есть текстура - используем её
         if (useTexture) {
-            vec4 texColor = texture(modelTexture, TexCoords);
-            // Умножаем на цвет из конфига для возможности тонирования
-            finalColor = texColor.rgb * color;
+            finalColor = texture(modelTexture, TexCoords).rgb;
         }
         
-        // Специальная обработка для пола
-        if (isFloor) {
-            if (gridEnabled) {
-                // АБСОЛЮТНО ЧЕТКАЯ СЕТКА БЕЗ МЕРЦАНИЯ
-                float stableX = FragPos.x + 1000.0;
-                float stableZ = FragPos.z + 1000.0;
+        // Начинаем с цвета текстуры
+        vec3 result = finalColor;
+        
+        // Рисуем сетку ТОЛЬКО если это пол И сетка включена
+        if (isFloor && gridEnabled) {
+            // Границы игрового поля
+            float halfWidth = (gridWidth * cellSize) / 2.0;
+            float halfDepth = (gridDepth * cellSize) / 2.0;
+            
+            // Проверяем, находимся ли мы в пределах игрового поля
+            if (abs(FragPos.x) <= halfWidth && abs(FragPos.z) <= halfDepth) {
+                // Вычисляем позицию в клетке
+                float x = FragPos.x + halfWidth;
+                float z = FragPos.z + halfDepth;
                 
-                ivec2 cellIdx = ivec2(
-                    int(floor((stableX + 0.001) / cellSize)),
-                    int(floor((stableZ + 0.001) / cellSize))
-                );
+                float posInCellX = mod(x, cellSize);
+                float posInCellZ = mod(z, cellSize);
                 
-                vec2 cellPos = vec2(
-                    (stableX - float(cellIdx.x) * cellSize) / cellSize,
-                    (stableZ - float(cellIdx.y) * cellSize) / cellSize
-                );
+                float lineWidth = 0.05;
                 
-                float epsilon = 0.001;
-                
-                float distToVertical = min(cellPos.x, 1.0 - cellPos.x);
-                float distToHorizontal = min(cellPos.y, 1.0 - cellPos.y);
-                
-                float isVerticalLine = step(distToVertical, gridLineWidth + epsilon);
-                float isHorizontalLine = step(distToHorizontal, gridLineWidth + epsilon);
-                float isAnyLine = min(1.0, isVerticalLine + isHorizontalLine);
-                
-                // Используем цвет из конфига для клеток
-                vec3 lightCellColor = finalColor * 1.2;      // Светлые клетки
-                vec3 darkCellColor = finalColor * 0.8;       // Темные клетки
-                vec3 gridColor = finalColor * 0.5;            // Цвет сетки (темнее)
-                
-                int patternX = cellIdx.x + 10000;
-                int patternZ = cellIdx.y + 10000;
-                bool isDarkCell = ((patternX + patternZ) & 1) == 0;
-                
-                vec3 cellColor = isDarkCell ? darkCellColor : lightCellColor;
-                
-                float lineBlend = smoothstep(gridLineWidth - 0.005, gridLineWidth + 0.005, 
-                                            min(distToVertical, distToHorizontal));
-                result = mix(gridColor, cellColor, lineBlend);
-                
-                float lightFactor = 0.9 + 0.1 * clamp(Normal.y, 0.0, 1.0);
-                result *= lightFactor;
-            } else {
-                // Сетка выключена - просто цвет
-                result = finalColor;
+                // Если мы близко к границе клетки
+                if (posInCellX < lineWidth || posInCellX > cellSize - lineWidth ||
+                    posInCellZ < lineWidth || posInCellZ > cellSize - lineWidth) {
+                    result = gridColor;
+                }
             }
-        } else {
-            // Обычное освещение для всех 3D моделей
-            vec3 lightDir = vec3(0.5, -1.0, 0.3);
-            lightDir = normalize(lightDir);
-            
-            vec3 ambient = 0.3 * finalColor;
-            float diff = max(dot(normalize(Normal), -lightDir), 0.0);
-            vec3 diffuse = diff * finalColor;
-            
-            result = ambient + diffuse * 0.8;
-            
-            vec3 viewDir = normalize(-FragPos);
-            vec3 reflectDir = reflect(lightDir, normalize(Normal));
-            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
-            result += spec * 0.3;
         }
         
         FragColor = vec4(result, 1.0);
@@ -232,6 +194,13 @@ void ShaderManager::setGridDepth(float depth) const {
     GLint gridDepthLoc = glGetUniformLocation(shaderProgram, "gridDepth");
     if (gridDepthLoc != -1) {
         glUniform1f(gridDepthLoc, depth);
+    }
+}
+
+void ShaderManager::setGridColor(const glm::vec3& color) const {
+    GLint gridColorLoc = glGetUniformLocation(shaderProgram, "gridColor");
+    if (gridColorLoc != -1) {
+        glUniform3fv(gridColorLoc, 1, glm::value_ptr(color));
     }
 }
 

@@ -21,13 +21,14 @@ public:
     void setColor(const glm::vec3& color) const;
     void setUseTexture(bool useTexture) const;
 
-    // Новые методы для управления сеткой
+    // Методы для управления полом и сеткой
     void setIsFloor(bool isFloor) const;
     void setCellSize(float cellSize) const;
     void setGridEnabled(bool enabled) const;
     void setGridLineWidth(float width) const;
     void setGridWidth(float width) const;
     void setGridDepth(float depth) const;
+    void setGridColor(const glm::vec3& color) const;
 
     // Методы для UI шейдера
     void setUIProjection(const glm::mat4& projection) const;

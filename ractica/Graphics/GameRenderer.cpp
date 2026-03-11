@@ -484,7 +484,8 @@ void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, f
 
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(1.0f, 2.0f);
-
+    g_shaderManager.setIsFloor(false);
+    g_shaderManager.setGridEnabled(false);
     g_shaderManager.setModelMatrix(modelMatrix);
     g_shaderManager.setColor(color);
     g_shaderManager.setUseTexture(model.hasTexture);
@@ -619,6 +620,8 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
 
         glm::mat4 modelMatrix = glm::mat4(1.0f);
         g_shaderManager.setModelMatrix(modelMatrix);
+        g_shaderManager.setIsFloor(false);
+        g_shaderManager.setGridEnabled(false);
         g_shaderManager.setColor(glm::vec3(0.55f, 0.27f, 0.07f));
         g_shaderManager.setUseTexture(false);
 
@@ -644,6 +647,8 @@ void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
 
         g_shaderManager.setModelMatrix(model);
         g_shaderManager.setColor(cloud.color);
+        g_shaderManager.setIsFloor(false);
+        g_shaderManager.setGridEnabled(false);
         g_shaderManager.setUseTexture(cloudModel.hasTexture);
 
         cloudModel.draw();
@@ -668,6 +673,8 @@ void GameRenderer::drawBird(const Bird& bird) {
     model = glm::rotate(model, bird.wingAngle * 0.3f, glm::vec3(1.0f, 0.0f, 0.0f));
 
     g_shaderManager.setModelMatrix(model);
+    g_shaderManager.setIsFloor(false);
+    g_shaderManager.setGridEnabled(false);
     g_shaderManager.setColor(bird.color);
     g_shaderManager.setUseTexture(birdModel.hasTexture);
 
@@ -680,6 +687,7 @@ void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
 
     for (const auto& bird : birds) {
         drawBird(bird);
+
     }
 
     glDisable(GL_POLYGON_OFFSET_FILL);
@@ -702,6 +710,8 @@ void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
 
         g_shaderManager.setModelMatrix(model);
         g_shaderManager.setColor(flower.color);
+        g_shaderManager.setIsFloor(false);
+        g_shaderManager.setGridEnabled(false);
         g_shaderManager.setUseTexture(flowerModel.hasTexture);
 
         flowerModel.draw();
@@ -761,33 +771,25 @@ void GameRenderer::setFloorTexture(const std::string& texturePath) {
 
 void GameRenderer::drawFloor() {
     std::cout << "\n=== DRAW FLOOR DEBUG ===" << std::endl;
-    std::cout << "Текущий floorColor: ("
-        << floorColor.r << ", "
-        << floorColor.g << ", "
-        << floorColor.b << ")" << std::endl;
-    std::cout << "useFloorTexture: " << (useFloorTexture ? "ДА" : "НЕТ") << std::endl;
-    std::cout << "Grid size: " << m_gridWidth << " x " << m_gridDepth << " cell: " << m_cellSize << std::endl;
-    std::cout << "Floor model has texture: " << (floorModel.hasTexture ? "ДА" : "НЕТ") << std::endl;
-    std::cout << "Floor model vertices: " << floorModel.vertices.size() << std::endl;
-    std::cout << "Floor texture ID: " << floorModel.textureID << std::endl;
 
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(5.0f, 10.0f);
 
-    // Размер игрового поля в мировых координатах
-    float worldWidth = m_gridWidth * m_cellSize;   // 120 * 0.1 = 12
-    float worldDepth = m_gridDepth * m_cellSize;   // 120 * 0.1 = 12
+    // Размер игрового поля (для справки)
+    float worldWidth = m_gridWidth * m_cellSize;
+    float worldDepth = m_gridDepth * m_cellSize;
 
-    // Границы поля (центр в 0,0)
-    float minX = -worldWidth / 2.0f;
-    float maxX = worldWidth / 2.0f;
-    float minZ = -worldDepth / 2.0f;
-    float maxZ = worldDepth / 2.0f;
+    std::cout << "  World size: " << worldWidth << " x " << worldDepth << std::endl;
+    std::cout << "  Floor model exists: " << (floorModel.vertices.size() > 0 ? "YES" : "NO") << std::endl;
+    std::cout << "  Floor color: (" << floorColor.r << ", " << floorColor.g << ", " << floorColor.b << ")" << std::endl;
+    std::cout << "  Floor has texture: " << (floorModel.hasTexture ? "YES" : "NO") << std::endl;
+    std::cout << "  Grid enabled: " << (gridEnabled ? "YES" : "NO") << std::endl;
 
-    std::cout << "World bounds: X[" << minX << "," << maxX << "] Z[" << minZ << "," << maxZ << "]" << std::endl;
-
+    // Рисуем плитки ТОЛЬКО если есть модель пола
     if (floorModel.vertices.size() > 0) {
-        // Вычисляем оригинальные границы модели
+        std::cout << "  Drawing tiles over base floor" << std::endl;
+
+        // Вычисляем границы модели
         float modelMinX = 999999, modelMaxX = -999999;
         float modelMinY = 999999, modelMaxY = -999999;
         float modelMinZ = 999999, modelMaxZ = -999999;
@@ -801,96 +803,65 @@ void GameRenderer::drawFloor() {
             modelMaxZ = std::max(modelMaxZ, vertex.position.z);
         }
 
-        float modelSizeX = modelMaxX - modelMinX;
-        float modelSizeY = modelMaxY - modelMinY;
-        float modelSizeZ = modelMaxZ - modelMinZ;
-
         float modelCenterX = (modelMinX + modelMaxX) / 2.0f;
         float modelCenterY = (modelMinY + modelMaxY) / 2.0f;
         float modelCenterZ = (modelMinZ + modelMaxZ) / 2.0f;
 
-        std::cout << "  Model original size: X=" << modelSizeX << " Y=" << modelSizeY << " Z=" << modelSizeZ << std::endl;
-        std::cout << "  Model center: (" << modelCenterX << ", " << modelCenterY << ", " << modelCenterZ << ")" << std::endl;
+        float modelSizeX = modelMaxX - modelMinX;
+        float modelSizeY = modelMaxY - modelMinY;
+        float modelSizeZ = modelMaxZ - modelMinZ;
 
-        // Масштаб как в редакторе
         float scale = 0.01f;
 
-        // ПОСЛЕ ПОВОРОТА НА -90° ВОКРУГ X:
-        // Бывшая ось Y становится Z (вертикаль)
-        // Бывшая ось Z становится -Y (горизонталь)
-        // Бывшая ось X остается X (горизонталь)
+        float tileWidth = modelSizeX * scale;
+        float tileDepth = modelSizeY * scale;
 
-        // Размеры после поворота:
-        float tileSizeX = modelSizeX * scale;           // по X остается X
-        float tileSizeZ = modelSizeY * scale;           // по Z становится Y (бывшая высота)
+        std::cout << "  Tile size: " << tileWidth << " x " << tileDepth << std::endl;
 
-        std::cout << "  Tile size after rotation: X=" << tileSizeX << " Z=" << tileSizeZ << std::endl;
+        int tilesX = 50;
+        int tilesZ = 50;
 
-        // Вычисляем количество плиток для покрытия поля
-        int tilesX = static_cast<int>(std::ceil(worldWidth / tileSizeX)) + 1;
-        int tilesZ = static_cast<int>(std::ceil(worldDepth / tileSizeZ)) + 1;
-
-        std::cout << "  Tiles needed: " << tilesX << " x " << tilesZ << std::endl;
-
-        // Начальная позиция (левый нижний угол)
-        float startX = minX;
-        float startZ = minZ;
+        float startX = -(tilesX * tileWidth) / 2.0f;
+        float startZ = -(tilesZ * tileDepth) / 2.0f;
 
         int drawnTiles = 0;
+        float baseY = -0.1f;
 
-        // Временная матрица для отладки первой плитки
-        bool firstTile = true;
-
-        // Рисуем плитки рядами
         for (int i = 0; i < tilesX; i++) {
             for (int j = 0; j < tilesZ; j++) {
+                float posX = startX + i * tileWidth + tileWidth / 2.0f;
+                float posZ = startZ + j * tileDepth + tileDepth / 2.0f;
+
                 glm::mat4 modelMatrix = glm::mat4(1.0f);
 
-                // 1. Сначала смещаем модель так, чтобы её центр был в начале координат
+                modelMatrix = glm::translate(modelMatrix, glm::vec3(posX, baseY, posZ));
                 modelMatrix = glm::translate(modelMatrix, glm::vec3(-modelCenterX, -modelCenterY, -modelCenterZ));
-
-                // 2. Поворачиваем модель горизонтально (вокруг X)
                 modelMatrix = glm::rotate(modelMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-
-                // 3. Масштабируем
                 modelMatrix = glm::scale(modelMatrix, glm::vec3(scale, scale, scale));
 
-                // 4. Позиционируем на поле
-                float posX = startX + i * tileSizeX + tileSizeX / 2;
-                float posZ = startZ + j * tileSizeZ + tileSizeZ / 2;
-
-                modelMatrix = glm::translate(modelMatrix, glm::vec3(posX, -0.1f, posZ));
-
-                // Отладка первой плитки
-                if (firstTile) {
-                    std::cout << "  First tile position: (" << posX << ", -0.1, " << posZ << ")" << std::endl;
-                    firstTile = false;
-                }
-
-                // Устанавливаем белый цвет для правильного отображения текстуры
                 g_shaderManager.setModelMatrix(modelMatrix);
-                g_shaderManager.setColor(glm::vec3(1.0f, 1.0f, 1.0f));
+                g_shaderManager.setColor(glm::vec3(1.0f, 1.0f, 1.0f)); // Белый для текстуры
                 g_shaderManager.setUseTexture(floorModel.hasTexture);
                 g_shaderManager.setIsFloor(true);
                 g_shaderManager.setCellSize(m_cellSize);
                 g_shaderManager.setGridEnabled(gridEnabled);
                 g_shaderManager.setGridLineWidth(gridLineWidth);
+                g_shaderManager.setGridWidth(m_gridWidth);
+                g_shaderManager.setGridDepth(m_gridDepth);
+                g_shaderManager.setGridColor(gridColor);
 
                 floorModel.draw();
                 drawnTiles++;
             }
         }
 
-        std::cout << "  Total tiles drawn: " << drawnTiles << std::endl;
-        std::cout << "  Expected coverage: " << tilesX * tileSizeX << " x " << tilesZ * tileSizeZ << std::endl;
+        std::cout << "  Tiles drawn: " << drawnTiles << std::endl;
     }
 
-    g_shaderManager.setIsFloor(false);
     glDisable(GL_POLYGON_OFFSET_FILL);
 
     std::cout << "=== END DRAW FLOOR ===\n" << std::endl;
 }
-// Методы для создания примитивов забора
 void GameRenderer::createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
     float width, float height, const glm::vec3& color) {
     float halfWidth = width / 2.0f;
