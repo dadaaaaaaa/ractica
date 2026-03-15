@@ -175,7 +175,7 @@ public:
     void createTexturedSphereModel(Model& model);
     void createTexturedFloorModel(Model& model);
     void createFenceModel(Model& model);
-
+    float getFloorHeightAt(float x, float z) const;
     static void setupGLFWHints();
     static bool initGLEW();
     static void initOpenGLSettings();

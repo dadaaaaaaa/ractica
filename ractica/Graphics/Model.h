@@ -31,7 +31,14 @@ public:
         textureID = texID;
         hasTexture = (texID != 0);
     }
-
+    float getMinY() const {
+        if (vertices.empty()) return 0.0f;
+        float minY = vertices[0].position.y;
+        for (const auto& v : vertices) {
+            minY = std::min(minY, v.position.y);
+        }
+        return minY;
+    }
     // Вычисление границ модели
     void calculateBounds();
 };
