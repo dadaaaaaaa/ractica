@@ -73,7 +73,7 @@ public:
     void setGameSpeed(float speed) { objects.setGameSpeed(speed); }
     void setPlayerName(const std::string& name) { objects.setPlayerName(name); }
     void setWindowSize(int width, int height) { ui.setWindowSize(width, height); }
-
+    void toggleRayTracing() { renderer.toggleRayTracing(); forceRedraw(); }
     // === лерндш дкъ хлемх ===
     bool isNameInputActive() const { return objects.isNameInputActive(); }
     void handleNameInput(int key) { objects.handleNameInput(key); }

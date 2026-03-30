@@ -11,6 +11,7 @@
 #include "../Objects/Bird.h"
 #include "../Objects/Obstacle.h"
 #include "../UI/GameUI.h"
+#include "RayTracer.h"
 #include <GLFW/glfw3.h>
 #include <string>
 #include <functional>
@@ -75,9 +76,25 @@ private:
     int m_gridDepth;
     float m_cellSize;
 
+    // Ray Tracing настройки
+    bool m_rayTracingEnabled;
+    RayTracer m_rayTracer;
+    bool m_renderWireframe;
+    GLuint m_rayTracingTexture;
+    GLuint m_rayTracingVAO;
+    GLuint m_rayTracingVBO;
+    GLuint m_rayTracingShader;
+    bool m_showTestSquare;
+    GLuint m_testVAO, m_testVBO, m_testShader;
 public:
     GameRenderer();
+    glm::vec3 traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
+    // В приватные методы
+    glm::vec3 traceRayColor(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
+    void showTestSquare(bool show);
 
+    void initRayTracingResources();
+    void cleanupRayTracingResources();
     void createSnakeHeadModel(Model& model);
     void createSnakeBodyModel(Model& model);
     void createSnakeTailModel(Model& model);
@@ -175,6 +192,25 @@ public:
     void createTexturedSphereModel(Model& model);
     void createTexturedFloorModel(Model& model);
     void createFenceModel(Model& model);
+
+    // Ray Tracing методы
+    void toggleRayTracing() { m_rayTracingEnabled = !m_rayTracingEnabled; }
+    bool isRayTracingEnabled() const { return m_rayTracingEnabled; }
+    void setRayTracingSamples(int samples) { m_rayTracer.setSamplesPerPixel(samples); }
+    int getRayTracingSamples() const { return m_rayTracer.getSamplesPerPixel(); }
+    void toggleWireframe() { m_renderWireframe = !m_renderWireframe; }
+    bool isWireframeEnabled() const { return m_renderWireframe; }
+
+    // Метод для отрисовки с трассировкой лучей
+    void renderWithRayTracing(const GameObjects& objects);
+
+    // Коллбек для пересечения лучей
+    HitInfo intersectScene(const Ray& ray, const GameObjects& objects);
+
+    // Методы для пересечения лучей с примитивами
+    bool rayIntersectsAABB(const Ray& ray, const glm::vec3& min, const glm::vec3& max, float& tMin, float& tMax);
+    bool rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius, float& tHit);
+    glm::vec3 computeNormal(const glm::vec3& point, const glm::vec3& min, const glm::vec3& max);
 
     static void setupGLFWHints();
     static bool initGLEW();

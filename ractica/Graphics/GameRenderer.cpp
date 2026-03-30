@@ -15,6 +15,7 @@
 #include "../Primitives/BirdPrimitive.h"
 #include "../Primitives/FlowerPrimitive.h"
 #include "../Primitives/FencePrimitive.h"
+#include "RayTracer.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -37,15 +38,23 @@ GameRenderer::GameRenderer()
     , gridLineWidth(1.0f)
     , m_gridWidth(120)
     , m_gridDepth(120)
-    , m_cellSize(0.1f) {
+    , m_cellSize(0.1f)
+    , m_rayTracingEnabled(false)
+    , m_renderWireframe(false) {
 }
 
 void GameRenderer::initialize() {
     std::cout << "GameRenderer::initialize() - Models will be loaded from config in Game::loadConfig()" << std::endl;
     initOpenGLSettings();
+    initRayTracingResources();
 }
 
 void GameRenderer::renderGame(const GameObjects& objects) {
+    if (m_rayTracingEnabled) {
+        renderWithRayTracing(objects);
+        return;
+    }
+
     resetDepthState();
 
     glClearDepth(1.0f);
@@ -687,7 +696,6 @@ void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
 
     for (const auto& bird : birds) {
         drawBird(bird);
-
     }
 
     glDisable(GL_POLYGON_OFFSET_FILL);
@@ -862,6 +870,7 @@ void GameRenderer::drawFloor() {
 
     std::cout << "=== END DRAW FLOOR ===\n" << std::endl;
 }
+
 void GameRenderer::createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
     float width, float height, const glm::vec3& color) {
     float halfWidth = width / 2.0f;
@@ -996,6 +1005,481 @@ void GameRenderer::createTexturedFloorModel(Model& model) {
 }
 void GameRenderer::createFenceModel(Model& model) {}
 
+//=============================================================================
+// RAY TRACING METHODS
+//=============================================================================
+
+bool GameRenderer::rayIntersectsAABB(
+    const Ray& ray,
+    const glm::vec3& min,
+    const glm::vec3& max,
+    float& tMin,
+    float& tMax)
+{
+    tMin = 0.0f;
+    tMax = 1000.0f;
+
+    for (int i = 0; i < 3; i++) {
+        float origin = ray.origin[i];
+        float dir = ray.direction[i];
+
+        if (abs(dir) < 1e-6f) {
+            // Луч параллелен плоскости
+            if (origin < min[i] || origin > max[i]) {
+                return false;
+            }
+        }
+        else {
+            float t1 = (min[i] - origin) / dir;
+            float t2 = (max[i] - origin) / dir;
+
+            if (t1 > t2) std::swap(t1, t2);
+
+            tMin = glm::max(tMin, t1);
+            tMax = glm::min(tMax, t2);
+
+            if (tMin > tMax) return false;
+        }
+    }
+
+    return tMin > 0.0f;
+}
+
+bool GameRenderer::rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius, float& tHit) {
+    glm::vec3 oc = ray.origin - center;
+    float a = glm::dot(ray.direction, ray.direction);
+    float b = 2.0f * glm::dot(oc, ray.direction);
+    float c = glm::dot(oc, oc) - radius * radius;
+    float discriminant = b * b - 4 * a * c;
+
+    if (discriminant < 0) return false;
+
+    float sqrtD = sqrt(discriminant);
+    float t1 = (-b - sqrtD) / (2.0f * a);
+    float t2 = (-b + sqrtD) / (2.0f * a);
+
+    if (t1 > 0) {
+        tHit = t1;
+        return true;
+    }
+    if (t2 > 0) {
+        tHit = t2;
+        return true;
+    }
+
+    return false;
+}
+
+glm::vec3 GameRenderer::computeNormal(const glm::vec3& point, const glm::vec3& min, const glm::vec3& max) {
+    glm::vec3 normal(0.0f);
+    glm::vec3 center = (min + max) * 0.5f;
+    glm::vec3 localPoint = point - center;
+
+    float dx = abs(localPoint.x);
+    float dy = abs(localPoint.y);
+    float dz = abs(localPoint.z);
+
+    if (dx > dy && dx > dz) {
+        normal = glm::vec3(localPoint.x > 0 ? 1.0f : -1.0f, 0.0f, 0.0f);
+    }
+    else if (dy > dx && dy > dz) {
+        normal = glm::vec3(0.0f, localPoint.y > 0 ? 1.0f : -1.0f, 0.0f);
+    }
+    else {
+        normal = glm::vec3(0.0f, 0.0f, localPoint.z > 0 ? 1.0f : -1.0f);
+    }
+
+    return normal;
+}
+
+void GameRenderer::initRayTracingResources() {
+    // Создаём текстуру
+    glGenTextures(1, &m_rayTracingTexture);
+    glBindTexture(GL_TEXTURE_2D, m_rayTracingTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Вершины для полноэкранного квадрата
+    float vertices[] = {
+        -1.0f, -1.0f, 0.0f, 0.0f,
+         1.0f, -1.0f, 1.0f, 0.0f,
+         1.0f,  1.0f, 1.0f, 1.0f,
+        -1.0f,  1.0f, 0.0f, 1.0f
+    };
+
+    glGenVertexArrays(1, &m_rayTracingVAO);
+    glGenBuffers(1, &m_rayTracingVBO);
+    glBindVertexArray(m_rayTracingVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_rayTracingVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    // Шейдеры
+    const char* vertexShader = R"(
+        #version 330 core
+        layout(location = 0) in vec2 aPos;
+        layout(location = 1) in vec2 aTexCoord;
+        out vec2 TexCoord;
+        void main() {
+            gl_Position = vec4(aPos, 0.0, 1.0);
+            TexCoord = aTexCoord;
+        }
+    )";
+
+    const char* fragmentShader = R"(
+ #version 330 core
+in vec2 TexCoord;
+out vec4 FragColor;
+
+uniform sampler2D uTexture;
+
+void main()
+{
+    FragColor = texture(uTexture, TexCoord);
+}
+    )";
+
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vs, 1, &vertexShader, nullptr);
+    glCompileShader(vs);
+
+    // Проверка компиляции вершинного шейдера
+    GLint success;
+    glGetShaderiv(vs, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(vs, 512, nullptr, infoLog);
+        std::cout << "Vertex shader error: " << infoLog << std::endl;
+    }
+
+    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fs, 1, &fragmentShader, nullptr);
+    glCompileShader(fs);
+
+    glGetShaderiv(fs, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(fs, 512, nullptr, infoLog);
+        std::cout << "Fragment shader error: " << infoLog << std::endl;
+    }
+
+    m_rayTracingShader = glCreateProgram();
+    glAttachShader(m_rayTracingShader, vs);
+    glAttachShader(m_rayTracingShader, fs);
+    glLinkProgram(m_rayTracingShader);
+
+    glGetProgramiv(m_rayTracingShader, GL_LINK_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetProgramInfoLog(m_rayTracingShader, 512, nullptr, infoLog);
+        std::cout << "Shader program link error: " << infoLog << std::endl;
+    }
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    std::cout << "Ray tracing resources initialized. Shader ID: " << m_rayTracingShader << std::endl;
+}
+
+void GameRenderer::cleanupRayTracingResources() {
+    if (m_rayTracingTexture) glDeleteTextures(1, &m_rayTracingTexture);
+    if (m_rayTracingVAO) glDeleteVertexArrays(1, &m_rayTracingVAO);
+    if (m_rayTracingVBO) glDeleteBuffers(1, &m_rayTracingVBO);
+    if (m_rayTracingShader) glDeleteProgram(m_rayTracingShader);
+}
+void GameRenderer::renderWithRayTracing(const GameObjects& objects)
+{
+    if (!m_rayTracingEnabled) return;
+
+    const int width = 1200;
+    const int height = 800;
+
+    std::vector<unsigned char> pixels(width * height * 3);
+
+    // Используем ТУ ЖЕ камеру, что и в OpenGL рендеринге
+    glm::vec3 camPos = g_camera.getPosition();
+    glm::vec3 camDir = glm::normalize(g_camera.getFront());
+    glm::vec3 camUp = g_camera.getUp();
+
+    float fov = 60.0f;
+    float aspect = (float)width / (float)height;
+
+    // ВАЖНО: Используем те же смещения, что и в drawSnake/drawFood
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            float screenX = (2.0f * (x + 0.5f) / width - 1.0f);
+            float screenY = (1.0f - 2.0f * (y + 0.5f) / height);
+
+            Ray ray = m_rayTracer.getRayFromCamera(
+                camPos, camDir, camUp, fov, aspect, screenX, screenY
+            );
+
+            glm::vec3 color = traceRay(ray, objects, offsetX, offsetZ);
+            int index = ((height - 1 - y) * width + x) * 3;
+            pixels[index + 0] = (unsigned char)(glm::clamp(color.r, 0.0f, 1.0f) * 255);
+            pixels[index + 1] = (unsigned char)(glm::clamp(color.g, 0.0f, 1.0f) * 255);
+            pixels[index + 2] = (unsigned char)(glm::clamp(color.b, 0.0f, 1.0f) * 255);
+        }
+    }
+
+    glBindTexture(GL_TEXTURE_2D, m_rayTracingTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+
+    glUseProgram(m_rayTracingShader);
+    glBindVertexArray(m_rayTracingVAO);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+    glBindVertexArray(0);
+    glEnable(GL_DEPTH_TEST);
+}
+void GameRenderer::showTestSquare(bool show) {
+    m_showTestSquare = show;
+    if (show) {
+        // Останавливаем игру
+        extern Game g_game;
+        if (g_game.getGameState() == PLAYING) {
+            g_game.setGameState(PAUSED);
+        }
+
+        // Создаём простой квадрат
+        float vertices[] = {
+            -0.8f, -0.8f, 0.0f,
+             0.8f, -0.8f, 0.0f,
+             0.8f,  0.8f, 0.0f,
+            -0.8f,  0.8f, 0.0f
+        };
+
+        unsigned int indices[] = {
+            0, 1, 2,
+            2, 3, 0
+        };
+
+        glGenVertexArrays(1, &m_testVAO);
+        glGenBuffers(1, &m_testVBO);
+        glGenBuffers(1, &m_testVBO); // Для индексов
+
+        glBindVertexArray(m_testVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, m_testVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+
+        // Простой шейдер
+        const char* vertexShader = R"(
+            #version 330 core
+            layout(location = 0) in vec3 aPos;
+            void main() {
+                gl_Position = vec4(aPos, 1.0);
+            }
+        )";
+
+        const char* fragmentShader = R"(
+            #version 330 core
+            out vec4 FragColor;
+            void main() {
+                FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+            }
+        )";
+
+        GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+        glShaderSource(vs, 1, &vertexShader, nullptr);
+        glCompileShader(vs);
+
+        GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+        glShaderSource(fs, 1, &fragmentShader, nullptr);
+        glCompileShader(fs);
+
+        m_testShader = glCreateProgram();
+        glAttachShader(m_testShader, vs);
+        glAttachShader(m_testShader, fs);
+        glLinkProgram(m_testShader);
+
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+
+        std::cout << "Test square created. Press T again to hide." << std::endl;
+    }
+}
+glm::vec3 GameRenderer::traceRayColor(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
+    float closestDist = 1000.0f;
+    glm::vec3 closestColor = skyColor;
+
+    // ===== ТЕСТОВЫЙ ОБЪЕКТ - БОЛЬШОЙ КРАСНЫЙ КУБ В ЦЕНТРЕ =====
+    // Создаём большой куб в центре сцены, который точно должен быть виден
+    glm::vec3 testBoxMin(-1.0f, -0.5f, -1.0f);
+    glm::vec3 testBoxMax(1.0f, 1.5f, 1.0f);
+
+    float tMin, tMax;
+    if (rayIntersectsAABB(ray, testBoxMin, testBoxMax, tMin, tMax)) {
+        if (tMin > 0 && tMin < closestDist) {
+            closestDist = tMin;
+            closestColor = glm::vec3(1.0f, 0.0f, 0.0f); // Ярко-красный тестовый куб
+            std::cout << "HIT TEST CUBE! Distance: " << tMin << std::endl;
+        }
+    }
+
+    // Если попали в тестовый куб - сразу возвращаем красный цвет
+    if (closestColor == glm::vec3(1.0f, 0.0f, 0.0f)) {
+        return closestColor;
+    }
+
+    // ===== ПРОВЕРКА ПОЛА =====
+    if (ray.direction.y != 0.0f) {
+        float t = -ray.origin.y / ray.direction.y;
+        if (t > 0 && t < closestDist) {
+            glm::vec3 hitPoint = ray.pointAt(t);
+            float halfWidth = 10.0f;
+            float halfDepth = 10.0f;
+            if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+                closestDist = t;
+                closestColor = glm::vec3(0.0f, 0.0f, 1.0f);
+            }
+        }
+    }
+
+    return closestColor;
+}
+
+glm::vec3 GameRenderer::traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
+    HitInfo closestHit;
+    closestHit.hit = false;
+    closestHit.distance = 1000.0f;
+
+    // Проверка пересечения с полом (как в drawFloor)
+    if (ray.direction.y != 0.0f) {
+        float t = -ray.origin.y / ray.direction.y;
+        if (t > 0 && t < closestHit.distance) {
+            glm::vec3 hitPoint = ray.pointAt(t);
+            float halfWidth = m_gridWidth * m_cellSize / 2.0f;
+            float halfDepth = m_gridDepth * m_cellSize / 2.0f;
+            if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+                closestHit.hit = true;
+                closestHit.distance = t;
+                closestHit.point = hitPoint;
+                closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                // Цвет пола из конфига
+                closestHit.color = floorColor;
+            }
+        }
+    }
+
+    // Змейка - используем ТЕ ЖЕ размеры, что и в drawSnake
+    const auto& snake = objects.getSnake();
+    for (size_t i = 0; i < snake.size(); i++) {
+        const Point& segment = snake[i];
+
+        // Та же конвертация координат, что в drawSnake
+        float x = segment.x * m_cellSize - offsetX;
+        float z = segment.z * m_cellSize - offsetZ;
+        float y = segment.y * m_cellSize + 0.1f;
+
+        // Тот же масштаб, что в drawSnake
+        float scale = m_cellSize * 0.8f;
+        if (i == 0) scale *= g_game.getSnakeHeadScale();
+        else if (i == snake.size() - 1) scale *= g_game.getSnakeTailScale();
+        else scale *= g_game.getSnakeBodyScale();
+
+        float halfSize = scale / 2.0f;
+        glm::vec3 boxMin(x - halfSize, y - halfSize, z - halfSize);
+        glm::vec3 boxMax(x + halfSize, y + halfSize, z + halfSize);
+
+        float tMin, tMax;
+        if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
+            if (tMin > 0 && tMin < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tMin;
+                closestHit.point = ray.pointAt(tMin);
+                closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
+
+                // Цвета сегментов как в drawSnake
+                if (i == 0) closestHit.color = g_game.getSnakeHeadColor();
+                else if (i == snake.size() - 1) closestHit.color = g_game.getSnakeTailColor();
+                else closestHit.color = g_game.getSnakeBodyColor();
+            }
+        }
+    }
+
+    // Еда - те же размеры, что в drawFood
+    const auto& food = objects.getFood();
+    float foodScale = m_cellSize * 0.8f;
+    for (const auto& apple : food) {
+        float x = apple.x * m_cellSize - offsetX;
+        float z = apple.z * m_cellSize - offsetZ;
+        float y = apple.y * m_cellSize + 0.1f;
+
+        glm::vec3 center(x, y, z);
+        float radius = foodScale / 2.0f;
+
+        float tHit;
+        if (rayIntersectsSphere(ray, center, radius, tHit)) {
+            if (tHit > 0 && tHit < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tHit;
+                closestHit.point = ray.pointAt(tHit);
+                closestHit.normal = glm::normalize(closestHit.point - center);
+                closestHit.color = glm::vec3(1.0f, 0.8f, 0.2f); // Цвет яблока
+            }
+        }
+    }
+
+    // Препятствия (деревья)
+    const auto& obstacles = objects.getObstacles();
+    float treeScale = m_cellSize * 1.5f;
+    for (const auto& obstacle : obstacles) {
+        for (const auto& block : obstacle.blocks) {
+            float x = block.x * m_cellSize - offsetX;
+            float z = block.z * m_cellSize - offsetZ;
+            float y = block.y * m_cellSize;
+
+            float halfSize = treeScale / 2.0f;
+            glm::vec3 boxMin(x - halfSize, y, z - halfSize);
+            glm::vec3 boxMax(x + halfSize, y + treeScale, z + halfSize);
+
+            float tMin, tMax;
+            if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
+                if (tMin > 0 && tMin < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = tMin;
+                    closestHit.point = ray.pointAt(tMin);
+                    closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
+                    closestHit.color = glm::vec3(0.1f, 0.4f, 0.1f); // Зеленый для дерева
+                }
+            }
+        }
+    }
+
+    if (closestHit.hit) {
+        // Добавляем простое освещение
+        glm::vec3 lightPos(5.0f, 10.0f, 5.0f);
+        glm::vec3 lightColor(1.0f, 0.95f, 0.85f);
+
+        glm::vec3 lightDir = glm::normalize(lightPos - closestHit.point);
+        float diff = glm::max(glm::dot(closestHit.normal, lightDir), 0.0f);
+
+        // Ambient + Diffuse
+        glm::vec3 ambient = closestHit.color * 0.3f;
+        glm::vec3 diffuse = closestHit.color * lightColor * diff;
+
+        return ambient + diffuse;
+    }
+
+    // Фон - небо
+    float t = 0.5f * (ray.direction.y + 1.0f);
+    return skyColor * (1.0f - t) + glm::vec3(0.8f, 0.9f, 1.0f) * t;
+}
 //=============================================================================
 // СТАТИЧЕСКИЕ МЕТОДЫ GameRenderer
 //=============================================================================
@@ -1133,6 +1617,12 @@ namespace {
                     g_game.setGameState(MAIN_MENU);
                 }
             }
+            if (key == GLFW_KEY_T && action == GLFW_PRESS) {
+                extern GameRenderer g_renderer; // или получите доступ к renderer
+                g_game.toggleRayTracing(); // нужно добавить этот метод в Game
+                std::cout << "Ray tracing toggled" << std::endl;
+            }
+ 
         }
     }
 
