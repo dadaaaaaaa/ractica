@@ -398,96 +398,54 @@ void GameRenderer::drawModel(const Model& model, float x, float y, float z,
 
     glDisable(GL_POLYGON_OFFSET_FILL);
 }
-float GameRenderer::getFloorHeightAt(float x, float z) const {
-    if (floorModel.vertices.empty()) return 0.0f;
 
-    // Статические переменные для хранения диапазона высот
-    static float minY = 0.0f;
-    static float maxY = 0.0f;
-    static bool firstCall = true;
-
-    // При первом вызове вычисляем диапазон высот модели
-    if (firstCall) {
-        minY = 999999;
-        maxY = -999999;
-        for (const auto& vertex : floorModel.vertices) {
-            minY = std::min(minY, vertex.position.y);
-            maxY = std::max(maxY, vertex.position.y);
-        }
-        std::cout << "  Floor height range: " << minY << " to " << maxY << std::endl;
-        firstCall = false;
-    }
-
-    float bestDist = 1e9;
-    float bestY = 0.0f;
-
-    // Ищем ближайшую вершину
-    for (size_t i = 0; i < floorModel.vertices.size(); i++) {
-        float dx = floorModel.vertices[i].position.x - x;
-        float dz = floorModel.vertices[i].position.z - z;
-        float dist = dx * dx + dz * dz;
-
-        if (dist < bestDist) {
-            bestDist = dist;
-            bestY = floorModel.vertices[i].position.y;
-        }
-    }
-
-    // Нормализуем высоту: делаем так, чтобы минимальная высота была 0
-    // и масштабируем до разумных размеров (0-1)
-    float normalizedY = (bestY - minY) / (maxY - minY);
-
-    return normalizedY;
-}
 void GameRenderer::drawSnake(const std::vector<Point>& snake) {
     if (snake.empty()) return;
 
-    // Временно отключаем полигон оффсет
-    glDisable(GL_POLYGON_OFFSET_FILL);
-
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-    glDepthMask(GL_TRUE);
-
-    float offsetX = m_gridWidth * m_cellSize / 2.0f;
-    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-
     static bool firstDraw = true;
     if (firstDraw) {
-        std::cout << "\n=== SNAKE POSITIONS ===" << std::endl;
+        std::cout << "\n=== ПЕРВАЯ ОТРИСОВКА ЗМЕЙКИ ===" << std::endl;
+        std::cout << "snakeHeadColor из Game: ("
+            << g_game.getSnakeHeadColor().r << ", "
+            << g_game.getSnakeHeadColor().g << ", "
+            << g_game.getSnakeHeadColor().b << ")" << std::endl;
+        std::cout << "snakeBodyColor из Game: ("
+            << g_game.getSnakeBodyColor().r << ", "
+            << g_game.getSnakeBodyColor().g << ", "
+            << g_game.getSnakeBodyColor().b << ")" << std::endl;
+        std::cout << "snakeTailColor из Game: ("
+            << g_game.getSnakeTailColor().r << ", "
+            << g_game.getSnakeTailColor().g << ", "
+            << g_game.getSnakeTailColor().b << ")" << std::endl;
+        std::cout << "snakeHeadScale из Game: " << g_game.getSnakeHeadScale() << std::endl;
+        std::cout << "snakeBodyScale из Game: " << g_game.getSnakeBodyScale() << std::endl;
+        std::cout << "snakeTailScale из Game: " << g_game.getSnakeTailScale() << std::endl;
         firstDraw = false;
     }
+
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(2.0f, 4.0f);
+
+    // Используем размеры из конфига
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
     for (size_t i = 0; i < snake.size(); i++) {
         const Point& segment = snake[i];
 
-        float worldX = segment.x * m_cellSize - offsetX;
-        float worldZ = segment.z * m_cellSize - offsetZ;
-
-        // Получаем нормализованную высоту пола (0-1)
-        float floorY = 0.0f;
-        if (floorModel.vertices.size() > 0) {
-            floorY = getFloorHeightAt(worldX, worldZ);
-        }
-
-        // Теперь floorY в диапазоне 0-1, добавляем небольшое смещение
-        float y = floorY + 0.02f;
+        // Конвертируем координаты сетки в мировые координаты
+        float x = segment.x * m_cellSize - offsetX;
+        float y = segment.y * m_cellSize + 0.1f;
+        float z = segment.z * m_cellSize - offsetZ;
 
         const Model* modelToDraw = &snakeBodyModel;
         glm::vec3 color;
-        float scale = m_cellSize * 0.8f;
+        float scale = m_cellSize * 0.8f; // Базовый масштаб от размера ячейки
 
         if (i == 0) {
             modelToDraw = &snakeHeadModel;
             color = g_game.getSnakeHeadColor();
             scale *= g_game.getSnakeHeadScale();
-
-            // Отладка для головы
-            static int frameCount = 0;
-            if (frameCount++ % 60 == 0) {
-                std::cout << "  Head at: (" << worldX << ", " << worldZ << ") "
-                    << "normY=" << floorY << " finalY=" << y << std::endl;
-            }
         }
         else if (i == snake.size() - 1) {
             modelToDraw = &snakeTailModel;
@@ -501,24 +459,13 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
         }
 
         float rotationAngle = calculateSegmentRotation(snake, i);
-
-        glm::mat4 modelMatrix = glm::mat4(1.0f);
-        modelMatrix = glm::translate(modelMatrix, glm::vec3(worldX, y, worldZ));
-        modelMatrix = glm::rotate(modelMatrix, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
-        modelMatrix = glm::scale(modelMatrix, glm::vec3(scale));
-
-        g_shaderManager.setModelMatrix(modelMatrix);
-        g_shaderManager.setIsFloor(false);
-        g_shaderManager.setGridEnabled(false);
-        g_shaderManager.setColor(color);
-        g_shaderManager.setUseTexture(modelToDraw->hasTexture);
-
-        modelToDraw->draw();
+        drawModelWithRotation(*modelToDraw, x, y, z, scale, color, rotationAngle);
     }
 
-    glDepthFunc(GL_LESS);
-    glEnable(GL_POLYGON_OFFSET_FILL);
-}float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, size_t index) {
+    glDisable(GL_POLYGON_OFFSET_FILL);
+}
+
+float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, size_t index) {
     if (snake.size() <= 1) return 0.0f;
 
     Point current = snake[index];
@@ -1867,7 +1814,7 @@ namespace {
                 g_game.toggleRayTracing(); // нужно добавить этот метод в Game
                 std::cout << "Ray tracing toggled" << std::endl;
             }
- 
+
         }
     }
 
