@@ -40,7 +40,10 @@ GameRenderer::GameRenderer()
     , m_gridDepth(120)
     , m_cellSize(0.1f)
     , m_rayTracingEnabled(false)
-    , m_renderWireframe(false) {
+    , m_renderWireframe(false)
+    , m_rayTracingStepSize(1)      // По умолчанию каждый второй пиксель (быстрее)
+    , m_rayTracingUseAdaptive(true) // Адаптивная выборка включена
+{
 }
 
 void GameRenderer::initialize() {
@@ -87,7 +90,6 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     drawFence(objects.getFenceBlocks());
     drawGroundSprites(objects.getFlowerSprites());
 
-    // Рисуем 3D пол
     drawFloor();
 
     drawFood(objects.getFood());
@@ -1024,7 +1026,6 @@ bool GameRenderer::rayIntersectsAABB(
         float dir = ray.direction[i];
 
         if (abs(dir) < 1e-6f) {
-            // Луч параллелен плоскости
             if (origin < min[i] || origin > max[i]) {
                 return false;
             }
@@ -1044,7 +1045,6 @@ bool GameRenderer::rayIntersectsAABB(
 
     return tMin > 0.0f;
 }
-
 bool GameRenderer::rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius, float& tHit) {
     glm::vec3 oc = ray.origin - center;
     float a = glm::dot(ray.direction, ray.direction);
@@ -1093,7 +1093,6 @@ glm::vec3 GameRenderer::computeNormal(const glm::vec3& point, const glm::vec3& m
 }
 
 void GameRenderer::initRayTracingResources() {
-    // Создаём текстуру
     glGenTextures(1, &m_rayTracingTexture);
     glBindTexture(GL_TEXTURE_2D, m_rayTracingTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -1101,7 +1100,6 @@ void GameRenderer::initRayTracingResources() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    // Вершины для полноэкранного квадрата
     float vertices[] = {
         -1.0f, -1.0f, 0.0f, 0.0f,
          1.0f, -1.0f, 1.0f, 0.0f,
@@ -1119,7 +1117,6 @@ void GameRenderer::initRayTracingResources() {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    // Шейдеры
     const char* vertexShader = R"(
         #version 330 core
         layout(location = 0) in vec2 aPos;
@@ -1132,23 +1129,19 @@ void GameRenderer::initRayTracingResources() {
     )";
 
     const char* fragmentShader = R"(
- #version 330 core
-in vec2 TexCoord;
-out vec4 FragColor;
-
-uniform sampler2D uTexture;
-
-void main()
-{
-    FragColor = texture(uTexture, TexCoord);
-}
+        #version 330 core
+        in vec2 TexCoord;
+        out vec4 FragColor;
+        uniform sampler2D uTexture;
+        void main() {
+            FragColor = texture(uTexture, TexCoord);
+        }
     )";
 
     GLuint vs = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vs, 1, &vertexShader, nullptr);
     glCompileShader(vs);
 
-    // Проверка компиляции вершинного шейдера
     GLint success;
     glGetShaderiv(vs, GL_COMPILE_STATUS, &success);
     if (!success) {
@@ -1192,31 +1185,39 @@ void GameRenderer::cleanupRayTracingResources() {
     if (m_rayTracingVBO) glDeleteBuffers(1, &m_rayTracingVBO);
     if (m_rayTracingShader) glDeleteProgram(m_rayTracingShader);
 }
+
 void GameRenderer::renderWithRayTracing(const GameObjects& objects)
 {
     if (!m_rayTracingEnabled) return;
 
-    const int width = 1200;
-    const int height = 800;
+    int width = g_game.getWindowWidth();
+    int height = g_game.getWindowHeight();
+    if (width <= 0 || height <= 0) {
+        width = 1200;
+        height = 800;
+    }
 
     std::vector<unsigned char> pixels(width * height * 3);
+    std::vector<bool> computed(width * height, false);
 
-    // Используем ТУ ЖЕ камеру, что и в OpenGL рендеринге
     glm::vec3 camPos = g_camera.getPosition();
     glm::vec3 camDir = glm::normalize(g_camera.getFront());
     glm::vec3 camUp = g_camera.getUp();
 
     float fov = 60.0f;
     float aspect = (float)width / (float)height;
-
-    // ВАЖНО: Используем те же смещения, что и в drawSnake/drawFood
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    for (int y = 0; y < height; y++)
-    {
-        for (int x = 0; x < width; x++)
-        {
+    // Вывод параметров рендеринга
+    std::cout << "Ray Tracing: Step size = " << m_rayTracingStepSize
+        << ", Adaptive = " << (m_rayTracingUseAdaptive ? "ON" : "OFF") << std::endl;
+
+    // ПЕРВЫЙ ПРОХОД: рендерим с шагом
+#pragma omp parallel for schedule(dynamic)
+    for (int y = 0; y < height; y += m_rayTracingStepSize) {
+
+        for (int x = 0; x < width; x += m_rayTracingStepSize) {
             float screenX = (2.0f * (x + 0.5f) / width - 1.0f);
             float screenY = (1.0f - 2.0f * (y + 0.5f) / height);
 
@@ -1225,10 +1226,75 @@ void GameRenderer::renderWithRayTracing(const GameObjects& objects)
             );
 
             glm::vec3 color = traceRay(ray, objects, offsetX, offsetZ);
+
             int index = ((height - 1 - y) * width + x) * 3;
             pixels[index + 0] = (unsigned char)(glm::clamp(color.r, 0.0f, 1.0f) * 255);
             pixels[index + 1] = (unsigned char)(glm::clamp(color.g, 0.0f, 1.0f) * 255);
             pixels[index + 2] = (unsigned char)(glm::clamp(color.b, 0.0f, 1.0f) * 255);
+            computed[y * width + x] = true;
+        }
+    }
+
+    // ВТОРОЙ ПРОХОД: интерполяция пропущенных пикселей
+
+    if (m_rayTracingStepSize > 1) {
+#pragma omp parallel for
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                if (computed[y * width + x]) continue;
+
+                int nearestX = ((x + m_rayTracingStepSize / 2) / m_rayTracingStepSize) * m_rayTracingStepSize;
+                int nearestY = ((y + m_rayTracingStepSize / 2) / m_rayTracingStepSize) * m_rayTracingStepSize;
+
+                nearestX = std::min(nearestX, width - 1);
+                nearestY = std::min(nearestY, height - 1);
+
+                int nearestIdx = ((height - 1 - nearestY) * width + nearestX) * 3;
+
+                pixels[((height - 1 - y) * width + x) * 3 + 0] = pixels[nearestIdx + 0];
+                pixels[((height - 1 - y) * width + x) * 3 + 1] = pixels[nearestIdx + 1];
+                pixels[((height - 1 - y) * width + x) * 3 + 2] = pixels[nearestIdx + 2];
+            }
+        }
+    }
+
+    // АДАПТИВНАЯ ВЫБОРКА (опционально)
+    if (m_rayTracingUseAdaptive && m_rayTracingStepSize > 1) {
+        for (int y = 0; y < height - m_rayTracingStepSize; y += m_rayTracingStepSize) {
+            for (int x = 0; x < width - m_rayTracingStepSize; x += m_rayTracingStepSize) {
+                int idx1 = ((height - 1 - y) * width + x) * 3;
+                int idx2 = ((height - 1 - y) * width + x + m_rayTracingStepSize) * 3;
+                int idx3 = ((height - 1 - (y + m_rayTracingStepSize)) * width + x) * 3;
+
+                float diff1 = abs(pixels[idx1 + 0] - pixels[idx2 + 0]) +
+                    abs(pixels[idx1 + 1] - pixels[idx2 + 1]) +
+                    abs(pixels[idx1 + 2] - pixels[idx2 + 2]);
+                float diff2 = abs(pixels[idx1 + 0] - pixels[idx3 + 0]) +
+                    abs(pixels[idx1 + 1] - pixels[idx3 + 1]) +
+                    abs(pixels[idx1 + 2] - pixels[idx3 + 2]);
+
+                if (diff1 > 100 || diff2 > 100) {
+                    int centerX = x + m_rayTracingStepSize / 2;
+                    int centerY = y + m_rayTracingStepSize / 2;
+
+                    if (centerX < width && centerY < height && !computed[centerY * width + centerX]) {
+                        float screenX = (2.0f * (centerX + 0.5f) / width - 1.0f);
+                        float screenY = (1.0f - 2.0f * (centerY + 0.5f) / height);
+
+                        Ray ray = m_rayTracer.getRayFromCamera(
+                            camPos, camDir, camUp, fov, aspect, screenX, screenY
+                        );
+
+                        glm::vec3 color = traceRay(ray, objects, offsetX, offsetZ);
+
+                        int idx = ((height - 1 - centerY) * width + centerX) * 3;
+                        pixels[idx + 0] = (unsigned char)(glm::clamp(color.r, 0.0f, 1.0f) * 255);
+                        pixels[idx + 1] = (unsigned char)(glm::clamp(color.g, 0.0f, 1.0f) * 255);
+                        pixels[idx + 2] = (unsigned char)(glm::clamp(color.b, 0.0f, 1.0f) * 255);
+                        computed[centerY * width + centerX] = true;
+                    }
+                }
+            }
         }
     }
 
@@ -1245,245 +1311,371 @@ void GameRenderer::renderWithRayTracing(const GameObjects& objects)
     glBindVertexArray(0);
     glEnable(GL_DEPTH_TEST);
 }
-void GameRenderer::showTestSquare(bool show) {
-    m_showTestSquare = show;
-    if (show) {
-        // Останавливаем игру
-        extern Game g_game;
-        if (g_game.getGameState() == PLAYING) {
-            g_game.setGameState(PAUSED);
-        }
 
-        // Создаём простой квадрат
-        float vertices[] = {
-            -0.8f, -0.8f, 0.0f,
-             0.8f, -0.8f, 0.0f,
-             0.8f,  0.8f, 0.0f,
-            -0.8f,  0.8f, 0.0f
-        };
 
-        unsigned int indices[] = {
-            0, 1, 2,
-            2, 3, 0
-        };
+glm::vec3 GameRenderer::traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, int depth) {
+    // Ограничение глубины рекурсии
+    if (depth > 2) return skyColor;
 
-        glGenVertexArrays(1, &m_testVAO);
-        glGenBuffers(1, &m_testVBO);
-        glGenBuffers(1, &m_testVBO); // Для индексов
-
-        glBindVertexArray(m_testVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, m_testVBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(0);
-
-        // Простой шейдер
-        const char* vertexShader = R"(
-            #version 330 core
-            layout(location = 0) in vec3 aPos;
-            void main() {
-                gl_Position = vec4(aPos, 1.0);
-            }
-        )";
-
-        const char* fragmentShader = R"(
-            #version 330 core
-            out vec4 FragColor;
-            void main() {
-                FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-            }
-        )";
-
-        GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vs, 1, &vertexShader, nullptr);
-        glCompileShader(vs);
-
-        GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fs, 1, &fragmentShader, nullptr);
-        glCompileShader(fs);
-
-        m_testShader = glCreateProgram();
-        glAttachShader(m_testShader, vs);
-        glAttachShader(m_testShader, fs);
-        glLinkProgram(m_testShader);
-
-        glDeleteShader(vs);
-        glDeleteShader(fs);
-
-        std::cout << "Test square created. Press T again to hide." << std::endl;
-    }
-}
-glm::vec3 GameRenderer::traceRayColor(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
-    float closestDist = 1000.0f;
-    glm::vec3 closestColor = skyColor;
-
-    // ===== ТЕСТОВЫЙ ОБЪЕКТ - БОЛЬШОЙ КРАСНЫЙ КУБ В ЦЕНТРЕ =====
-    // Создаём большой куб в центре сцены, который точно должен быть виден
-    glm::vec3 testBoxMin(-1.0f, -0.5f, -1.0f);
-    glm::vec3 testBoxMax(1.0f, 1.5f, 1.0f);
-
-    float tMin, tMax;
-    if (rayIntersectsAABB(ray, testBoxMin, testBoxMax, tMin, tMax)) {
-        if (tMin > 0 && tMin < closestDist) {
-            closestDist = tMin;
-            closestColor = glm::vec3(1.0f, 0.0f, 0.0f); // Ярко-красный тестовый куб
-            std::cout << "HIT TEST CUBE! Distance: " << tMin << std::endl;
-        }
-    }
-
-    // Если попали в тестовый куб - сразу возвращаем красный цвет
-    if (closestColor == glm::vec3(1.0f, 0.0f, 0.0f)) {
-        return closestColor;
-    }
-
-    // ===== ПРОВЕРКА ПОЛА =====
-    if (ray.direction.y != 0.0f) {
-        float t = -ray.origin.y / ray.direction.y;
-        if (t > 0 && t < closestDist) {
-            glm::vec3 hitPoint = ray.pointAt(t);
-            float halfWidth = 10.0f;
-            float halfDepth = 10.0f;
-            if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
-                closestDist = t;
-                closestColor = glm::vec3(0.0f, 0.0f, 1.0f);
-            }
-        }
-    }
-
-    return closestColor;
-}
-
-glm::vec3 GameRenderer::traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
     HitInfo closestHit;
     closestHit.hit = false;
     closestHit.distance = 1000.0f;
 
-    // Проверка пересечения с полом (как в drawFloor)
-    if (ray.direction.y != 0.0f) {
-        float t = -ray.origin.y / ray.direction.y;
-        if (t > 0 && t < closestHit.distance) {
-            glm::vec3 hitPoint = ray.pointAt(t);
-            float halfWidth = m_gridWidth * m_cellSize / 2.0f;
-            float halfDepth = m_gridDepth * m_cellSize / 2.0f;
-            if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
-                closestHit.hit = true;
-                closestHit.distance = t;
-                closestHit.point = hitPoint;
-                closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
-                // Цвет пола из конфига
-                closestHit.color = floorColor;
-            }
+    float maxDistance = 30.0f;
+    glm::vec3 rayOrigin = ray.origin;
+    glm::vec3 rayDir = ray.direction;
+
+    // ===== ПОЛ =====
+    float halfWidth = m_gridWidth * m_cellSize;
+    float halfDepth = m_gridDepth * m_cellSize;
+    float tGround = -rayOrigin.y / rayDir.y;
+    if (tGround > 0 && tGround < maxDistance && tGround < closestHit.distance) {
+        glm::vec3 hitPoint = ray.pointAt(tGround);
+        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+            closestHit.hit = true;
+            closestHit.distance = tGround;
+            closestHit.point = hitPoint;
+            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+            closestHit.color = floorColor;
         }
     }
 
-    // Змейка - используем ТЕ ЖЕ размеры, что и в drawSnake
+    // ===== ЗМЕЙКА =====
     const auto& snake = objects.getSnake();
     for (size_t i = 0; i < snake.size(); i++) {
-        const Point& segment = snake[i];
+        glm::vec3 pos = getSnakeSegmentPosition(snake[i], i);
+        if (glm::length(pos - rayOrigin) > maxDistance) continue;
 
-        // Та же конвертация координат, что в drawSnake
-        float x = segment.x * m_cellSize - offsetX;
-        float z = segment.z * m_cellSize - offsetZ;
-        float y = segment.y * m_cellSize + 0.1f;
-
-        // Тот же масштаб, что в drawSnake
-        float scale = m_cellSize * 0.8f;
-        if (i == 0) scale *= g_game.getSnakeHeadScale();
-        else if (i == snake.size() - 1) scale *= g_game.getSnakeTailScale();
-        else scale *= g_game.getSnakeBodyScale();
-
-        float halfSize = scale / 2.0f;
-        glm::vec3 boxMin(x - halfSize, y - halfSize, z - halfSize);
-        glm::vec3 boxMax(x + halfSize, y + halfSize, z + halfSize);
+        glm::vec3 scale = getSnakeSegmentScale(snake[i], i);
+        float halfSize = scale.x / 2.0f;
+        glm::vec3 boxMin(pos.x - halfSize, pos.y - halfSize, pos.z - halfSize);
+        glm::vec3 boxMax(pos.x + halfSize, pos.y + halfSize, pos.z + halfSize);
 
         float tMin, tMax;
         if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
-            if (tMin > 0 && tMin < closestHit.distance) {
+            if (tMin > 0 && tMin < closestHit.distance && tMin < maxDistance) {
                 closestHit.hit = true;
                 closestHit.distance = tMin;
                 closestHit.point = ray.pointAt(tMin);
                 closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
 
-                // Цвета сегментов как в drawSnake
                 if (i == 0) closestHit.color = g_game.getSnakeHeadColor();
                 else if (i == snake.size() - 1) closestHit.color = g_game.getSnakeTailColor();
                 else closestHit.color = g_game.getSnakeBodyColor();
             }
         }
+        if (closestHit.hit && closestHit.distance < 0.5f) break;
     }
 
-    // Еда - те же размеры, что в drawFood
+    // ===== ЕДА =====
     const auto& food = objects.getFood();
-    float foodScale = m_cellSize * 0.8f;
+    float foodRadius = (m_cellSize * 0.8f) / 2.0f;
     for (const auto& apple : food) {
-        float x = apple.x * m_cellSize - offsetX;
-        float z = apple.z * m_cellSize - offsetZ;
-        float y = apple.y * m_cellSize + 0.1f;
-
-        glm::vec3 center(x, y, z);
-        float radius = foodScale / 2.0f;
+        glm::vec3 pos = getFoodPosition(apple);
+        if (glm::length(pos - rayOrigin) > maxDistance) continue;
 
         float tHit;
-        if (rayIntersectsSphere(ray, center, radius, tHit)) {
-            if (tHit > 0 && tHit < closestHit.distance) {
+        if (rayIntersectsSphere(ray, pos, foodRadius, tHit)) {
+            if (tHit > 0 && tHit < closestHit.distance && tHit < maxDistance) {
                 closestHit.hit = true;
                 closestHit.distance = tHit;
                 closestHit.point = ray.pointAt(tHit);
-                closestHit.normal = glm::normalize(closestHit.point - center);
-                closestHit.color = glm::vec3(1.0f, 0.8f, 0.2f); // Цвет яблока
+                closestHit.normal = glm::normalize(closestHit.point - pos);
+                closestHit.color = glm::vec3(1.0f, 0.8f, 0.2f);
             }
         }
+        if (closestHit.hit && closestHit.distance < 0.5f) break;
     }
 
-    // Препятствия (деревья)
+    // ===== ПРЕПЯТСТВИЯ =====
     const auto& obstacles = objects.getObstacles();
     float treeScale = m_cellSize * 1.5f;
+    float treeHalf = treeScale / 2.0f;
     for (const auto& obstacle : obstacles) {
         for (const auto& block : obstacle.blocks) {
-            float x = block.x * m_cellSize - offsetX;
-            float z = block.z * m_cellSize - offsetZ;
-            float y = block.y * m_cellSize;
+            glm::vec3 pos = getObstaclePosition(block);
+            if (glm::length(pos - rayOrigin) > maxDistance) continue;
 
-            float halfSize = treeScale / 2.0f;
-            glm::vec3 boxMin(x - halfSize, y, z - halfSize);
-            glm::vec3 boxMax(x + halfSize, y + treeScale, z + halfSize);
+            glm::vec3 boxMin(pos.x - treeHalf, pos.y, pos.z - treeHalf);
+            glm::vec3 boxMax(pos.x + treeHalf, pos.y + treeScale, pos.z + treeHalf);
 
             float tMin, tMax;
             if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
-                if (tMin > 0 && tMin < closestHit.distance) {
+                if (tMin > 0 && tMin < closestHit.distance && tMin < maxDistance) {
                     closestHit.hit = true;
                     closestHit.distance = tMin;
                     closestHit.point = ray.pointAt(tMin);
                     closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
-                    closestHit.color = glm::vec3(0.1f, 0.4f, 0.1f); // Зеленый для дерева
+                    closestHit.color = glm::vec3(0.1f, 0.4f, 0.1f);
+                }
+            }
+            if (closestHit.hit && closestHit.distance < 0.5f) break;
+        }
+        if (closestHit.hit && closestHit.distance < 0.5f) break;
+    }
+
+    // ===== ПТИЦЫ =====
+    const auto& birds = objects.getBirds();
+    float birdRadius = 0.15f;
+    for (const auto& bird : birds) {
+        glm::vec3 pos = getBirdPosition(bird);
+        if (glm::length(pos - rayOrigin) > maxDistance) continue;
+
+        float tHit;
+        if (rayIntersectsSphere(ray, pos, birdRadius, tHit)) {
+            if (tHit > 0 && tHit < closestHit.distance && tHit < maxDistance) {
+                closestHit.hit = true;
+                closestHit.distance = tHit;
+                closestHit.point = ray.pointAt(tHit);
+                closestHit.normal = glm::normalize(closestHit.point - pos);
+                closestHit.color = bird.color;
+            }
+        }
+        if (closestHit.hit && closestHit.distance < 0.5f) break;
+    }
+
+    // ===== ОБЛАКА =====
+    const auto& clouds = objects.getCloudSprites();
+    float cloudRadius = 0.5f;
+    for (const auto& cloud : clouds) {
+        float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
+        if (distanceToCenter < 8.0f) continue;
+
+        glm::vec3 pos = getCloudPosition(cloud);
+        if (glm::length(pos - rayOrigin) > maxDistance) continue;
+
+        float tHit;
+        if (rayIntersectsSphere(ray, pos, cloudRadius, tHit)) {
+            if (tHit > 0 && tHit < closestHit.distance && tHit < maxDistance) {
+                closestHit.hit = true;
+                closestHit.distance = tHit;
+                closestHit.point = ray.pointAt(tHit);
+                closestHit.normal = glm::normalize(closestHit.point - pos);
+                closestHit.color = cloud.color;
+            }
+        }
+        if (closestHit.hit && closestHit.distance < 0.5f) break;
+    }
+
+    // ===== ЦВЕТЫ =====
+    const auto& flowers = objects.getFlowerSprites();
+    float flowerRadius = 0.08f;
+    for (const auto& flower : flowers) {
+        glm::vec3 pos = getFlowerPosition(flower);
+        if (glm::length(pos - rayOrigin) > maxDistance) continue;
+
+        float tHit;
+        if (rayIntersectsSphere(ray, pos, flowerRadius, tHit)) {
+            if (tHit > 0 && tHit < closestHit.distance && tHit < maxDistance) {
+                closestHit.hit = true;
+                closestHit.distance = tHit;
+                closestHit.point = ray.pointAt(tHit);
+                closestHit.normal = glm::normalize(closestHit.point - pos);
+                closestHit.color = flower.color;
+            }
+        }
+        if (closestHit.hit && closestHit.distance < 0.5f) break;
+    }
+
+    // ===== ЗАБОР =====
+    const auto& fenceBlocks = objects.getFenceBlocks();
+    float fenceSize = m_cellSize * 0.6f;
+    float fenceHalf = fenceSize / 2.0f;
+    for (const auto& block : fenceBlocks) {
+        float x = block.x * m_cellSize - offsetX;
+        float z = block.z * m_cellSize - offsetZ;
+        float y = block.y * m_cellSize;
+
+        glm::vec3 pos(x, y + fenceHalf, z);
+        if (glm::length(pos - rayOrigin) > maxDistance) continue;
+
+        glm::vec3 boxMin(x - fenceHalf, y, z - fenceHalf);
+        glm::vec3 boxMax(x + fenceHalf, y + fenceSize, z + fenceHalf);
+
+        float tMin, tMax;
+        if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
+            if (tMin > 0 && tMin < closestHit.distance && tMin < maxDistance) {
+                closestHit.hit = true;
+                closestHit.distance = tMin;
+                closestHit.point = ray.pointAt(tMin);
+                closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
+                closestHit.color = glm::vec3(0.55f, 0.27f, 0.07f);
+            }
+        }
+        if (closestHit.hit && closestHit.distance < 0.5f) break;
+    }
+
+    // Если ничего не нашли - возвращаем небо
+    if (!closestHit.hit) {
+        float t = 0.5f * (rayDir.y + 1.0f);
+        glm::vec3 skyTop = glm::vec3(0.1f, 0.2f, 0.5f);
+        glm::vec3 skyBottom = glm::vec3(0.6f, 0.8f, 1.0f);
+        return glm::mix(skyBottom, skyTop, t);
+    }
+
+    // ===== ОСВЕЩЕНИЕ =====
+    glm::vec3 lightDir = glm::normalize(glm::vec3(1.0f, 0.2f, 0.5f));
+    glm::vec3 lightColor(0.9f, 0.85f, 0.75f);
+
+    // Ambient - базовое освещение
+    glm::vec3 ambient = closestHit.color * 0.35f;
+
+    // Диффузное освещение
+    float diff = glm::max(glm::dot(closestHit.normal, lightDir), 0.2f);
+
+    // ===== ПРОВЕРКА ТЕНИ (УПРОЩЕННАЯ, НО ДЛЯ ВСЕХ) =====
+    float shadow = 1.0f;
+
+    // Луч к солнцу
+    glm::vec3 shadowRayOrigin = closestHit.point + closestHit.normal * 0.1f;
+    Ray shadowRay(shadowRayOrigin, lightDir);
+
+    // Проверяем все объекты подряд без условий
+    // 1. Деревья
+    for (const auto& obstacle : obstacles) {
+        for (const auto& block : obstacle.blocks) {
+            glm::vec3 pos = getObstaclePosition(block);
+            if (glm::length(pos - closestHit.point) > 10.0f) continue;
+
+            glm::vec3 boxMin(pos.x - treeHalf, pos.y, pos.z - treeHalf);
+            glm::vec3 boxMax(pos.x + treeHalf, pos.y + treeScale, pos.z + treeHalf);
+
+            float tMin, tMax;
+            if (rayIntersectsAABB(shadowRay, boxMin, boxMax, tMin, tMax)) {
+                if (tMin > 0.05f && tMin < 20.0f) {
+                    shadow = 0.4f;
                 }
             }
         }
     }
 
-    if (closestHit.hit) {
-        // Добавляем простое освещение
-        glm::vec3 lightPos(5.0f, 10.0f, 5.0f);
-        glm::vec3 lightColor(1.0f, 0.95f, 0.85f);
+    // 2. Змейка
+    for (size_t i = 0; i < snake.size(); i++) {
+        glm::vec3 pos = getSnakeSegmentPosition(snake[i], i);
+        if (glm::length(pos - closestHit.point) > 8.0f) continue;
+        if (glm::length(pos - shadowRayOrigin) < 0.2f) continue;
 
-        glm::vec3 lightDir = glm::normalize(lightPos - closestHit.point);
-        float diff = glm::max(glm::dot(closestHit.normal, lightDir), 0.0f);
+        glm::vec3 scale = getSnakeSegmentScale(snake[i], i);
+        float halfSize = scale.x / 2.0f;
+        glm::vec3 boxMin(pos.x - halfSize, pos.y - halfSize, pos.z - halfSize);
+        glm::vec3 boxMax(pos.x + halfSize, pos.y + halfSize, pos.z + halfSize);
 
-        // Ambient + Diffuse
-        glm::vec3 ambient = closestHit.color * 0.3f;
-        glm::vec3 diffuse = closestHit.color * lightColor * diff;
-
-        return ambient + diffuse;
+        float tMin, tMax;
+        if (rayIntersectsAABB(shadowRay, boxMin, boxMax, tMin, tMax)) {
+            if (tMin > 0.05f && tMin < 15.0f) {
+                shadow = 0.4f;
+            }
+        }
     }
 
-    // Фон - небо
-    float t = 0.5f * (ray.direction.y + 1.0f);
-    return skyColor * (1.0f - t) + glm::vec3(0.8f, 0.9f, 1.0f) * t;
-}
-//=============================================================================
-// СТАТИЧЕСКИЕ МЕТОДЫ GameRenderer
-//=============================================================================
+    // 3. Забор
+    for (const auto& block : fenceBlocks) {
+        float x = block.x * m_cellSize - offsetX;
+        float z = block.z * m_cellSize - offsetZ;
+        float y = block.y * m_cellSize;
 
+        glm::vec3 pos(x, y + fenceHalf, z);
+        if (glm::length(pos - closestHit.point) > 8.0f) continue;
+
+        glm::vec3 boxMin(x - fenceHalf, y, z - fenceHalf);
+        glm::vec3 boxMax(x + fenceHalf, y + fenceSize, z + fenceHalf);
+
+        float tMin, tMax;
+        if (rayIntersectsAABB(shadowRay, boxMin, boxMax, tMin, tMax)) {
+            if (tMin > 0.05f && tMin < 15.0f) {
+                shadow = 0.4f;
+            }
+        }
+    }
+
+    // 4. Еда
+    for (const auto& apple : food) {
+        glm::vec3 pos = getFoodPosition(apple);
+        if (glm::length(pos - closestHit.point) > 5.0f) continue;
+        if (glm::length(pos - shadowRayOrigin) < 0.2f) continue;
+
+        float tHit;
+        if (rayIntersectsSphere(shadowRay, pos, foodRadius, tHit)) {
+            if (tHit > 0.05f && tHit < 10.0f) {
+                shadow = 0.4f;
+            }
+        }
+    }
+
+    glm::vec3 diffuse = closestHit.color * lightColor * diff * shadow;
+
+    // ===== ОТРАЖЕНИЯ (блики) =====
+    glm::vec3 reflection(0.0f);
+    if (depth < 1) {
+        bool isReflective = (closestHit.color.r > 0.8f && closestHit.color.g > 0.6f) ||
+            (closestHit.color == g_game.getSnakeHeadColor());
+        if (isReflective) {
+            glm::vec3 reflectDir = glm::reflect(rayDir, closestHit.normal);
+            Ray reflectRay(closestHit.point + closestHit.normal * 0.05f, reflectDir);
+            reflection = traceRay(reflectRay, objects, offsetX, offsetZ, depth + 1) * 0.3f;
+        }
+    }
+
+    return ambient + diffuse + reflection;
+}// СТАТИЧЕСКИЕ МЕТОДЫ GameRenderer
+//=============================================================================
+glm::vec3 GameRenderer::getSnakeSegmentPosition(const Point& segment, size_t index) {
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+    float x = segment.x * m_cellSize - offsetX;
+    float z = segment.z * m_cellSize - offsetZ;
+    float y = segment.y * m_cellSize + 0.1f;
+
+    return glm::vec3(x, y, z);
+}
+
+glm::vec3 GameRenderer::getSnakeSegmentScale(const Point& segment, size_t index) {
+    float baseScale = m_cellSize * 0.8f;
+    float scale = baseScale;
+
+    if (index == 0) scale *= g_game.getSnakeHeadScale();
+    else if (index == g_game.getSnake().size() - 1) scale *= g_game.getSnakeTailScale();
+    else scale *= g_game.getSnakeBodyScale();
+
+    return glm::vec3(scale);
+}
+
+glm::vec3 GameRenderer::getFoodPosition(const Point& food) {
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+    float x = food.x * m_cellSize - offsetX;
+    float z = food.z * m_cellSize - offsetZ;
+    float y = food.y * m_cellSize + 0.1f;
+
+    return glm::vec3(x, y, z);
+}
+
+glm::vec3 GameRenderer::getObstaclePosition(const Point& block) {
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+    float x = block.x * m_cellSize - offsetX;
+    float z = block.z * m_cellSize - offsetZ;
+    float y = block.y * m_cellSize;
+
+    return glm::vec3(x, y, z);
+}
+
+glm::vec3 GameRenderer::getBirdPosition(const Bird& bird) {
+    return bird.position;
+}
+
+glm::vec3 GameRenderer::getCloudPosition(const Sprite& cloud) {
+    return cloud.position;
+}
+
+glm::vec3 GameRenderer::getFlowerPosition(const Sprite& flower) {
+    glm::vec3 pos = flower.position;
+    pos.y += 0.05f;
+    return pos;
+}
 void GameRenderer::setupGLFWHints() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);

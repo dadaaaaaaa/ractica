@@ -48,6 +48,7 @@ public:
     // Метод для генерации луча из камеры
     Ray getRayFromCamera(const glm::vec3& cameraPos, const glm::vec3& cameraDir,
         const glm::vec3& up, float fov, float aspect, float x, float y);
+   // int index = ((height - 1 - y) * width + x) * 3;
 
     // Освещение
     glm::vec3 calculateLighting(const HitInfo& hit, const glm::vec3& lightPos,

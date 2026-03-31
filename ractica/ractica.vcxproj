@@ -82,6 +82,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>;$(SolutionDir)ConfigEditor;$(SolutionDir)Shared</AdditionalIncludeDirectories>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -97,6 +98,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>;$(SolutionDir)ConfigEditor;$(SolutionDir)Shared</AdditionalIncludeDirectories>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -113,6 +115,7 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>C:\Users\Vmar2\source\repos\dadaaaaaaa\ractica\FreeType\include;C:\Users\Влад\source\repos\ractica\includes\GLEW;C:\Users\Влад\source\repos\ractica\includes\GLFW;%(AdditionalIncludeDirectories);$(SolutionDir)ConfigEditor;$(SolutionDir)Shared</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -130,6 +133,7 @@
       <PreprocessorDefinitions>GLEW_STATICNDEBUG;_CONSOLE;%(PreprocessorDefinitions);GLEW_STATIC</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>C:\Users\Влад\source\repos\ractica\includes\GLEW;C:\Users\Влад\source\repos\ractica\includes\GLFW;%(AdditionalIncludeDirectories);$(SolutionDir)ConfigEditor;$(SolutionDir)Shared</AdditionalIncludeDirectories>
+      <OpenMPSupport>true</OpenMPSupport>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

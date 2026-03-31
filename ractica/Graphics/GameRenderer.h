@@ -86,10 +86,11 @@ private:
     GLuint m_rayTracingShader;
     bool m_showTestSquare;
     GLuint m_testVAO, m_testVBO, m_testShader;
+    int m_rayTracingStepSize;      // Через сколько пикселей шагать
+    bool m_rayTracingUseAdaptive;  // Адаптивная выборка
 public:
     GameRenderer();
-    glm::vec3 traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
-    // В приватные методы
+    glm::vec3 traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, int depth = 0);    // В приватные методы
     glm::vec3 traceRayColor(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
     void showTestSquare(bool show);
 
@@ -98,7 +99,10 @@ public:
     void createSnakeHeadModel(Model& model);
     void createSnakeBodyModel(Model& model);
     void createSnakeTailModel(Model& model);
-
+    void setRayTracingStepSize(int stepSize) { m_rayTracingStepSize = std::max(1, stepSize); }
+    int getRayTracingStepSize() const { return m_rayTracingStepSize; }
+    void setRayTracingAdaptive(bool adaptive) { m_rayTracingUseAdaptive = adaptive; }
+    bool getRayTracingUseAdaptive() const { return m_rayTracingUseAdaptive; }
     // Методы для установки цветов
     void setSkyColor(const glm::vec3& color) { skyColor = color; }
     void setFloorColor(const glm::vec3& color) { floorColor = color; }
@@ -220,7 +224,13 @@ public:
     static void setupVSync(GLFWwindow* window, bool enabled = true);
     static void printGraphicsInfo();
     static void setupCallbacks(GLFWwindow* window);
-
+    glm::vec3 getSnakeSegmentPosition(const Point& segment, size_t index);
+    glm::vec3 getSnakeSegmentScale(const Point& segment, size_t index);
+    glm::vec3 getFoodPosition(const Point& food);
+    glm::vec3 getObstaclePosition(const Point& block);
+    glm::vec3 getBirdPosition(const Bird& bird);
+    glm::vec3 getCloudPosition(const Sprite& cloud);
+    glm::vec3 getFlowerPosition(const Sprite& flower);
     static void resetDepthState();
     void createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
         float width, float height, const glm::vec3& color);
