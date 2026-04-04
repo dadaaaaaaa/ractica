@@ -17,7 +17,10 @@ struct Vertex {
     glm::vec3 normal;
     glm::vec2 texCoords;
 };
-
+enum class LightType {
+    Directional,
+    Points
+};
 // Структура для рекордов
 struct HighScore {
     std::string playerName;

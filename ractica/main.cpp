@@ -13,7 +13,7 @@ GLuint uiVAO = 0, uiVBO = 0;
 bool g_shouldExitGame = false;
 GLFWwindow* g_mainWindow = nullptr; // ДОБАВЛЕНО
 static bool g_useDoubleBuffer = true;
-
+GameRenderer renderer;
 int main() {
     // Инициализация GLFW
     if (!glfwInit()) {

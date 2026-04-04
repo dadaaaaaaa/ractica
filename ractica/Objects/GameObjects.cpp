@@ -7,9 +7,11 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include "../Graphics/GameRenderer.h"
 
 extern ShaderManager g_shaderManager;
 extern Camera g_camera;
+extern GameRenderer renderer;
 
 //=============================================================================
 // КОНСТРУКТОР - здесь только минимальные значения по умолчанию
@@ -297,7 +299,9 @@ void GameObjects::initGame() {
     generateClouds();
     generateBirds();
     generateGroundSprites();
-
+    renderer.resetShadows();
+    renderer.markStaticShadowsDirty();
+    renderer.markDynamicShadowsDirty();
     currentDirection = FORWARD;
     verticalDirection = 0;
     score = 0;
@@ -307,12 +311,6 @@ void GameObjects::initGame() {
 
     g_camera.setTargetDistance(5.0f);
 
-    std::cout << "Game initialized with config values:" << std::endl;
-    std::cout << "  Grid: " << gridWidth << "x" << gridDepth << " cell size: " << cellSize << std::endl;
-    std::cout << "  Cloud count: " << cloudCount << std::endl;
-    std::cout << "  Bird count: " << birdCount << std::endl;
-    std::cout << "  Flower count: " << flowerCount << std::endl;
-    std::cout << "  Floor model: " << floorModel << std::endl;
 }
 
 //=============================================================================
@@ -345,6 +343,7 @@ void GameObjects::update() {
 
     Point newHead = snake[0];
     switch (currentDirection) {
+
     case FORWARD: newHead.z++; break;
     case BACKWARD: newHead.z--; break;
     case RIGHT: newHead.x--; break;
@@ -388,11 +387,12 @@ void GameObjects::update() {
         score++;
         food.erase(foodIt);
         generateSingleFood();
+        renderer.markDynamicShadowsDirty();
     }
     else {
         snake.pop_back();
     }
-
+    renderer.markDynamicShadowsDirty();
     updateClouds();
     updateBirds();
 }
@@ -674,6 +674,7 @@ void GameObjects::generateInitialFood() {
     // Используем initialFoodCount из конфига
     for (int i = 0; i < initialFoodCount; i++) {
         generateSingleFood();
+        renderer.markDynamicShadowsDirty();
     }
 }
 
@@ -740,7 +741,7 @@ void GameObjects::updateBirds() {
 //=============================================================================
 void GameObjects::handleGameKeyPress(int key) {
     switch (key) {
-    case GLFW_KEY_S:
+    case GLFW_KEY_X:
         gameFrozen = !gameFrozen;
         std::cout << "Game " << (gameFrozen ? "FROZEN" : "UNFROZEN") << std::endl;
         break;
@@ -832,10 +833,7 @@ void GameObjects::handleMenuKeyPress(int key) {
 
     case GAME_OVER:
         switch (key) {
-        case GLFW_KEY_R:
-            initGame();
-            gameState = PLAYING;
-            break;
+
         case GLFW_KEY_M:
             gameState = MAIN_MENU;
             break;

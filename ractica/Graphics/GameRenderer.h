@@ -17,6 +17,7 @@
 #include <functional>
 #include <filesystem>
 #include "ModelLoader.h"
+#include "ShadowMapper.h"
 
 // Структура для текстуры
 struct Texture {
@@ -27,7 +28,6 @@ struct Texture {
 
     Texture() : id(0), width(0), height(0), path("") {}
 };
-
 class GameRenderer {
 private:
     Model snakeHeadModel;
@@ -88,12 +88,22 @@ private:
     GLuint m_testVAO, m_testVBO, m_testShader;
     int m_rayTracingStepSize;      // Через сколько пикселей шагать
     bool m_rayTracingUseAdaptive;  // Адаптивная выборка
+    bool shadow_map;
+    glm::vec3 m_lightDir;
+    glm::vec3 m_lightColor;
+    ShadowMapper m_staticShadow;
+    ShadowMapper m_dynamicShadow;
+
+    bool m_staticShadowsDirty = true;
+    bool m_dynamicShadowsDirty = true;
+
+    LightType m_lightType ;
+    glm::vec3 m_lightPos;
+
 public:
     GameRenderer();
-    glm::vec3 traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, int depth = 0);    // В приватные методы
-    glm::vec3 traceRayColor(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
-    void showTestSquare(bool show);
-
+    glm::vec3 traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, int depth = 0);
+    void drawLightSource();
     void initRayTracingResources();
     void cleanupRayTracingResources();
     void createSnakeHeadModel(Model& model);
@@ -107,13 +117,17 @@ public:
     void setSkyColor(const glm::vec3& color) { skyColor = color; }
     void setFloorColor(const glm::vec3& color) { floorColor = color; }
     void setGridColor(const glm::vec3& color) { gridColor = color; }
-
+    void markDynamicShadowsDirty();
     // Методы для настроек сетки
     void setGridSettings(bool enabled, float lineWidth) {
         gridEnabled = enabled;
         gridLineWidth = lineWidth;
     }
-
+    void markStaticShadowsDirty() {
+        m_staticShadowsDirty = true;
+    }
+    void resetShadows();
+    void switch_m_staticShadowsDirty() {m_staticShadowsDirty=true; }
     // Метод для установки размеров игрового поля
     void setGridDimensions(int width, int depth, float cellSize) {
         m_gridWidth = width;
@@ -199,6 +213,7 @@ public:
 
     // Ray Tracing методы
     void toggleRayTracing() { m_rayTracingEnabled = !m_rayTracingEnabled; }
+    void toggleshadow_map() { shadow_map = !shadow_map; }
     bool isRayTracingEnabled() const { return m_rayTracingEnabled; }
     void setRayTracingSamples(int samples) { m_rayTracer.setSamplesPerPixel(samples); }
     int getRayTracingSamples() const { return m_rayTracer.getSamplesPerPixel(); }

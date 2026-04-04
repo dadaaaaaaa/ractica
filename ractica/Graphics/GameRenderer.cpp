@@ -43,15 +43,55 @@ GameRenderer::GameRenderer()
     , m_renderWireframe(false)
     , m_rayTracingStepSize(1)      // По умолчанию каждый второй пиксель (быстрее)
     , m_rayTracingUseAdaptive(true) // Адаптивная выборка включена
+    , shadow_map(false)
 {
+    m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));
+    m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
+    m_lightType = LightType::Points;
+    m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f); // позиция для point light
 }
 
 void GameRenderer::initialize() {
-    std::cout << "GameRenderer::initialize() - Models will be loaded from config in Game::loadConfig()" << std::endl;
+    m_staticShadow = ShadowMapper(
+        m_gridWidth,
+        m_gridDepth,
+        m_cellSize,
+        0.0f,
+        m_lightDir,
+        m_lightColor
+    );
+
+    m_dynamicShadow = m_staticShadow;
+
     initOpenGLSettings();
     initRayTracingResources();
 }
+void GameRenderer::resetShadows() {
+    // Полностью пересоздаем теневые карты
+    m_staticShadow = ShadowMapper(
+        m_gridWidth,
+        m_gridDepth,
+        m_cellSize,
+        0.0f,
+        m_lightDir,
+        m_lightColor
+    );
 
+    m_dynamicShadow = ShadowMapper(
+        m_gridWidth,
+        m_gridDepth,
+        m_cellSize,
+        0.0f,
+        m_lightDir,
+        m_lightColor
+    );
+
+    // Устанавливаем флаги для пересчета
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+
+    std::cout << "Shadows reset for new game" << std::endl;
+}
 void GameRenderer::renderGame(const GameObjects& objects) {
     if (m_rayTracingEnabled) {
         renderWithRayTracing(objects);
@@ -72,6 +112,82 @@ void GameRenderer::renderGame(const GameObjects& objects) {
 
     g_shaderManager.use3DShader();
 
+    // передаём в шейдер
+    GLuint shader = g_shaderManager.getShaderProgram();
+
+    glUniform3fv(glGetUniformLocation(shader, "lightDir"), 1, &m_lightDir[0]);
+    glUniform3fv(glGetUniformLocation(shader, "lightColor"), 1, &m_lightColor[0]);
+    if (shadow_map != 0) {
+        m_staticShadow.setLightType(m_lightType);
+        m_staticShadow.setLightPos(m_lightPos);
+        m_dynamicShadow.setLightType(m_lightType);
+        m_dynamicShadow.setLightPos(m_lightPos);
+        // ===== СТАТИЧЕСКИЕ ТЕНИ =====
+        if (m_staticShadowsDirty) {
+            m_staticShadow.clearObjectBounds();
+           m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, 0.0f);
+            std::vector<BoundingSphere> staticSpheres;
+
+            for (const auto& obstacle : objects.getObstacles()) {
+                for (const auto& block : obstacle.blocks) {
+
+                    float x = block.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
+                    float z = block.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
+
+                    staticSpheres.emplace_back(glm::vec3(x, 0.0f, z), 0.3f);
+                }
+            }
+            m_staticShadow.clearObjectBounds();
+
+            m_staticShadow.registerObjectBounds(staticSpheres);
+
+            m_staticShadow.setIntersectCallback(
+                [](const Ray&, float&, glm::vec3&) { return true; }
+            );
+
+            m_staticShadow.computeShadows();
+
+            m_staticShadowsDirty = false;
+        }
+        if (m_dynamicShadowsDirty) {
+            m_dynamicShadow.clearObjectBounds();
+            std::vector<BoundingSphere> dynamicSpheres;
+
+            // змейка
+            for (size_t i = 0; i < objects.getSnake().size(); i++) {
+
+                const auto& segment = objects.getSnake()[i];
+
+                float x = segment.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
+                float z = segment.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
+
+                float scale = m_cellSize * 0.8f;
+
+                float radius = scale * 0.5f;
+
+                dynamicSpheres.emplace_back(glm::vec3(x, 0.1f, z), radius);
+            }
+
+            // яблоки
+            for (const auto& apple : objects.getFood()) {
+
+                float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
+                float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
+
+                dynamicSpheres.emplace_back(glm::vec3(x, 0.1f, z), m_cellSize * 0.3f);
+            }
+            m_dynamicShadow.clearObjectBounds();
+            m_dynamicShadow.registerObjectBounds(dynamicSpheres);
+
+            m_dynamicShadow.setIntersectCallback(
+                [](const Ray&, float&, glm::vec3&) { return true; }
+            );
+
+            m_dynamicShadow.computeShadows();
+
+            m_dynamicShadowsDirty = true;
+        }
+    }
     glm::mat4 projection = glm::perspective(glm::radians(60.0f),
         1200.0f / 800.0f,
         0.2f,
@@ -91,7 +207,7 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     drawGroundSprites(objects.getFlowerSprites());
 
     drawFloor();
-
+    drawLightSource();
     drawFood(objects.getFood());
     drawSnake(objects.getSnake());
 
@@ -403,25 +519,7 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
     if (snake.empty()) return;
 
     static bool firstDraw = true;
-    if (firstDraw) {
-        std::cout << "\n=== ПЕРВАЯ ОТРИСОВКА ЗМЕЙКИ ===" << std::endl;
-        std::cout << "snakeHeadColor из Game: ("
-            << g_game.getSnakeHeadColor().r << ", "
-            << g_game.getSnakeHeadColor().g << ", "
-            << g_game.getSnakeHeadColor().b << ")" << std::endl;
-        std::cout << "snakeBodyColor из Game: ("
-            << g_game.getSnakeBodyColor().r << ", "
-            << g_game.getSnakeBodyColor().g << ", "
-            << g_game.getSnakeBodyColor().b << ")" << std::endl;
-        std::cout << "snakeTailColor из Game: ("
-            << g_game.getSnakeTailColor().r << ", "
-            << g_game.getSnakeTailColor().g << ", "
-            << g_game.getSnakeTailColor().b << ")" << std::endl;
-        std::cout << "snakeHeadScale из Game: " << g_game.getSnakeHeadScale() << std::endl;
-        std::cout << "snakeBodyScale из Game: " << g_game.getSnakeBodyScale() << std::endl;
-        std::cout << "snakeTailScale из Game: " << g_game.getSnakeTailScale() << std::endl;
-        firstDraw = false;
-    }
+
 
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(2.0f, 4.0f);
@@ -780,7 +878,6 @@ void GameRenderer::setFloorTexture(const std::string& texturePath) {
 }
 
 void GameRenderer::drawFloor() {
-    std::cout << "\n=== DRAW FLOOR DEBUG ===" << std::endl;
 
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(5.0f, 10.0f);
@@ -789,15 +886,8 @@ void GameRenderer::drawFloor() {
     float worldWidth = m_gridWidth * m_cellSize;
     float worldDepth = m_gridDepth * m_cellSize;
 
-    std::cout << "  World size: " << worldWidth << " x " << worldDepth << std::endl;
-    std::cout << "  Floor model exists: " << (floorModel.vertices.size() > 0 ? "YES" : "NO") << std::endl;
-    std::cout << "  Floor color: (" << floorColor.r << ", " << floorColor.g << ", " << floorColor.b << ")" << std::endl;
-    std::cout << "  Floor has texture: " << (floorModel.hasTexture ? "YES" : "NO") << std::endl;
-    std::cout << "  Grid enabled: " << (gridEnabled ? "YES" : "NO") << std::endl;
-
     // Рисуем плитки ТОЛЬКО если есть модель пола
-    if (floorModel.vertices.size() > 0) {
-        std::cout << "  Drawing tiles over base floor" << std::endl;
+    if (floorModel.textureID > 0) {
 
         // Вычисляем границы модели
         float modelMinX = 999999, modelMaxX = -999999;
@@ -826,7 +916,6 @@ void GameRenderer::drawFloor() {
         float tileWidth = modelSizeX * scale;
         float tileDepth = modelSizeY * scale;
 
-        std::cout << "  Tile size: " << tileWidth << " x " << tileDepth << std::endl;
 
         int tilesX = 50;
         int tilesZ = 50;
@@ -865,14 +954,122 @@ void GameRenderer::drawFloor() {
             }
         }
 
-        std::cout << "  Tiles drawn: " << drawnTiles << std::endl;
     }
+    else if (shadow_map != 0) {
 
+            glEnable(GL_POLYGON_OFFSET_FILL);
+            glPolygonOffset(5.0f, 10.0f);
+
+            // === ПАРАМЕТРЫ СЕТКИ ===
+            int tilesX = m_gridWidth * 2;
+            int tilesZ = m_gridDepth * 2;
+
+            float tileSize = m_cellSize * 0.5f;
+
+            float startX = -(tilesX * tileSize) / 2.0f;
+            float startZ = -(tilesZ * tileSize) / 2.0f;
+
+            float baseY = 0.0f;
+
+            for (int i = 0; i < tilesX; i++) {
+                for (int j = 0; j < tilesZ; j++) {
+
+                    float posX = startX + i * tileSize + tileSize * 0.5f;
+                    float posZ = startZ + j * tileSize + tileSize * 0.5f;
+
+                    // === ТЕНЬ В ТОЧКЕ ===
+                    float s1 = std::min(
+                        m_staticShadow.getShadowAtWorldPos(posX, posZ),
+                        m_dynamicShadow.getShadowAtWorldPos(posX, posZ)
+                    );
+
+                    // === СГЛАЖИВАНИЕ ===
+                    float s2 = std::min(
+                        m_staticShadow.getShadowAtWorldPos(posX + 0.02f, posZ),
+                        m_dynamicShadow.getShadowAtWorldPos(posX + 0.02f, posZ)
+                    );
+
+                    float s3 = std::min(
+                        m_staticShadow.getShadowAtWorldPos(posX, posZ + 0.02f),
+                        m_dynamicShadow.getShadowAtWorldPos(posX, posZ + 0.02f)
+                    );
+
+                    float shadow = (s1 + s2 + s3) / 3.0f;
+
+                    // === ЦВЕТ ===
+                    glm::vec3 baseColor = floorColor;
+
+                    float ambient = 0.2f;
+                    glm::vec3 finalColor = baseColor * (shadow + ambient);
+
+                    // === ТРАНСФОРМ ===
+                    glm::mat4 modelMatrix = glm::mat4(1.0f);
+                    modelMatrix = glm::translate(modelMatrix, glm::vec3(posX, baseY, posZ));
+                    modelMatrix = glm::scale(modelMatrix, glm::vec3(tileSize, 1.0f, tileSize));
+
+                    g_shaderManager.setModelMatrix(modelMatrix);
+                    g_shaderManager.setColor(finalColor);
+                    g_shaderManager.setUseTexture(false);
+                    g_shaderManager.setIsFloor(true);
+
+                    floorModel.draw();
+                }
+            }
+
+            glDisable(GL_POLYGON_OFFSET_FILL);
+        }
+    else {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(5.0f, 10.0f);
+
+        glm::mat4 model = glm::mat4(1.0f);
+
+        float floorScale = GRID_WIDTH * CELL_SIZE * 3.0f;
+        model = glm::scale(model, glm::vec3(floorScale, 1.0f, floorScale));
+        model = glm::translate(model, glm::vec3(0.0f, -0.05f, 0.0f));
+
+        g_shaderManager.setModelMatrix(model);
+        g_shaderManager.setColor(floorColor);
+        g_shaderManager.setUseTexture(false);
+        g_shaderManager.setIsFloor(true);
+        g_shaderManager.setCellSize(CELL_SIZE);
+
+        floorModel.draw();
+    }
+    
     glDisable(GL_POLYGON_OFFSET_FILL);
 
-    std::cout << "=== END DRAW FLOOR ===\n" << std::endl;
 }
+void GameRenderer::markDynamicShadowsDirty() {
+    m_dynamicShadowsDirty = true;
+}
+void GameRenderer::drawLightSource() {
 
+    // позиция "солнца" (просто далеко в сторону света)
+    glm::vec3 lightPos = -m_lightDir * 5.0f;
+
+    // === РИСУЕМ СФЕРУ (солнце) ===
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, lightPos);
+    model = glm::scale(model, glm::vec3(0.2f));
+
+    g_shaderManager.setModelMatrix(model);
+    g_shaderManager.setColor(glm::vec3(1.0f, 1.0f, 0.2f)); // жёлтое солнце
+    g_shaderManager.setUseTexture(false);
+    g_shaderManager.setIsFloor(false);
+
+    spherePrimitive.draw(); // или cubePrimitive если нет сферы
+
+    // === РИСУЕМ ЛУЧ (линия направления) ===
+    glm::vec3 start = lightPos;
+    glm::vec3 end = lightPos + m_lightDir * 2.0f;
+
+    glBegin(GL_LINES);
+    glColor3f(1.0f, 1.0f, 0.0f);
+    glVertex3f(start.x, start.y, start.z);
+    glVertex3f(end.x, end.y, end.z);
+    glEnd();
+}
 void GameRenderer::createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
     float width, float height, const glm::vec3& color) {
     float halfWidth = width / 2.0f;
@@ -1810,7 +2007,6 @@ namespace {
                 }
             }
             if (key == GLFW_KEY_T && action == GLFW_PRESS) {
-                extern GameRenderer g_renderer; // или получите доступ к renderer
                 g_game.toggleRayTracing(); // нужно добавить этот метод в Game
                 std::cout << "Ray tracing toggled" << std::endl;
             }

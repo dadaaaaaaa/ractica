@@ -354,8 +354,43 @@ void Game::handleKeyPress(int key) {
     // Делегируем обработку ввода соответствующим компонентам
     switch (objects.getGameState()) {
     case PLAYING:
+
+        switch (key) {
+        case GLFW_KEY_W:
+            if (objects.getCurrentDirection() != BACKWARD)
+                objects.setCurrentDirection (FORWARD);
+            break;
+
+        case GLFW_KEY_S:
+            if (objects.getCurrentDirection() != FORWARD)
+                objects.setCurrentDirection(BACKWARD);
+            break;
+
+        case GLFW_KEY_A:
+            if (objects.getCurrentDirection() != RIGHT)
+                objects.setCurrentDirection(LEFT);
+            break;
+
+        case GLFW_KEY_D:
+            if (objects.getCurrentDirection() != LEFT)
+                objects.setCurrentDirection(RIGHT);
+            break;
+        case GLFW_KEY_R:
+            objects.initGame();
+            objects.setGameState(PLAYING);
+            // Добавьте здесь принудительный сброс теней
+            renderer.markStaticShadowsDirty();
+            renderer.markDynamicShadowsDirty();
+            break;
+        }
+
         objects.handleGameKeyPress(key);
 
+        if (key == GLFW_KEY_Y) {
+            renderer.toggleshadow_map();
+            renderer.renderGame(objects);
+            std::cout << " Game saved!" << std::endl;
+        }
         // Сохранение по F5
         if (key == GLFW_KEY_F5) {
             objects.saveGame();
