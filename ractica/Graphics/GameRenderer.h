@@ -99,7 +99,8 @@ private:
 
     LightType m_lightType ;
     glm::vec3 m_lightPos;
-
+    int m_samplesPerCellX;  // Сэмплов на клетку по X (1 = 1:1, 2 = 1:2 и т.д.)
+    int m_samplesPerCellZ;  // Сэмплов на клетку по Z
 public:
     GameRenderer();
     glm::vec3 traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, int depth = 0);
@@ -134,7 +135,15 @@ public:
         m_gridDepth = depth;
         m_cellSize = cellSize;
     }
+    void setShadowSamplesPerCell(int samplesX, int samplesZ) {
+        m_samplesPerCellX = std::max(1, samplesX);
+        m_samplesPerCellZ = std::max(1, samplesZ);
+        markStaticShadowsDirty();
+        markDynamicShadowsDirty();
+    }
 
+    int getShadowSamplesPerCellX() const { return m_samplesPerCellX; }
+    int getShadowSamplesPerCellZ() const { return m_samplesPerCellZ; }
     bool isGridEnabled() const { return gridEnabled; }
     float getGridLineWidth() const { return gridLineWidth; }
     int getGridWidth() const { return m_gridWidth; }

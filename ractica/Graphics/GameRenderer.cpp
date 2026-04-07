@@ -29,6 +29,7 @@ extern Game g_game;
 extern std::string g_modelsPath;
 extern std::string g_texturesPath;
 
+// В конструкторе GameRenderer добавьте:
 GameRenderer::GameRenderer()
     : skyColor(0.53f, 0.81f, 0.92f)
     , floorColor(0.3f, 0.6f, 0.2f)
@@ -47,8 +48,15 @@ GameRenderer::GameRenderer()
 {
     m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));
     m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    m_lightType = LightType::Directional;  // ← ИСПРАВЛЕНО: был Point, теперь Directional
+    m_lightType = LightType::Directional;
     m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f);
+
+    // Установка соотношения "клетка : сэмплы"
+    // 1:1 - один сэмпл на клетку
+    // 1:2 - один сэмпл на 2 клетки (более грубо, быстрее)
+    // 2:1 - два сэмпла на клетку (более детально, медленнее)
+    m_samplesPerCellX = 8;  // 1 сэмпл на клетку по X
+    m_samplesPerCellZ = 8;  // 1 сэмпл на клетку по Z
 }
 // Добавить в GameRenderer.cpp после traceRay метода
 HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
@@ -177,6 +185,10 @@ void GameRenderer::resetShadows() {
     std::cout << "Shadows reset for new game" << std::endl;
 }
 void GameRenderer::renderGame(const GameObjects& objects) {
+    auto frameStartTime = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
+    static int frameCount = 0;
+    static float totalFrameTime = 0.0f;
+
     if (m_rayTracingEnabled) {
         renderWithRayTracing(objects);
         return;
@@ -196,7 +208,6 @@ void GameRenderer::renderGame(const GameObjects& objects) {
 
     g_shaderManager.use3DShader();
 
-    // передаём в шейдер
     GLuint shader = g_shaderManager.getShaderProgram();
 
     glUniform3fv(glGetUniformLocation(shader, "lightDir"), 1, &m_lightDir[0]);
@@ -210,26 +221,31 @@ void GameRenderer::renderGame(const GameObjects& objects) {
 
         // ===== СТАТИЧЕСКИЕ ТЕНИ (деревья) =====
         if (m_staticShadowsDirty) {
+            auto staticStart = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
+
+            std::cout << "\n[STATIC SHADOWS] Starting computation..." << std::endl;
+
             m_staticShadow.clearObjectBounds();
             m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, 0.0f);
             std::vector<BoundingSphere> staticSpheres;
 
+            int treeCount = 0;
             for (const auto& obstacle : objects.getObstacles()) {
                 for (const auto& block : obstacle.blocks) {
                     float x = block.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                     float z = block.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
 
-                    // ИСПРАВЛЕНО: правильный радиус для деревьев
                     float treeSize = m_cellSize * 1.5f;
                     float radius = treeSize * 0.4f;
 
                     staticSpheres.emplace_back(glm::vec3(x, treeSize / 2.0f, z), radius);
+                    treeCount++;
                 }
             }
+            std::cout << "  Registered " << treeCount << " trees for static shadows" << std::endl;
 
             m_staticShadow.registerObjectBounds(staticSpheres);
 
-            // ИСПРАВЛЕНО: реальный callback с проверкой геометрии
             m_staticShadow.setIntersectCallback(
                 [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                     float offsetX = m_gridWidth * m_cellSize / 2.0f;
@@ -247,14 +263,23 @@ void GameRenderer::renderGame(const GameObjects& objects) {
 
             m_staticShadow.computeShadows();
             m_staticShadowsDirty = false;
+
+            auto staticEnd = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
+            auto staticMs = std::chrono::duration_cast<std::chrono::milliseconds>(staticEnd - staticStart).count();  // ДОБАВИТЬ
+            std::cout << "[STATIC SHADOWS] Completed in " << staticMs << " ms\n" << std::endl;  // ДОБАВИТЬ
         }
 
         // ===== ДИНАМИЧЕСКИЕ ТЕНИ (змейка + яблоки) =====
         if (m_dynamicShadowsDirty) {
+            auto dynamicStart = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
+
+            std::cout << "[DYNAMIC SHADOWS] Starting computation..." << std::endl;
+
             m_dynamicShadow.clearObjectBounds();
             std::vector<BoundingSphere> dynamicSpheres;
 
-            // Змейка - исправленные радиусы
+            // Змейка
+            int snakeSegments = 0;
             for (size_t i = 0; i < objects.getSnake().size(); i++) {
                 const auto& segment = objects.getSnake()[i];
                 float x = segment.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
@@ -263,20 +288,25 @@ void GameRenderer::renderGame(const GameObjects& objects) {
                 float radius = scale * 0.4f;
 
                 dynamicSpheres.emplace_back(glm::vec3(x, 0.15f, z), radius);
+                snakeSegments++;
             }
+            std::cout << "  Registered " << snakeSegments << " snake segments" << std::endl;
 
-            // Яблоки - исправленные радиусы
+            // Яблоки
+            int appleCount = 0;
             for (const auto& apple : objects.getFood()) {
                 float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                 float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
                 float radius = m_cellSize * 0.25f;
 
                 dynamicSpheres.emplace_back(glm::vec3(x, 0.1f, z), radius);
+                appleCount++;
             }
+            std::cout << "  Registered " << appleCount << " apples" << std::endl;
+            std::cout << "  Total dynamic objects: " << dynamicSpheres.size() << std::endl;
 
             m_dynamicShadow.registerObjectBounds(dynamicSpheres);
 
-            // ИСПРАВЛЕНО: реальный callback для динамических объектов
             m_dynamicShadow.setIntersectCallback(
                 [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                     float offsetX = m_gridWidth * m_cellSize / 2.0f;
@@ -293,7 +323,11 @@ void GameRenderer::renderGame(const GameObjects& objects) {
             );
 
             m_dynamicShadow.computeShadows();
-            m_dynamicShadowsDirty = false;  // ИСПРАВЛЕНО: было true
+            m_dynamicShadowsDirty = false;
+
+            auto dynamicEnd = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
+            auto dynamicMs = std::chrono::duration_cast<std::chrono::milliseconds>(dynamicEnd - dynamicStart).count();  // ДОБАВИТЬ
+            std::cout << "[DYNAMIC SHADOWS] Completed in " << dynamicMs << " ms\n" << std::endl;  // ДОБАВИТЬ
         }
     }
 
@@ -309,19 +343,40 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     g_shaderManager.setViewMatrix(view);
     g_shaderManager.setProjectionMatrix(projection);
 
+    // Замер времени отрисовки
+    auto drawStart = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
+
     drawClouds(objects.getCloudSprites());
     drawBirds(objects.getBirds());
     drawObstaclesAsTrees(objects.getObstacles());
     drawFence(objects.getFenceBlocks());
     drawGroundSprites(objects.getFlowerSprites());
-
     drawFloor();
     drawLightSource();
     drawFood(objects.getFood());
     drawSnake(objects.getSnake());
 
+    auto drawEnd = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
+    auto drawMs = std::chrono::duration_cast<std::chrono::milliseconds>(drawEnd - drawStart).count();  // ДОБАВИТЬ
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    auto frameEndTime = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
+    auto frameMs = std::chrono::duration_cast<std::chrono::milliseconds>(frameEndTime - frameStartTime).count();  // ДОБАВИТЬ
+
+    // Статистика по кадрам (каждые 60 кадров)
+    frameCount++;
+    totalFrameTime += frameMs;
+    if (frameCount >= 60) {
+        float avgFrameTime = totalFrameTime / frameCount;
+        float fps = 1000.0f / avgFrameTime;
+        std::cout << "[PERFORMANCE] Frame: " << frameMs << " ms, "
+            << "Draw: " << drawMs << " ms, "
+            << "FPS: " << std::fixed << std::setprecision(1) << fps << std::endl;
+        frameCount = 0;
+        totalFrameTime = 0.0f;
+    }
 }
 
 void GameRenderer::createPrimitives() {
@@ -1064,69 +1119,44 @@ void GameRenderer::drawFloor() {
         }
 
     }
+    // В drawFloor() - упрощённая версия
     else if (shadow_map != 0) {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(5.0f, 10.0f);
 
-            glEnable(GL_POLYGON_OFFSET_FILL);
-            glPolygonOffset(5.0f, 10.0f);
+        int tilesX = m_gridWidth * 2;
+        int tilesZ = m_gridDepth * 2;
+        float tileSize = m_cellSize * 0.5f;
+        float startX = -(tilesX * tileSize) / 2.0f;
+        float startZ = -(tilesZ * tileSize) / 2.0f;
+        float baseY = 0.0f;
 
-            // === ПАРАМЕТРЫ СЕТКИ ===
-            int tilesX = m_gridWidth * 2;
-            int tilesZ = m_gridDepth * 2;
+        for (int i = 0; i < tilesX; i++) {
+            for (int j = 0; j < tilesZ; j++) {
+                float posX = startX + i * tileSize + tileSize * 0.5f;
+                float posZ = startZ + j * tileSize + tileSize * 0.5f;
 
-            float tileSize = m_cellSize * 0.5f;
+                // Получаем тень (простое значение 0.3 или 1.0)
+                float staticShadow = m_staticShadow.getShadowAtWorldPos(posX, posZ);
+                float dynamicShadow = m_dynamicShadow.getShadowAtWorldPos(posX, posZ);
+                float shadow = std::min(staticShadow, dynamicShadow);
 
-            float startX = -(tilesX * tileSize) / 2.0f;
-            float startZ = -(tilesZ * tileSize) / 2.0f;
+                // Цвет с учётом тени
+                glm::vec3 finalColor = floorColor * shadow;
 
-            float baseY = 0.0f;
+                glm::mat4 modelMatrix = glm::mat4(1.0f);
+                modelMatrix = glm::translate(modelMatrix, glm::vec3(posX, baseY, posZ));
+                modelMatrix = glm::scale(modelMatrix, glm::vec3(tileSize, 1.0f, tileSize));
 
-            for (int i = 0; i < tilesX; i++) {
-                for (int j = 0; j < tilesZ; j++) {
+                g_shaderManager.setModelMatrix(modelMatrix);
+                g_shaderManager.setColor(finalColor);
+                g_shaderManager.setUseTexture(false);
+                g_shaderManager.setIsFloor(true);
 
-                    float posX = startX + i * tileSize + tileSize * 0.5f;
-                    float posZ = startZ + j * tileSize + tileSize * 0.5f;
-
-                    // === ТЕНЬ В ТОЧКЕ ===
-                    float s1 = std::min(
-                        m_staticShadow.getShadowAtWorldPos(posX, posZ),
-                        m_dynamicShadow.getShadowAtWorldPos(posX, posZ)
-                    );
-
-                    // === СГЛАЖИВАНИЕ ===
-                    float s2 = std::min(
-                        m_staticShadow.getShadowAtWorldPos(posX + 0.02f, posZ),
-                        m_dynamicShadow.getShadowAtWorldPos(posX + 0.02f, posZ)
-                    );
-
-                    float s3 = std::min(
-                        m_staticShadow.getShadowAtWorldPos(posX, posZ + 0.02f),
-                        m_dynamicShadow.getShadowAtWorldPos(posX, posZ + 0.02f)
-                    );
-
-                    float shadow = (s1 + s2 + s3) / 3.0f;
-
-                    // === ЦВЕТ ===
-                    glm::vec3 baseColor = floorColor;
-
-                    float ambient = 0.2f;
-                    glm::vec3 finalColor = baseColor * (shadow + ambient);
-
-                    // === ТРАНСФОРМ ===
-                    glm::mat4 modelMatrix = glm::mat4(1.0f);
-                    modelMatrix = glm::translate(modelMatrix, glm::vec3(posX, baseY, posZ));
-                    modelMatrix = glm::scale(modelMatrix, glm::vec3(tileSize, 1.0f, tileSize));
-
-                    g_shaderManager.setModelMatrix(modelMatrix);
-                    g_shaderManager.setColor(finalColor);
-                    g_shaderManager.setUseTexture(false);
-                    g_shaderManager.setIsFloor(true);
-
-                    floorModel.draw();
-                }
+                floorModel.draw();
             }
-
-            glDisable(GL_POLYGON_OFFSET_FILL);
         }
+    }
     else {
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(5.0f, 10.0f);
