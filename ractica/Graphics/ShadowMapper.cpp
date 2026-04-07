@@ -135,43 +135,48 @@ bool ShadowMapper::isVertexInShadow(const glm::vec3& position)
 }
 float ShadowMapper::computeShadowFactor(const glm::vec3& position)
 {
-    int samples = 8; // количество лучей
+    int samples = 12;  // ← увеличил для лучшего качества
     int hits = 0;
-
-    float spread = 0.05f; // размытие тени
+    float spread = 0.03f;  // ← уменьшил разброс
 
     for (int i = 0; i < samples; i++) {
+        // Случайное смещение для мягких теней
+        float offsetX = ((rand() % 100) / 100.0f - 0.5f) * spread;
+        float offsetZ = ((rand() % 100) / 100.0f - 0.5f) * spread;
 
-        // небольшой разброс луча
-        static const glm::vec3 offsets[8] = {
-            {0.02f,0,0.02f}, {-0.02f,0,0.02f},
-            {0.02f,0,-0.02f}, {-0.02f,0,-0.02f},
-            {0.04f,0,0}, {-0.04f,0,0},
-            {0,0,0.04f}, {0,0,-0.04f}
-        };
-
-        glm::vec3 rayOrigin = position + offsets[i] - m_lightDirection * 0.01f;
+        glm::vec3 rayOrigin = position + glm::vec3(offsetX, 0.02f, offsetZ);
 
         Ray shadowRay;
-
         if (m_lightType == LightType::Directional) {
+            // ИСПРАВЛЕНО: направленный свет - лучи параллельны
             shadowRay = Ray(rayOrigin, -m_lightDirection);
         }
         else {
+            // Точечный свет
             glm::vec3 dir = glm::normalize(m_lightPos - rayOrigin);
             shadowRay = Ray(rayOrigin, dir);
         }
 
         float dist;
         if (intersectsAnyBoundingSphere(shadowRay, dist)) {
-            hits++;
+            // ИСПРАВЛЕНО: используем callback для точной проверки
+            if (m_intersectCallback) {
+                float exactDist;
+                glm::vec3 hitPoint;
+                if (m_intersectCallback(shadowRay, exactDist, hitPoint)) {
+                    if (exactDist > 0.02f && exactDist < 20.0f) {
+                        hits++;
+                    }
+                }
+            }
+            else {
+                hits++;
+            }
         }
     }
 
-    // 1.0 = свет, 0.0 = полная тень
     float shadow = 1.0f - (float)hits / samples;
-
-    return shadow;
+    return glm::clamp(shadow, 0.2f, 1.0f);  // ← clamp чтобы не было полной черноты
 }
 void ShadowMapper::computeShadows()
 {

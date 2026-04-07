@@ -41,16 +41,100 @@ GameRenderer::GameRenderer()
     , m_cellSize(0.1f)
     , m_rayTracingEnabled(false)
     , m_renderWireframe(false)
-    , m_rayTracingStepSize(1)      // По умолчанию каждый второй пиксель (быстрее)
-    , m_rayTracingUseAdaptive(true) // Адаптивная выборка включена
+    , m_rayTracingStepSize(1)
+    , m_rayTracingUseAdaptive(true)
     , shadow_map(false)
 {
     m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));
     m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    m_lightType = LightType::Points;
-    m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f); // позиция для point light
+    m_lightType = LightType::Directional;  // ← ИСПРАВЛЕНО: был Point, теперь Directional
+    m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f);
 }
+// Добавить в GameRenderer.cpp после traceRay метода
+HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
+    HitInfo closestHit;
+    closestHit.hit = false;
+    closestHit.distance = 1000.0f;
 
+    float maxDistance = 50.0f;
+
+    // Проверка пола
+    float tGround = -ray.origin.y / ray.direction.y;
+    if (tGround > 0 && tGround < maxDistance && tGround < closestHit.distance) {
+        glm::vec3 hitPoint = ray.pointAt(tGround);
+        float halfWidth = m_gridWidth * m_cellSize / 2.0f;
+        float halfDepth = m_gridDepth * m_cellSize / 2.0f;
+
+        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+            closestHit.hit = true;
+            closestHit.distance = tGround;
+            closestHit.point = hitPoint;
+            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+    }
+
+    // Проверка деревьев
+    float treeSize = m_cellSize * 1.5f;
+    float treeHalf = treeSize / 2.0f;
+
+    for (const auto& obstacle : objects.getObstacles()) {
+        for (const auto& block : obstacle.blocks) {
+            glm::vec3 pos = getObstaclePosition(block);
+            if (glm::length(pos - ray.origin) > maxDistance) continue;
+
+            glm::vec3 boxMin(pos.x - treeHalf, pos.y, pos.z - treeHalf);
+            glm::vec3 boxMax(pos.x + treeHalf, pos.y + treeSize, pos.z + treeHalf);
+
+            float tMin, tMax;
+            if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
+                if (tMin > 0.01f && tMin < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = tMin;
+                    closestHit.point = ray.pointAt(tMin);
+                    closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
+                }
+            }
+        }
+    }
+
+    // Проверка змейки
+    const auto& snake = objects.getSnake();
+    for (size_t i = 0; i < snake.size(); i++) {
+        glm::vec3 pos = getSnakeSegmentPosition(snake[i], i);
+        glm::vec3 scale = getSnakeSegmentScale(snake[i], i);
+        float halfSize = scale.x / 2.0f;
+
+        glm::vec3 boxMin(pos.x - halfSize, pos.y - halfSize, pos.z - halfSize);
+        glm::vec3 boxMax(pos.x + halfSize, pos.y + halfSize, pos.z + halfSize);
+
+        float tMin, tMax;
+        if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
+            if (tMin > 0.01f && tMin < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tMin;
+                closestHit.point = ray.pointAt(tMin);
+                closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
+            }
+        }
+    }
+
+    // Проверка еды
+    float foodRadius = m_cellSize * 0.4f;
+    for (const auto& apple : objects.getFood()) {
+        glm::vec3 pos = getFoodPosition(apple);
+        float tHit;
+        if (rayIntersectsSphere(ray, pos, foodRadius, tHit)) {
+            if (tHit > 0.01f && tHit < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tHit;
+                closestHit.point = ray.pointAt(tHit);
+                closestHit.normal = glm::normalize(closestHit.point - pos);
+            }
+        }
+    }
+
+    return closestHit;
+}
 void GameRenderer::initialize() {
     m_staticShadow = ShadowMapper(
         m_gridWidth,
@@ -117,77 +201,102 @@ void GameRenderer::renderGame(const GameObjects& objects) {
 
     glUniform3fv(glGetUniformLocation(shader, "lightDir"), 1, &m_lightDir[0]);
     glUniform3fv(glGetUniformLocation(shader, "lightColor"), 1, &m_lightColor[0]);
+
     if (shadow_map != 0) {
         m_staticShadow.setLightType(m_lightType);
         m_staticShadow.setLightPos(m_lightPos);
         m_dynamicShadow.setLightType(m_lightType);
         m_dynamicShadow.setLightPos(m_lightPos);
-        // ===== СТАТИЧЕСКИЕ ТЕНИ =====
+
+        // ===== СТАТИЧЕСКИЕ ТЕНИ (деревья) =====
         if (m_staticShadowsDirty) {
             m_staticShadow.clearObjectBounds();
-           m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, 0.0f);
+            m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, 0.0f);
             std::vector<BoundingSphere> staticSpheres;
 
             for (const auto& obstacle : objects.getObstacles()) {
                 for (const auto& block : obstacle.blocks) {
-
                     float x = block.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                     float z = block.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
 
-                    staticSpheres.emplace_back(glm::vec3(x, 0.0f, z), 0.3f);
+                    // ИСПРАВЛЕНО: правильный радиус для деревьев
+                    float treeSize = m_cellSize * 1.5f;
+                    float radius = treeSize * 0.4f;
+
+                    staticSpheres.emplace_back(glm::vec3(x, treeSize / 2.0f, z), radius);
                 }
             }
-            m_staticShadow.clearObjectBounds();
 
             m_staticShadow.registerObjectBounds(staticSpheres);
 
+            // ИСПРАВЛЕНО: реальный callback с проверкой геометрии
             m_staticShadow.setIntersectCallback(
-                [](const Ray&, float&, glm::vec3&) { return true; }
+                [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+                    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+                    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+                    HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
+                    if (hit.hit && hit.distance > 0.01f) {
+                        hitDist = hit.distance;
+                        hitPoint = hit.point;
+                        return true;
+                    }
+                    return false;
+                }
             );
 
             m_staticShadow.computeShadows();
-
             m_staticShadowsDirty = false;
         }
+
+        // ===== ДИНАМИЧЕСКИЕ ТЕНИ (змейка + яблоки) =====
         if (m_dynamicShadowsDirty) {
             m_dynamicShadow.clearObjectBounds();
             std::vector<BoundingSphere> dynamicSpheres;
 
-            // змейка
+            // Змейка - исправленные радиусы
             for (size_t i = 0; i < objects.getSnake().size(); i++) {
-
                 const auto& segment = objects.getSnake()[i];
-
                 float x = segment.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                 float z = segment.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-
                 float scale = m_cellSize * 0.8f;
+                float radius = scale * 0.4f;
 
-                float radius = scale * 0.5f;
+                dynamicSpheres.emplace_back(glm::vec3(x, 0.15f, z), radius);
+            }
+
+            // Яблоки - исправленные радиусы
+            for (const auto& apple : objects.getFood()) {
+                float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
+                float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
+                float radius = m_cellSize * 0.25f;
 
                 dynamicSpheres.emplace_back(glm::vec3(x, 0.1f, z), radius);
             }
 
-            // яблоки
-            for (const auto& apple : objects.getFood()) {
-
-                float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
-                float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-
-                dynamicSpheres.emplace_back(glm::vec3(x, 0.1f, z), m_cellSize * 0.3f);
-            }
-            m_dynamicShadow.clearObjectBounds();
             m_dynamicShadow.registerObjectBounds(dynamicSpheres);
 
+            // ИСПРАВЛЕНО: реальный callback для динамических объектов
             m_dynamicShadow.setIntersectCallback(
-                [](const Ray&, float&, glm::vec3&) { return true; }
+                [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+                    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+                    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+                    HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
+                    if (hit.hit && hit.distance > 0.01f) {
+                        hitDist = hit.distance;
+                        hitPoint = hit.point;
+                        return true;
+                    }
+                    return false;
+                }
             );
 
             m_dynamicShadow.computeShadows();
-
-            m_dynamicShadowsDirty = true;
+            m_dynamicShadowsDirty = false;  // ИСПРАВЛЕНО: было true
         }
     }
+
     glm::mat4 projection = glm::perspective(glm::radians(60.0f),
         1200.0f / 800.0f,
         0.2f,

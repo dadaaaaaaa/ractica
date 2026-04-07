@@ -224,7 +224,7 @@ public:
     void renderWithRayTracing(const GameObjects& objects);
 
     // Коллбек для пересечения лучей
-    HitInfo intersectScene(const Ray& ray, const GameObjects& objects);
+    HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
 
     // Методы для пересечения лучей с примитивами
     bool rayIntersectsAABB(const Ray& ray, const glm::vec3& min, const glm::vec3& max, float& tMin, float& tMax);
