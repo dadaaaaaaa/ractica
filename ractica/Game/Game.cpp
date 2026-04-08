@@ -382,6 +382,9 @@ void Game::handleKeyPress(int key) {
             renderer.markStaticShadowsDirty();
             renderer.markDynamicShadowsDirty();
             break;
+        case GLFW_KEY_F6:
+            renderer.toggleDebugRays();
+            break;
         }
 
         objects.handleGameKeyPress(key);

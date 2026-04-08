@@ -44,8 +44,8 @@ GameRenderer::GameRenderer()
     , m_rayTracingStepSize(1)
     , m_rayTracingUseAdaptive(true)
     , shadow_map(false)
-    , m_shadowStrideX(20)
-    , m_shadowStrideZ(20)
+    , m_shadowStrideX(1)
+    , m_shadowStrideZ(1)
 {
     m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));
     m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
@@ -61,8 +61,8 @@ void GameRenderer::resetShadows() {
         0.0f,
         m_lightDir,
         m_lightColor,
-        m_shadowStrideX,  // stride по X
-        m_shadowStrideZ   // stride по Z
+        1,  // stride по X
+        1  // stride по Z
     );
 
     m_dynamicShadow = ShadowMapper(
@@ -72,8 +72,8 @@ void GameRenderer::resetShadows() {
         0.0f,
         m_lightDir,
         m_lightColor,
-        m_shadowStrideX,
-        m_shadowStrideZ
+        1,
+        1
     );
 
     m_staticShadowsDirty = true;
@@ -81,6 +81,217 @@ void GameRenderer::resetShadows() {
 
     std::cout << "Shadows reset with ratio: "
         << m_shadowStrideX << ":" << m_shadowStrideZ << std::endl;
+}
+void GameRenderer::drawSphereImmediate(const glm::vec3& center, float radius)
+{
+    const int segments = 12;
+    const int rings = 12;
+
+    glPushMatrix();
+    glTranslatef(center.x, center.y, center.z);
+
+    for (int i = 0; i <= rings; i++) {
+        float phi = glm::pi<float>() * float(i) / float(rings);
+        float sinPhi = sin(phi);
+        float cosPhi = cos(phi);
+
+        glBegin(GL_TRIANGLE_STRIP);
+        for (int j = 0; j <= segments; j++) {
+            float theta = 2.0f * glm::pi<float>() * float(j) / float(segments);
+            float sinTheta = sin(theta);
+            float cosTheta = cos(theta);
+
+            float x = radius * sinPhi * cosTheta;
+            float y = radius * cosPhi;
+            float z = radius * sinPhi * sinTheta;
+            glVertex3f(x, y, z);
+
+            if (i < rings) {
+                float phi2 = glm::pi<float>() * float(i + 1) / float(rings);
+                float sinPhi2 = sin(phi2);
+                float cosPhi2 = cos(phi2);
+
+                float x2 = radius * sinPhi2 * cosTheta;
+                float y2 = radius * cosPhi2;
+                float z2 = radius * sinPhi2 * sinTheta;
+                glVertex3f(x2, y2, z2);
+            }
+        }
+        glEnd();
+    }
+
+    glPopMatrix();
+}
+
+void GameRenderer::drawDebugRaysIfEnabled()
+{
+    if (!m_debugRaysEnabled) return;
+
+    auto staticRays = m_staticShadow.getDebugRays();
+    auto dynamicRays = m_dynamicShadow.getDebugRays();
+
+    if (staticRays.empty() && dynamicRays.empty()) return;
+
+    std::cout << "[DEBUG] Drawing " << (staticRays.size() + dynamicRays.size()) << " rays" << std::endl;
+
+
+    g_shaderManager.setGridEnabled(false);
+    g_shaderManager.setIsFloor(false);
+    g_shaderManager.setUseTexture(false);
+
+    GLuint shader = g_shaderManager.getShaderProgram();
+    GLint modelLoc = glGetUniformLocation(shader, "model");
+    GLint colorLoc = glGetUniformLocation(shader, "color");
+
+    // Единичная матрица
+    glm::mat4 identity = glm::mat4(1.0f);
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, &identity[0][0]);
+
+    // Собираем все вершины для линий
+    std::vector<float> hitLines;      // Лучи, которые попали (красные)
+    std::vector<float> missLines;     // Лучи, которые не попали (голубые)
+
+    auto addRays = [&](const std::vector<DebugRay>& rays) {
+        for (const auto& ray : rays) {
+            if (ray.hit) {
+                hitLines.push_back(ray.origin.x);
+                hitLines.push_back(ray.origin.y);
+                hitLines.push_back(ray.origin.z);
+                hitLines.push_back(ray.hitPoint.x);
+                hitLines.push_back(ray.hitPoint.y);
+                hitLines.push_back(ray.hitPoint.z);
+            }
+            else {
+                missLines.push_back(ray.origin.x);
+                missLines.push_back(ray.origin.y);
+                missLines.push_back(ray.origin.z);
+                missLines.push_back(ray.hitPoint.x);
+                missLines.push_back(ray.hitPoint.y);
+                missLines.push_back(ray.hitPoint.z);
+            }
+        }
+        };
+
+    addRays(staticRays);
+    addRays(dynamicRays);
+
+    // Рисуем красные линии (попавшие лучи)
+    if (!hitLines.empty()) {
+        glUniform3f(colorLoc, 1.0f, 0.2f, 0.2f);  // Красный
+
+        GLuint vao, vbo;
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, hitLines.size() * sizeof(float), hitLines.data(), GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+
+        glLineWidth(1.5f);
+        glDrawArrays(GL_LINES, 0, hitLines.size() / 3);
+
+        glDeleteVertexArrays(1, &vao);
+        glDeleteBuffers(1, &vbo);
+    }
+
+    // Рисуем голубые линии (непопавшие лучи)
+    if (!missLines.empty()) {
+        glUniform3f(colorLoc, 0.2f, 0.6f, 1.0f);  // Голубой
+
+        GLuint vao, vbo;
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, missLines.size() * sizeof(float), missLines.data(), GL_STATIC_DRAW);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(0);
+
+        glLineWidth(1.5f);
+        glDrawArrays(GL_LINES, 0, missLines.size() / 3);
+
+        glDeleteVertexArrays(1, &vao);
+        glDeleteBuffers(1, &vbo);
+    }
+
+}
+
+void GameRenderer::drawDebugRays(const std::vector<DebugRay>& rays, float lineWidth)
+{
+    std::cout << "[DEBUG] drawDebugRays called with " << rays.size() << " rays" << std::endl;
+
+    if (rays.empty()) return;
+
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT);
+
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);  // Временно отключаем для теста
+    glDisable(GL_CULL_FACE);
+
+    glLineWidth(lineWidth);
+
+    int drawnLines = 0;
+    for (const auto& ray : rays) {
+        glm::vec3 color;
+        if (ray.hit) {
+            float t = std::min(1.0f, ray.distance / 10.0f);
+            color = glm::vec3(1.0f, 1.0f - t * 0.5f, 0.0f);
+        }
+        else {
+            color = glm::vec3(0.2f, 0.6f, 1.0f);
+        }
+
+        // Проверяем, что координаты разумные
+        if (glm::length(ray.origin - ray.hitPoint) < 50.0f) {
+            drawRay(ray, color);
+            drawnLines++;
+        }
+    }
+
+    std::cout << "[DEBUG] Actually drew " << drawnLines << " rays" << std::endl;
+
+    glPopAttrib();
+    glEnable(GL_DEPTH_TEST);
+}
+
+void GameRenderer::drawRay(const DebugRay& ray, const glm::vec3& color)
+{
+    // Рисуем линию ярким цветом
+    glLineWidth(3.0f);
+    glBegin(GL_LINES);
+    glColor3f(1.0f, 1.0f, 0.0f);  // Ярко-жёлтый для теста
+    glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
+    glVertex3f(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);
+    glEnd();
+
+    // Большая красная сфера в точке попадания
+    glColor3f(1.0f, 0.0f, 0.0f);
+    drawSphereImmediate(ray.hitPoint, 0.15f);
+
+    // Большая зелёная сфера в начале луча
+    glColor3f(0.0f, 1.0f, 0.0f);
+    drawSphereImmediate(ray.origin, 0.1f);
+}
+
+void GameRenderer::toggleDebugRays()
+{
+    m_debugRaysEnabled = !m_debugRaysEnabled;
+
+    std::cout << "[DEBUG] toggleDebugRays: m_debugRaysEnabled=" << m_debugRaysEnabled << std::endl;
+
+    m_staticShadow.enableDebugRays(m_debugRaysEnabled);
+    m_dynamicShadow.enableDebugRays(m_debugRaysEnabled);
+
+    if (m_debugRaysEnabled) {
+        std::cout << "[DEBUG] Enabling debug rays, forcing shadow recompute" << std::endl;
+        m_staticShadowsDirty = true;
+        m_dynamicShadowsDirty = true;
+        shadow_map = true;  // Принудительно включаем теневую карту
+    }
 }
 // Добавить в GameRenderer.cpp после traceRay метода
 HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
@@ -354,12 +565,12 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     drawLightSource();
     drawFood(objects.getFood());
     drawSnake(objects.getSnake());
-
     auto drawEnd = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
     auto drawMs = std::chrono::duration_cast<std::chrono::milliseconds>(drawEnd - drawStart).count();  // ДОБАВИТЬ
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    drawDebugRaysIfEnabled();
 
     auto frameEndTime = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
     auto frameMs = std::chrono::duration_cast<std::chrono::milliseconds>(frameEndTime - frameStartTime).count();  // ДОБАВИТЬ

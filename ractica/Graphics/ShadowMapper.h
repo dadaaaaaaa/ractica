@@ -3,8 +3,24 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <functional>
+#include <iostream>
 
 struct Ray;
+struct HitInfo;
+
+// Структура для хранения информации о луче для отладки
+struct DebugRay {
+    glm::vec3 origin;
+    glm::vec3 direction;
+    glm::vec3 hitPoint;
+    float distance;
+    bool hit;
+    int rayId;
+
+    DebugRay() : origin(0.0f), direction(0.0f), hitPoint(0.0f),
+        distance(0.0f), hit(false), rayId(-1) {
+    }
+};
 
 struct ShadowSample {
     bool computed;
@@ -21,6 +37,7 @@ struct BoundingSphere {
     BoundingSphere() : center(0.0f), radius(0.0f) {}
     BoundingSphere(const glm::vec3& c, float r) : center(c), radius(r) {}
 };
+
 
 class ShadowMapper {
 private:
@@ -44,6 +61,11 @@ private:
 
     std::vector<BoundingSphere> m_objectSpheres;
     std::function<bool(const struct Ray&, float&, glm::vec3&)> m_intersectCallback;
+
+    // ===== ОТЛАДОЧНЫЕ ЛУЧИ =====
+    std::vector<DebugRay> m_debugRays;
+    bool m_recordDebugRays;
+    int m_nextRayId;
 
 public:
     ShadowMapper();
@@ -87,7 +109,23 @@ public:
     glm::vec3 getVertexPosition(int sampleX, int sampleZ) const;
     bool isInGridBounds(int x, int z) const;
 
+    // ===== ОТЛАДОЧНЫЕ МЕТОДЫ ДЛЯ ЛУЧЕЙ =====
+    void enableDebugRays(bool enable) { m_recordDebugRays = enable; }
+    bool isDebugRaysEnabled() const { return m_recordDebugRays; }
+    void clearDebugRays() { m_debugRays.clear(); m_nextRayId = 0; }
+    const std::vector<DebugRay>& getDebugRays() const { return m_debugRays; }
+
+    // Получить последние N лучей для отображения
+    std::vector<DebugRay> getLastDebugRays(int count = 100) const;
+
+    // Получить лучи, попавшие в определённую область
+    std::vector<DebugRay> getDebugRaysInArea(const glm::vec3& center, float radius) const;
+
 private:
     bool intersectsAnyBoundingSphere(const struct Ray& ray, float& hitDistance);
     float bilinearInterpolate(float x, float z) const;
+
+    // ===== ОТЛАДОЧНЫЙ МЕТОД ДЛЯ ЗАПИСИ ЛУЧА =====
+    void recordRay(const glm::vec3& origin, const glm::vec3& direction,
+        const glm::vec3& hitPoint, float distance, bool hit);
 };

@@ -14,8 +14,12 @@ ShadowMapper::ShadowMapper()
     , m_strideZ(20)
     , m_totalSamplesX(0)
     , m_totalSamplesZ(0)
+    , m_lightType(LightType::Directional)
+    , m_lightPos(0.0f, 5.0f, 0.0f)
     , m_lightDirection(1.0f, 0.2f, 0.5f)
     , m_lightColor(0.9f, 0.85f, 0.75f)
+    , m_recordDebugRays(false)
+    , m_nextRayId(0)
 {
     m_lightDirection = glm::normalize(m_lightDirection);
     setGrid(0, 0, 0.1f, 0.0f);
@@ -28,12 +32,16 @@ ShadowMapper::ShadowMapper(int width, int depth, float cellSize, float groundHei
     , m_gridDepth(depth)
     , m_cellSize(cellSize)
     , m_groundHeight(groundHeight)
-    , m_strideX(3)
-    , m_strideZ(3)
-    , m_totalSamplesX(width / m_strideX)
-    , m_totalSamplesZ(depth / m_strideZ)
+    , m_strideX(strideX)
+    , m_strideZ(strideZ)
+    , m_totalSamplesX(width / strideX)
+    , m_totalSamplesZ(depth / strideZ)
+    , m_lightType(LightType::Directional)
+    , m_lightPos(0.0f, 5.0f, 0.0f)
     , m_lightDirection(glm::normalize(lightDirection))
     , m_lightColor(lightColor)
+    , m_recordDebugRays(false)
+    , m_nextRayId(0)
 {
     setGrid(width, depth, cellSize, groundHeight);
 }
@@ -45,8 +53,14 @@ void ShadowMapper::setGrid(int width, int depth, float cellSize, float groundHei
     m_cellSize = cellSize;
     m_groundHeight = groundHeight;
 
+    if (m_strideX <= 0) m_strideX = 1;
+    if (m_strideZ <= 0) m_strideZ = 1;
+
     m_totalSamplesX = m_gridWidth / m_strideX;
     m_totalSamplesZ = m_gridDepth / m_strideZ;
+
+    if (m_totalSamplesX <= 0) m_totalSamplesX = 1;
+    if (m_totalSamplesZ <= 0) m_totalSamplesZ = 1;
 
     std::cout << "=== ShadowMapper Grid Setup ===" << std::endl;
     std::cout << "Game grid cells: " << m_gridWidth << " x " << m_gridDepth << std::endl;
@@ -110,6 +124,59 @@ void ShadowMapper::setIntersectCallback(std::function<bool(const Ray&, float&, g
     m_intersectCallback = callback;
 }
 
+// ===== ОТЛАДОЧНЫЙ МЕТОД ДЛЯ ЗАПИСИ ЛУЧА =====
+void ShadowMapper::recordRay(const glm::vec3& origin, const glm::vec3& direction,
+    const glm::vec3& hitPoint, float distance, bool hit)
+{
+    if (!m_recordDebugRays) return;
+
+    DebugRay ray;
+    ray.origin = origin;
+    ray.direction = glm::normalize(direction);
+    ray.hitPoint = hitPoint;
+    ray.distance = distance;
+    ray.hit = hit;
+    ray.rayId = m_nextRayId++;
+
+    m_debugRays.push_back(ray);
+
+    // Выводим первый луч для проверки
+    if (m_debugRays.size() == 1) {
+        std::cout << "[DEBUG] First ray recorded! Origin=("
+            << origin.x << "," << origin.y << "," << origin.z << ")"
+            << " HitPoint=(" << hitPoint.x << "," << hitPoint.y << "," << hitPoint.z << ")"
+            << " Hit=" << hit << std::endl;
+    }
+
+    const int MAX_DEBUG_RAYS = 2000;
+    if (m_debugRays.size() > MAX_DEBUG_RAYS) {
+        m_debugRays.erase(m_debugRays.begin());
+    }
+}
+
+std::vector<DebugRay> ShadowMapper::getLastDebugRays(int count) const
+{
+    std::vector<DebugRay> result;
+    int startIdx = std::max(0, (int)m_debugRays.size() - count);
+    for (int i = startIdx; i < (int)m_debugRays.size(); i++) {
+        result.push_back(m_debugRays[i]);
+    }
+    return result;
+}
+
+std::vector<DebugRay> ShadowMapper::getDebugRaysInArea(const glm::vec3& center, float radius) const
+{
+    std::vector<DebugRay> result;
+    for (const auto& ray : m_debugRays) {
+        float distToOrigin = glm::length(ray.origin - center);
+        float distToHit = glm::length(ray.hitPoint - center);
+        if (distToOrigin < radius || distToHit < radius) {
+            result.push_back(ray);
+        }
+    }
+    return result;
+}
+
 bool ShadowMapper::intersectsAnyBoundingSphere(const Ray& ray, float& hitDistance)
 {
     float closestHit = 1000.0f;
@@ -147,21 +214,57 @@ bool ShadowMapper::intersectsAnyBoundingSphere(const Ray& ray, float& hitDistanc
 bool ShadowMapper::isVertexInShadow(const glm::vec3& position)
 {
     glm::vec3 rayOrigin = position + glm::vec3(0.0f, 0.02f, 0.0f);
-    Ray shadowRay(rayOrigin, -m_lightDirection);
+    glm::vec3 rayDirection = -m_lightDirection;
+    Ray shadowRay(rayOrigin, rayDirection);
 
+    float hitDistance = 0.0f;
+    glm::vec3 hitPoint;
+    bool hit = false;
+
+    // Проверяем пересечение со сферами
     float sphereHitDistance;
     if (intersectsAnyBoundingSphere(shadowRay, sphereHitDistance)) {
+        hit = true;
+        hitDistance = sphereHitDistance;
+        hitPoint = rayOrigin + rayDirection * hitDistance;
+
+        // Если есть callback, уточняем пересечение
         if (m_intersectCallback) {
             float exactHitDistance;
-            glm::vec3 hitPoint;
-            if (m_intersectCallback(shadowRay, exactHitDistance, hitPoint)) {
-                return true;
+            glm::vec3 exactHitPoint;
+            if (m_intersectCallback(shadowRay, exactHitDistance, exactHitPoint)) {
+                hitDistance = exactHitDistance;
+                hitPoint = exactHitPoint;
+                hit = true;
             }
         }
-        return true;
+    }
+    // Проверяем через callback если сферы не дали хит
+    else if (m_intersectCallback) {
+        if (m_intersectCallback(shadowRay, hitDistance, hitPoint)) {
+            hit = true;
+        }
     }
 
-    return false;
+    // ЗАПИСЫВАЕМ ЛУЧ ДЛЯ ОТЛАДКИ
+    if (m_recordDebugRays) {
+        if (hit) {
+            recordRay(rayOrigin, rayDirection, hitPoint, hitDistance, true);
+        }
+        else {
+            // Луч не попал в объект - считаем пересечение с полом
+            float groundDistance = (-rayOrigin.y) / rayDirection.y;
+            if (groundDistance > 0) {
+                glm::vec3 groundHit = rayOrigin + rayDirection * groundDistance;
+                recordRay(rayOrigin, rayDirection, groundHit, groundDistance, false);
+            }
+            else {
+                recordRay(rayOrigin, rayDirection, rayOrigin + rayDirection * 20.0f, 20.0f, false);
+            }
+        }
+    }
+
+    return hit;
 }
 
 void ShadowMapper::computeShadows()
@@ -170,11 +273,20 @@ void ShadowMapper::computeShadows()
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
+    // Очищаем лучи перед новым вычислением
+    if (m_recordDebugRays) {
+        clearDebugRays();
+        std::cout << "Recording debug rays for shadow computation..." << std::endl;
+    }
+
     std::cout << "\n=== SHADOW MAPPER: Computing shadows ===" << std::endl;
     std::cout << "Game grid: " << m_gridWidth << " x " << m_gridDepth << std::endl;
     std::cout << "Stride: " << m_strideX << ":" << m_strideZ << std::endl;
     std::cout << "Shadow samples: " << m_totalSamplesX << " x " << m_totalSamplesZ << std::endl;
     std::cout << "Total samples: " << (m_totalSamplesX * m_totalSamplesZ) << std::endl;
+    if (m_recordDebugRays) {
+        std::cout << "DEBUG RAYS ENABLED - recording all shadow rays!" << std::endl;
+    }
 
     int totalVertices = m_totalSamplesX * m_totalSamplesZ;
     int shadowCount = 0;
@@ -203,11 +315,21 @@ void ShadowMapper::computeShadows()
     std::cout << "Shadows: " << shadowCount << " / " << totalVertices
         << " (" << shadowPercent << "% in shadow)" << std::endl;
     std::cout << "Time: " << durationMs << " ms" << std::endl;
+    if (m_recordDebugRays) {
+        std::cout << "Debug rays recorded: " << m_debugRays.size() << std::endl;
+    }
     std::cout << "=========================================\n" << std::endl;
 }
 
 float ShadowMapper::bilinearInterpolate(float x, float z) const
 {
+    if (m_totalSamplesX <= 1 || m_totalSamplesZ <= 1) {
+        if (!m_shadowGrid.empty() && !m_shadowGrid[0].empty()) {
+            return m_shadowGrid[0][0].value;
+        }
+        return 1.0f;
+    }
+
     float halfWidth = m_gridWidth * m_cellSize / 2.0f;
     float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 

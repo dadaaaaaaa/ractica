@@ -103,21 +103,13 @@ private:
     glm::vec3 m_lightPos;
     int m_samplesPerCellX;  // Сэмплов на клетку по X (1 = 1:1, 2 = 1:2 и т.д.)
     int m_samplesPerCellZ;  // Сэмплов на клетку по Z
-    bool m_showRayVisualization;
-    std::vector<std::pair<glm::vec3, glm::vec3>> m_debugRays;  // Для хранения лучей для отрисовки
-    std::vector<glm::vec3> m_hitPoints;  // Точки пересечения
-
-    // Позиции для теней
-    std::vector<glm::vec3> m_shadowLightPositions;  // 4 позиции источника света
-    int m_currentShadowPosition;
+    void drawDebugRays(const std::vector<DebugRay>& rays, float lineWidth = 1.0f);
+    void drawRay(const DebugRay& ray, const glm::vec3& color);
+    void drawSphereImmediate(const glm::vec3& center, float radius);
+    bool m_debugRaysEnabled = false;
 public:
-    void computeShadowsAtPositions(const GameObjects& objects, int positionIndex);
-    void visualizeShadowRays(const GameObjects& objects);
-    void toggleRayVisualization() { m_showRayVisualization = !m_showRayVisualization; }
-    bool isRayVisualizationEnabled() const { return m_showRayVisualization; }
-
-    // Рендер лучей для визуализации
-    void renderShadowRays(const GameObjects& objects);
+    void toggleDebugRays();
+    void drawDebugRaysIfEnabled();
     GameRenderer();
     glm::vec3 traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, int depth = 0);
     void drawLightSource();
