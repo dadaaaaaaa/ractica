@@ -107,6 +107,7 @@ private:
     void drawRay(const DebugRay& ray, const glm::vec3& color);
     void drawSphereImmediate(const glm::vec3& center, float radius);
     bool m_debugRaysEnabled = false;
+    bool m_showGroundRays = false;
 public:
     void toggleDebugRays();
     void drawDebugRaysIfEnabled();

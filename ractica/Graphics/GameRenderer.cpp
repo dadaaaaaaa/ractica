@@ -30,58 +30,65 @@ extern std::string g_modelsPath;
 extern std::string g_texturesPath;
 
 GameRenderer::GameRenderer()
-    : skyColor(0.53f, 0.81f, 0.92f)
-    , floorColor(0.3f, 0.6f, 0.2f)
-    , gridColor(0.2f, 0.5f, 0.15f)
-    , useFloorTexture(false)
-    , gridEnabled(true)
-    , gridLineWidth(1.0f)
-    , m_gridWidth(120)
-    , m_gridDepth(120)
-    , m_cellSize(0.1f)
-    , m_rayTracingEnabled(false)
-    , m_renderWireframe(false)
-    , m_rayTracingStepSize(1)
-    , m_rayTracingUseAdaptive(true)
-    , shadow_map(false)
-    , m_shadowStrideX(1)
-    , m_shadowStrideZ(1)
+    : skyColor(0.53f, 0.81f, 0.92f)      // Цвет неба (голубоватый)
+    , floorColor(0.3f, 0.6f, 0.2f)       // Цвет пола (зелёный, трава)
+    , gridColor(0.2f, 0.5f, 0.15f)       // Цвет сетки на полу (тёмно-зелёный)
+    , useFloorTexture(false)              // Использовать текстуру для пола (выкл)
+        , gridEnabled(true)                   // Включить отрисовку сетки на полу
+    , gridLineWidth(1.0f)                // Толщина линий сетки (1 пиксель)
+    , m_gridWidth(120)                    // Ширина сетки в клетках (120 клеток)
+    , m_gridDepth(120)                    // Глубина сетки в клетках (120 клеток)
+    , m_cellSize(0.1f)                   // Размер одной клетки в метрах (10 см)
+        , m_rayTracingEnabled(false)          // Включена ли трассировка лучей (выкл)
+    , m_renderWireframe(false)            // Рендерить в каркасном режиме (выкл)
+    , m_rayTracingStepSize(1)             // Шаг трассировки (1 = каждый пиксель)
+    , m_rayTracingUseAdaptive(true)       // Использовать адаптивную выборку
+        , shadow_map(false)                   // Включено ли отображение теней (выкл)
+    , m_shadowStrideX(8)                  // Шаг теней по X (1 = каждая клетка)
+    , m_shadowStrideZ(8)                  // Шаг теней по Z (1 = каждая клетка)
 {
-    m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));
-    m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    m_lightType = LightType::Directional;
-    m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f);
+    m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));  // Направление света
+        m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);  // Цвет света (белый)
+        m_lightType = LightType::Spot;        // Тип света (направленный, как солнце) Points (точечный), Spot (прожектор), Directional (направленный свет)
+        //(для поинтс важно только m_lightPos, для прожектора m_lightDir грубоговоря угол m_lightPos высота,а для направленного только m_lightDir)
+    m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f);    // Позиция источника света (для точечного/прожектора)
 }
 
 void GameRenderer::resetShadows() {
+
     m_staticShadow = ShadowMapper(
         m_gridWidth,
         m_gridDepth,
         m_cellSize,
-        0.0f,
+        gridLineWidth,
         m_lightDir,
         m_lightColor,
-        1,  // stride по X
-        1  // stride по Z
+        m_lightType,
+        m_lightPos,
+        m_shadowStrideX,  // strideX
+        m_shadowStrideZ   // strideZ
     );
 
     m_dynamicShadow = ShadowMapper(
         m_gridWidth,
         m_gridDepth,
         m_cellSize,
-        0.0f,
+        gridLineWidth,
         m_lightDir,
         m_lightColor,
-        1,
-        1
+        m_lightType,
+        m_lightPos,
+        m_shadowStrideX,  // strideX
+        m_shadowStrideZ
     );
 
     m_staticShadowsDirty = true;
     m_dynamicShadowsDirty = true;
 
-    std::cout << "Shadows reset with ratio: "
-        << m_shadowStrideX << ":" << m_shadowStrideZ << std::endl;
+    std::cout << "Shadows reset. Total samples: "
+        << (m_gridWidth * m_gridDepth) << std::endl;
 }
+
 void GameRenderer::drawSphereImmediate(const glm::vec3& center, float radius)
 {
     const int segments = 12;
@@ -133,7 +140,7 @@ void GameRenderer::drawDebugRaysIfEnabled()
     if (staticRays.empty() && dynamicRays.empty()) return;
 
     std::cout << "[DEBUG] Drawing " << (staticRays.size() + dynamicRays.size()) << " rays" << std::endl;
-
+    std::cout << "[DEBUG] Show ground rays: " << (m_showGroundRays ? "YES" : "NO") << std::endl;
 
     g_shaderManager.setGridEnabled(false);
     g_shaderManager.setIsFloor(false);
@@ -148,12 +155,13 @@ void GameRenderer::drawDebugRaysIfEnabled()
     glUniformMatrix4fv(modelLoc, 1, GL_FALSE, &identity[0][0]);
 
     // Собираем все вершины для линий
-    std::vector<float> hitLines;      // Лучи, которые попали (красные)
-    std::vector<float> missLines;     // Лучи, которые не попали (голубые)
+    std::vector<float> hitLines;      // Лучи, которые попали в объекты (красные)
+    std::vector<float> missLines;     // Лучи, которые попали в пол (голубые) - только если включено
 
     auto addRays = [&](const std::vector<DebugRay>& rays) {
         for (const auto& ray : rays) {
             if (ray.hit) {
+                // Лучи, попавшие в объекты - всегда красные
                 hitLines.push_back(ray.origin.x);
                 hitLines.push_back(ray.origin.y);
                 hitLines.push_back(ray.origin.z);
@@ -162,12 +170,15 @@ void GameRenderer::drawDebugRaysIfEnabled()
                 hitLines.push_back(ray.hitPoint.z);
             }
             else {
-                missLines.push_back(ray.origin.x);
-                missLines.push_back(ray.origin.y);
-                missLines.push_back(ray.origin.z);
-                missLines.push_back(ray.hitPoint.x);
-                missLines.push_back(ray.hitPoint.y);
-                missLines.push_back(ray.hitPoint.z);
+                // Лучи, попавшие в пол - только если включено m_showGroundRays
+                if (m_showGroundRays) {
+                    missLines.push_back(ray.origin.x);
+                    missLines.push_back(ray.origin.y);
+                    missLines.push_back(ray.origin.z);
+                    missLines.push_back(ray.hitPoint.x);
+                    missLines.push_back(ray.hitPoint.y);
+                    missLines.push_back(ray.hitPoint.z);
+                }
             }
         }
         };
@@ -175,9 +186,12 @@ void GameRenderer::drawDebugRaysIfEnabled()
     addRays(staticRays);
     addRays(dynamicRays);
 
-    // Рисуем красные линии (попавшие лучи)
+    std::cout << "[DEBUG] Hit rays (red): " << (hitLines.size() / 6) << std::endl;
+    std::cout << "[DEBUG] Miss rays (blue): " << (missLines.size() / 6) << std::endl;
+
+    // Рисуем красные линии (попавшие в объекты) - ЯРКО-КРАСНЫЕ
     if (!hitLines.empty()) {
-        glUniform3f(colorLoc, 1.0f, 0.2f, 0.2f);  // Красный
+        glUniform3f(colorLoc, 1.0f, 0.0f, 0.0f);  // Ярко-красный
 
         GLuint vao, vbo;
         glGenVertexArrays(1, &vao);
@@ -189,14 +203,14 @@ void GameRenderer::drawDebugRaysIfEnabled()
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
         glEnableVertexAttribArray(0);
 
-        glLineWidth(1.5f);
+        glLineWidth(2.0f);
         glDrawArrays(GL_LINES, 0, hitLines.size() / 3);
 
         glDeleteVertexArrays(1, &vao);
         glDeleteBuffers(1, &vbo);
     }
 
-    // Рисуем голубые линии (непопавшие лучи)
+    // Рисуем голубые линии (попавшие в пол) - только если включено
     if (!missLines.empty()) {
         glUniform3f(colorLoc, 0.2f, 0.6f, 1.0f);  // Голубой
 
@@ -216,7 +230,6 @@ void GameRenderer::drawDebugRaysIfEnabled()
         glDeleteVertexArrays(1, &vao);
         glDeleteBuffers(1, &vbo);
     }
-
 }
 
 void GameRenderer::drawDebugRays(const std::vector<DebugRay>& rays, float lineWidth)
@@ -379,13 +392,22 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
     return closestHit;
 }
 void GameRenderer::initialize() {
+    glm::vec3 lightDir = glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f));
+    glm::vec3 lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
+    LightType lightType = LightType::Directional;
+    glm::vec3 lightPos = glm::vec3(0.0f, 10.0f, 0.0f);
+
     m_staticShadow = ShadowMapper(
         m_gridWidth,
         m_gridDepth,
         m_cellSize,
-        0.0f,
+        gridLineWidth,
         m_lightDir,
-        m_lightColor
+        m_lightColor,
+        m_lightType,
+        m_lightPos,
+        m_shadowStrideX, 
+        m_shadowStrideZ
     );
 
     m_dynamicShadow = m_staticShadow;
@@ -1394,30 +1416,73 @@ void GameRenderer::markDynamicShadowsDirty() {
 }
 void GameRenderer::drawLightSource() {
 
-    // позиция "солнца" (просто далеко в сторону света)
-    glm::vec3 lightPos = -m_lightDir * 5.0f;
+    if (m_lightType == LightType::Directional) {
+        // ===== НАПРАВЛЕННЫЙ СВЕТ (СОЛНЦЕ) =====
+        glm::vec3 lightPos = -m_lightDir * 5.0f;
 
-    // === РИСУЕМ СФЕРУ (солнце) ===
-    glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, lightPos);
-    model = glm::scale(model, glm::vec3(0.2f));
+        // Рисуем сферу с прозрачностью (альфа-блендинг)
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    g_shaderManager.setModelMatrix(model);
-    g_shaderManager.setColor(glm::vec3(1.0f, 1.0f, 0.2f)); // жёлтое солнце
-    g_shaderManager.setUseTexture(false);
-    g_shaderManager.setIsFloor(false);
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, lightPos);
+        model = glm::scale(model, glm::vec3(0.2f));
 
-    spherePrimitive.draw(); // или cubePrimitive если нет сферы
+        g_shaderManager.setModelMatrix(model);
+        g_shaderManager.setColor(glm::vec3(1.0f, 1.0f, 0.2f));
+        g_shaderManager.setUseTexture(false);
+        g_shaderManager.setIsFloor(false);
+        spherePrimitive.draw();
 
-    // === РИСУЕМ ЛУЧ (линия направления) ===
-    glm::vec3 start = lightPos;
-    glm::vec3 end = lightPos + m_lightDir * 2.0f;
+        glDisable(GL_BLEND);
 
-    glBegin(GL_LINES);
-    glColor3f(1.0f, 1.0f, 0.0f);
-    glVertex3f(start.x, start.y, start.z);
-    glVertex3f(end.x, end.y, end.z);
-    glEnd();
+    }
+    else if (m_lightType == LightType::Points) {
+        // ===== ТОЧЕЧНЫЙ СВЕТ =====
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, m_lightPos);
+        model = glm::scale(model, glm::vec3(0.25f));
+
+        g_shaderManager.setModelMatrix(model);
+        g_shaderManager.setColor(glm::vec3(1.0f, 0.8f, 0.3f));
+        g_shaderManager.setUseTexture(false);
+        g_shaderManager.setIsFloor(false);
+        spherePrimitive.draw();
+
+        glDisable(GL_BLEND);
+    }
+    else if (m_lightType == LightType::Spot) {
+        // ===== ПРОЖЕКТОР =====
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, m_lightPos);
+        model = glm::scale(model, glm::vec3(0.2f));
+
+        g_shaderManager.setModelMatrix(model);
+        g_shaderManager.setColor(glm::vec3(1.0f, 1.0f, 0.5f));
+        g_shaderManager.setUseTexture(false);
+        g_shaderManager.setIsFloor(false);
+        spherePrimitive.draw();
+
+        glDisable(GL_BLEND);
+
+        // Рисуем конус прожектора (направление)
+        glm::vec3 direction = glm::normalize(m_lightDir);
+        glm::vec3 end = m_lightPos + direction * 2.0f;
+
+        glDisable(GL_LIGHTING);
+        glBegin(GL_LINES);
+        glColor3f(1.0f, 1.0f, 0.0f);
+        glVertex3f(m_lightPos.x, m_lightPos.y, m_lightPos.z);
+        glVertex3f(end.x, end.y, end.z);
+        glEnd();
+        glEnable(GL_LIGHTING);
+    }
 }
 void GameRenderer::createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
     float width, float height, const glm::vec3& color) {

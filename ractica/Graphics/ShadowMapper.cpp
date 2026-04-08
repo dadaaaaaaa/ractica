@@ -12,8 +12,8 @@ ShadowMapper::ShadowMapper()
     , m_groundHeight(0.0f)
     , m_strideX(1)
     , m_strideZ(20)
-    , m_totalSamplesX(0)
-    , m_totalSamplesZ(0)
+    , m_totalSamplesX(1)
+    , m_totalSamplesZ(1)
     , m_lightType(LightType::Directional)
     , m_lightPos(0.0f, 5.0f, 0.0f)
     , m_lightDirection(1.0f, 0.2f, 0.5f)
@@ -26,7 +26,8 @@ ShadowMapper::ShadowMapper()
 }
 
 ShadowMapper::ShadowMapper(int width, int depth, float cellSize, float groundHeight,
-    glm::vec3 lightDirection, glm::vec3 lightColor,
+    const glm::vec3& lightDirection, const glm::vec3& lightColor,
+    LightType lightType, const glm::vec3& lightPos,
     int strideX, int strideZ)
     : m_gridWidth(width)
     , m_gridDepth(depth)
@@ -36,8 +37,8 @@ ShadowMapper::ShadowMapper(int width, int depth, float cellSize, float groundHei
     , m_strideZ(strideZ)
     , m_totalSamplesX(width / strideX)
     , m_totalSamplesZ(depth / strideZ)
-    , m_lightType(LightType::Directional)
-    , m_lightPos(0.0f, 5.0f, 0.0f)
+    , m_lightType(lightType)
+    , m_lightPos(lightPos)
     , m_lightDirection(glm::normalize(lightDirection))
     , m_lightColor(lightColor)
     , m_recordDebugRays(false)
@@ -124,7 +125,6 @@ void ShadowMapper::setIntersectCallback(std::function<bool(const Ray&, float&, g
     m_intersectCallback = callback;
 }
 
-// ===== ОТЛАДОЧНЫЙ МЕТОД ДЛЯ ЗАПИСИ ЛУЧА =====
 void ShadowMapper::recordRay(const glm::vec3& origin, const glm::vec3& direction,
     const glm::vec3& hitPoint, float distance, bool hit)
 {
@@ -135,20 +135,13 @@ void ShadowMapper::recordRay(const glm::vec3& origin, const glm::vec3& direction
     ray.direction = glm::normalize(direction);
     ray.hitPoint = hitPoint;
     ray.distance = distance;
-    ray.hit = hit;
+    ray.hit = hit;      // true = есть пересечение с объектом (луч будет красным)
     ray.rayId = m_nextRayId++;
 
     m_debugRays.push_back(ray);
 
-    // Выводим первый луч для проверки
-    if (m_debugRays.size() == 1) {
-        std::cout << "[DEBUG] First ray recorded! Origin=("
-            << origin.x << "," << origin.y << "," << origin.z << ")"
-            << " HitPoint=(" << hitPoint.x << "," << hitPoint.y << "," << hitPoint.z << ")"
-            << " Hit=" << hit << std::endl;
-    }
-
-    const int MAX_DEBUG_RAYS = 2000;
+    // Ограничиваем количество хранимых лучей (20000 = 120x120 + запас)
+    const int MAX_DEBUG_RAYS = m_totalSamplesX * m_totalSamplesZ;    
     if (m_debugRays.size() > MAX_DEBUG_RAYS) {
         m_debugRays.erase(m_debugRays.begin());
     }
@@ -213,55 +206,79 @@ bool ShadowMapper::intersectsAnyBoundingSphere(const Ray& ray, float& hitDistanc
 
 bool ShadowMapper::isVertexInShadow(const glm::vec3& position)
 {
-    glm::vec3 rayOrigin = position + glm::vec3(0.0f, 0.02f, 0.0f);
-    glm::vec3 rayDirection = -m_lightDirection;
-    Ray shadowRay(rayOrigin, rayDirection);
+    // Точка на полу
+    glm::vec3 groundPoint = position + glm::vec3(0.0f, 0.05f, 0.0f);
 
+    glm::vec3 rayOrigin;
+    glm::vec3 rayDirection;
+    float maxRayDistance = 50.0f;
+    glm::vec3 endPoint;
+    bool hit = false;
     float hitDistance = 0.0f;
     glm::vec3 hitPoint;
-    bool hit = false;
 
-    // Проверяем пересечение со сферами
-    float sphereHitDistance;
-    if (intersectsAnyBoundingSphere(shadowRay, sphereHitDistance)) {
-        hit = true;
-        hitDistance = sphereHitDistance;
-        hitPoint = rayOrigin + rayDirection * hitDistance;
+    if (m_lightType == LightType::Directional) {
+        // ===== НАПРАВЛЕННЫЙ СВЕТ =====
+        // Луч от точки на полу к солнцу
+        rayOrigin = groundPoint;
+        rayDirection = -m_lightDirection;
+        endPoint = rayOrigin + rayDirection * maxRayDistance;
+    }
+    else if (m_lightType == LightType::Points) {
+        // ===== ТОЧЕЧНЫЙ СВЕТ =====
+        // Луч от точки на полу к источнику
+        rayOrigin = groundPoint;
+        rayDirection = glm::normalize(m_lightPos - groundPoint);
+        maxRayDistance = glm::length(m_lightPos - groundPoint);
+        endPoint = m_lightPos;
+    }
+    else if (m_lightType == LightType::Spot) {
+        // ===== ПРОЖЕКТОР =====
+        // Луч ОТ ПРОЖЕКТОРА к точке на полу
+        rayOrigin = m_lightPos;                                    // Начинаем от прожектора
+        rayDirection = glm::normalize(groundPoint - m_lightPos);   // Направление к точке на полу
+        maxRayDistance = glm::length(groundPoint - m_lightPos);    // Расстояние до точки
+        endPoint = groundPoint;                                     // Конец луча - точка на полу
 
-        // Если есть callback, уточняем пересечение
-        if (m_intersectCallback) {
-            float exactHitDistance;
-            glm::vec3 exactHitPoint;
-            if (m_intersectCallback(shadowRay, exactHitDistance, exactHitPoint)) {
+        // Проверяем, находится ли точка В КОНУСЕ прожектора
+        glm::vec3 lightDirNormalized = glm::normalize(m_lightDirection);  // Направление прожектора
+        float cosAngle = glm::dot(rayDirection, lightDirNormalized);      // Угол между лучом и направлением прожектора
+        float spotAngle = 0.866f;  // cos(30°) - угол конуса 30 градусов
+
+        // Если точка ВНЕ конуса прожектора - она в тени
+        if (cosAngle < spotAngle) {
+            if (m_recordDebugRays) {
+                // Рисуем луч от прожектора до точки (вне конуса)
+                recordRay(rayOrigin, rayDirection, endPoint, maxRayDistance, true);
+            }
+            return true;  // Вне конуса - тень
+        }
+    }
+
+    Ray shadowRay(rayOrigin, rayDirection);
+
+    // ===== ПРОВЕРКА ПЕРЕСЕЧЕНИЯ С ОБЪЕКТАМИ =====
+    float minDistance = 0.01f;
+
+    if (m_intersectCallback) {
+        float exactHitDistance;
+        glm::vec3 exactHitPoint;
+        if (m_intersectCallback(shadowRay, exactHitDistance, exactHitPoint)) {
+            // Проверяем, что пересечение находится между началом луча и конечной точкой
+            if (exactHitDistance > minDistance && exactHitDistance < maxRayDistance) {
+                hit = true;
                 hitDistance = exactHitDistance;
                 hitPoint = exactHitPoint;
-                hit = true;
             }
-        }
-    }
-    // Проверяем через callback если сферы не дали хит
-    else if (m_intersectCallback) {
-        if (m_intersectCallback(shadowRay, hitDistance, hitPoint)) {
-            hit = true;
         }
     }
 
-    // ЗАПИСЫВАЕМ ЛУЧ ДЛЯ ОТЛАДКИ
+    // ===== ЗАПИСЬ ПОЛНОГО ЛУЧА ДЛЯ ОТЛАДКИ =====
     if (m_recordDebugRays) {
-        if (hit) {
-            recordRay(rayOrigin, rayDirection, hitPoint, hitDistance, true);
-        }
-        else {
-            // Луч не попал в объект - считаем пересечение с полом
-            float groundDistance = (-rayOrigin.y) / rayDirection.y;
-            if (groundDistance > 0) {
-                glm::vec3 groundHit = rayOrigin + rayDirection * groundDistance;
-                recordRay(rayOrigin, rayDirection, groundHit, groundDistance, false);
-            }
-            else {
-                recordRay(rayOrigin, rayDirection, rayOrigin + rayDirection * 20.0f, 20.0f, false);
-            }
-        }
+        // Рисуем полный луч (от начала до конца)
+        // hit = true (красный) - есть препятствие на пути
+        // hit = false (голубой) - нет препятствий
+        recordRay(rayOrigin, rayDirection, endPoint, maxRayDistance, hit);
     }
 
     return hit;

@@ -71,8 +71,9 @@ public:
     ShadowMapper();
 
     ShadowMapper(int width, int depth, float cellSize, float groundHeight,
-        glm::vec3 lightDirection, glm::vec3 lightColor,
-        int strideX = 1, int strideZ = 1);
+        const glm::vec3& lightDirection, const glm::vec3& lightColor,
+        LightType lightType, const glm::vec3& lightPos,
+        int strideX, int strideZ);
 
     // Установка соотношения (1:1, 1:2, 2:1)
     void setStride(int strideX, int strideZ) {

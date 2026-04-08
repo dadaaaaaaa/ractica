@@ -19,7 +19,8 @@ struct Vertex {
 };
 enum class LightType {
     Directional,
-    Points
+    Points,
+    Spot
 };
 // Структура для рекордов
 struct HighScore {
