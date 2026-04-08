@@ -10,8 +10,8 @@ ShadowMapper::ShadowMapper()
     , m_gridDepth(0)
     , m_cellSize(0.1f)
     , m_groundHeight(0.0f)
-    , m_samplesPerCellX(1)
-    , m_samplesPerCellZ(1)
+    , m_strideX(1)
+    , m_strideZ(20)
     , m_totalSamplesX(0)
     , m_totalSamplesZ(0)
     , m_lightDirection(1.0f, 0.2f, 0.5f)
@@ -23,15 +23,15 @@ ShadowMapper::ShadowMapper()
 
 ShadowMapper::ShadowMapper(int width, int depth, float cellSize, float groundHeight,
     glm::vec3 lightDirection, glm::vec3 lightColor,
-    int samplesPerCellX, int samplesPerCellZ)
+    int strideX, int strideZ)
     : m_gridWidth(width)
     , m_gridDepth(depth)
     , m_cellSize(cellSize)
     , m_groundHeight(groundHeight)
-    , m_samplesPerCellX(std::max(1, samplesPerCellX))
-    , m_samplesPerCellZ(std::max(1, samplesPerCellZ))
-    , m_totalSamplesX(width* m_samplesPerCellX)
-    , m_totalSamplesZ(depth* m_samplesPerCellZ)
+    , m_strideX(3)
+    , m_strideZ(3)
+    , m_totalSamplesX(width / m_strideX)
+    , m_totalSamplesZ(depth / m_strideZ)
     , m_lightDirection(glm::normalize(lightDirection))
     , m_lightColor(lightColor)
 {
@@ -45,13 +45,13 @@ void ShadowMapper::setGrid(int width, int depth, float cellSize, float groundHei
     m_cellSize = cellSize;
     m_groundHeight = groundHeight;
 
-    m_totalSamplesX = m_gridWidth * m_samplesPerCellX;
-    m_totalSamplesZ = m_gridDepth * m_samplesPerCellZ;
+    m_totalSamplesX = m_gridWidth / m_strideX;
+    m_totalSamplesZ = m_gridDepth / m_strideZ;
 
     std::cout << "=== ShadowMapper Grid Setup ===" << std::endl;
-    std::cout << "Grid cells: " << m_gridWidth << " x " << m_gridDepth << std::endl;
-    std::cout << "Samples per cell: " << m_samplesPerCellX << " x " << m_samplesPerCellZ << std::endl;
-    std::cout << "Total samples: " << m_totalSamplesX << " x " << m_totalSamplesZ << std::endl;
+    std::cout << "Game grid cells: " << m_gridWidth << " x " << m_gridDepth << std::endl;
+    std::cout << "Stride (ratio): " << m_strideX << ":" << m_strideZ << std::endl;
+    std::cout << "Shadow samples: " << m_totalSamplesX << " x " << m_totalSamplesZ << std::endl;
     std::cout << "===============================" << std::endl;
 
     m_shadowGrid.resize(m_totalSamplesZ, std::vector<ShadowSample>(m_totalSamplesX));
@@ -70,20 +70,17 @@ glm::vec3 ShadowMapper::getVertexPosition(int sampleX, int sampleZ) const
     float halfWidth = m_gridWidth * m_cellSize / 2.0f;
     float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 
-    int cellX = sampleX / m_samplesPerCellX;
-    int cellZ = sampleZ / m_samplesPerCellZ;
+    // Преобразуем индекс сэмпла в индекс клетки игровой сетки
+    // С учётом stride (шага)
+    int cellX = sampleX * m_strideX + (m_strideX / 2);
+    int cellZ = sampleZ * m_strideZ + (m_strideZ / 2);
 
-    float offsetInCellX = (float)(sampleX % m_samplesPerCellX) / m_samplesPerCellX;
-    float offsetInCellZ = (float)(sampleZ % m_samplesPerCellZ) / m_samplesPerCellZ;
+    // Ограничиваем, чтобы не выйти за пределы
+    cellX = std::min(cellX, m_gridWidth - 1);
+    cellZ = std::min(cellZ, m_gridDepth - 1);
 
-    float cellCenterX = cellX * m_cellSize - halfWidth + m_cellSize / 2.0f;
-    float cellCenterZ = cellZ * m_cellSize - halfDepth + m_cellSize / 2.0f;
-
-    float offsetX = (offsetInCellX - 0.5f) * m_cellSize;
-    float offsetZ = (offsetInCellZ - 0.5f) * m_cellSize;
-
-    float worldX = cellCenterX + offsetX;
-    float worldZ = cellCenterZ + offsetZ;
+    float worldX = cellX * m_cellSize - halfWidth;
+    float worldZ = cellZ * m_cellSize - halfDepth;
 
     return glm::vec3(worldX, m_groundHeight, worldZ);
 }
@@ -147,10 +144,8 @@ bool ShadowMapper::intersectsAnyBoundingSphere(const Ray& ray, float& hitDistanc
     return hit;
 }
 
-// ПРОСТАЯ ПРОВЕРКА ТЕНИ - БЕЗ СЛУЧАЙНЫХ СМЕЩЕНИЙ
 bool ShadowMapper::isVertexInShadow(const glm::vec3& position)
 {
-    // Луч от точки к источнику света (без случайных смещений)
     glm::vec3 rayOrigin = position + glm::vec3(0.0f, 0.02f, 0.0f);
     Ray shadowRay(rayOrigin, -m_lightDirection);
 
@@ -160,13 +155,13 @@ bool ShadowMapper::isVertexInShadow(const glm::vec3& position)
             float exactHitDistance;
             glm::vec3 hitPoint;
             if (m_intersectCallback(shadowRay, exactHitDistance, hitPoint)) {
-                return true;  // В тени
+                return true;
             }
         }
-        return true;  // В тени
+        return true;
     }
 
-    return false;  // На свету
+    return false;
 }
 
 void ShadowMapper::computeShadows()
@@ -176,42 +171,27 @@ void ShadowMapper::computeShadows()
     auto startTime = std::chrono::high_resolution_clock::now();
 
     std::cout << "\n=== SHADOW MAPPER: Computing shadows ===" << std::endl;
-    std::cout << "Grid cells: " << m_gridWidth << " x " << m_gridDepth << std::endl;
-    std::cout << "Samples per cell: " << m_samplesPerCellX << " x " << m_samplesPerCellZ << std::endl;
-    std::cout << "Total samples: " << m_totalSamplesX << " x " << m_totalSamplesZ << std::endl;
-    std::cout << "Total vertices to process: " << (m_totalSamplesX * m_totalSamplesZ) << std::endl;
-    std::cout << "Cell size: " << m_cellSize << std::endl;
-    std::cout << "Light direction: (" << m_lightDirection.x << ", "
-        << m_lightDirection.y << ", " << m_lightDirection.z << ")" << std::endl;
+    std::cout << "Game grid: " << m_gridWidth << " x " << m_gridDepth << std::endl;
+    std::cout << "Stride: " << m_strideX << ":" << m_strideZ << std::endl;
+    std::cout << "Shadow samples: " << m_totalSamplesX << " x " << m_totalSamplesZ << std::endl;
+    std::cout << "Total samples: " << (m_totalSamplesX * m_totalSamplesZ) << std::endl;
 
     int totalVertices = m_totalSamplesX * m_totalSamplesZ;
     int shadowCount = 0;
 
-    bool showProgress = (totalVertices > 10000);
-    int lastPercent = 0;
-
-    // Простой проход - один луч на точку, без случайных смещений
     for (int sz = 0; sz < m_totalSamplesZ; sz++) {
         for (int sx = 0; sx < m_totalSamplesX; sx++) {
             ShadowSample& sample = m_shadowGrid[sz][sx];
 
             if (isVertexInShadow(sample.position)) {
-                sample.value = 0.3f;  // В тени - 30% света
+                sample.value = 0.3f;
                 shadowCount++;
             }
             else {
-                sample.value = 1.0f;  // На свету - 100% света
+                sample.value = 1.0f;
             }
 
             sample.computed = true;
-        }
-
-        if (showProgress) {
-            int percent = (sz * 100) / m_totalSamplesZ;
-            if (percent != lastPercent && percent % 10 == 0) {
-                std::cout << "  Progress: " << percent << "% (" << sz << "/" << m_totalSamplesZ << " rows)" << std::endl;
-                lastPercent = percent;
-            }
         }
     }
 
@@ -220,19 +200,10 @@ void ShadowMapper::computeShadows()
 
     float shadowPercent = (float)shadowCount / totalVertices * 100.0f;
 
-    std::cout << "Shadows computed: " << shadowCount << " / " << totalVertices
+    std::cout << "Shadows: " << shadowCount << " / " << totalVertices
         << " (" << shadowPercent << "% in shadow)" << std::endl;
-    std::cout << "Time taken: " << durationMs << " ms" << std::endl;
+    std::cout << "Time: " << durationMs << " ms" << std::endl;
     std::cout << "=========================================\n" << std::endl;
-}
-
-float ShadowMapper::getShadowAtSample(int sampleX, int sampleZ) const
-{
-    if (sampleX < 0 || sampleX >= m_totalSamplesX ||
-        sampleZ < 0 || sampleZ >= m_totalSamplesZ) {
-        return 1.0f;
-    }
-    return m_shadowGrid[sampleZ][sampleX].value;
 }
 
 float ShadowMapper::bilinearInterpolate(float x, float z) const
@@ -240,8 +211,9 @@ float ShadowMapper::bilinearInterpolate(float x, float z) const
     float halfWidth = m_gridWidth * m_cellSize / 2.0f;
     float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 
-    float sampleX = (x + halfWidth) / m_cellSize * m_samplesPerCellX;
-    float sampleZ = (z + halfDepth) / m_cellSize * m_samplesPerCellZ;
+    // Преобразуем мировые координаты в индексы сэмплов
+    float sampleX = (x + halfWidth) / (m_cellSize * m_strideX);
+    float sampleZ = (z + halfDepth) / (m_cellSize * m_strideZ);
 
     int x0 = (int)floor(sampleX);
     int z0 = (int)floor(sampleZ);
@@ -281,30 +253,4 @@ float ShadowMapper::getShadowAtWorldPos(float x, float z) const
 bool ShadowMapper::isInGridBounds(int x, int z) const
 {
     return x >= 0 && x < m_totalSamplesX && z >= 0 && z < m_totalSamplesZ;
-}
-
-int ShadowMapper::worldToGridX(float worldX) const
-{
-    float halfWidth = m_gridWidth * m_cellSize / 2.0f;
-    return (int)((worldX + halfWidth) / m_cellSize);
-}
-
-int ShadowMapper::worldToGridZ(float worldZ) const
-{
-    float halfDepth = m_gridDepth * m_cellSize / 2.0f;
-    return (int)((worldZ + halfDepth) / m_cellSize);
-}
-
-int ShadowMapper::worldToSampleX(float worldX) const
-{
-    float halfWidth = m_gridWidth * m_cellSize / 2.0f;
-    float gridX = (worldX + halfWidth) / m_cellSize;
-    return (int)(gridX * m_samplesPerCellX);
-}
-
-int ShadowMapper::worldToSampleZ(float worldZ) const
-{
-    float halfDepth = m_gridDepth * m_cellSize / 2.0f;
-    float gridZ = (worldZ + halfDepth) / m_cellSize;
-    return (int)(gridZ * m_samplesPerCellZ);
 }

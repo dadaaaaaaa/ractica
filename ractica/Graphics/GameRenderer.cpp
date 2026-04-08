@@ -29,7 +29,6 @@ extern Game g_game;
 extern std::string g_modelsPath;
 extern std::string g_texturesPath;
 
-// В конструкторе GameRenderer добавьте:
 GameRenderer::GameRenderer()
     : skyColor(0.53f, 0.81f, 0.92f)
     , floorColor(0.3f, 0.6f, 0.2f)
@@ -45,18 +44,43 @@ GameRenderer::GameRenderer()
     , m_rayTracingStepSize(1)
     , m_rayTracingUseAdaptive(true)
     , shadow_map(false)
+    , m_shadowStrideX(20)
+    , m_shadowStrideZ(20)
 {
     m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));
     m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
     m_lightType = LightType::Directional;
     m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f);
+}
 
-    // Установка соотношения "клетка : сэмплы"
-    // 1:1 - один сэмпл на клетку
-    // 1:2 - один сэмпл на 2 клетки (более грубо, быстрее)
-    // 2:1 - два сэмпла на клетку (более детально, медленнее)
-    m_samplesPerCellX = 8;  // 1 сэмпл на клетку по X
-    m_samplesPerCellZ = 8;  // 1 сэмпл на клетку по Z
+void GameRenderer::resetShadows() {
+    m_staticShadow = ShadowMapper(
+        m_gridWidth,
+        m_gridDepth,
+        m_cellSize,
+        0.0f,
+        m_lightDir,
+        m_lightColor,
+        m_shadowStrideX,  // stride по X
+        m_shadowStrideZ   // stride по Z
+    );
+
+    m_dynamicShadow = ShadowMapper(
+        m_gridWidth,
+        m_gridDepth,
+        m_cellSize,
+        0.0f,
+        m_lightDir,
+        m_lightColor,
+        m_shadowStrideX,
+        m_shadowStrideZ
+    );
+
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+
+    std::cout << "Shadows reset with ratio: "
+        << m_shadowStrideX << ":" << m_shadowStrideZ << std::endl;
 }
 // Добавить в GameRenderer.cpp после traceRay метода
 HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
@@ -158,32 +182,7 @@ void GameRenderer::initialize() {
     initOpenGLSettings();
     initRayTracingResources();
 }
-void GameRenderer::resetShadows() {
-    // Полностью пересоздаем теневые карты
-    m_staticShadow = ShadowMapper(
-        m_gridWidth,
-        m_gridDepth,
-        m_cellSize,
-        0.0f,
-        m_lightDir,
-        m_lightColor
-    );
 
-    m_dynamicShadow = ShadowMapper(
-        m_gridWidth,
-        m_gridDepth,
-        m_cellSize,
-        0.0f,
-        m_lightDir,
-        m_lightColor
-    );
-
-    // Устанавливаем флаги для пересчета
-    m_staticShadowsDirty = true;
-    m_dynamicShadowsDirty = true;
-
-    std::cout << "Shadows reset for new game" << std::endl;
-}
 void GameRenderer::renderGame(const GameObjects& objects) {
     auto frameStartTime = std::chrono::high_resolution_clock::now();  // ДОБАВИТЬ
     static int frameCount = 0;

@@ -1,4 +1,4 @@
-#pragma once
+п»ї#pragma once
 
 #include "../Core/Constants.h"
 #include "../Core/Types.h"
@@ -19,7 +19,7 @@
 #include "ModelLoader.h"
 #include "ShadowMapper.h"
 
-// Структура для текстуры
+// РЎС‚СЂСѓРєС‚СѓСЂР° РґР»СЏ С‚РµРєСЃС‚СѓСЂС‹
 struct Texture {
     unsigned int id;
     int width;
@@ -42,8 +42,10 @@ private:
     Model flowerModel;
     Model treeModel;
     Model appleModel;
+    int m_shadowStrideX = 1;  // 1 = 1:1, 2 = 1:2
+    int m_shadowStrideZ = 1;
 
-    // Примитивы (фолбэки)
+    // РџСЂРёРјРёС‚РёРІС‹ (С„РѕР»Р±СЌРєРё)
     Model cubePrimitive;
     Model spherePrimitive;
     Model applePrimitive;
@@ -58,25 +60,25 @@ private:
 
     static bool doubleBufferingEnabled;
 
-    // Цвета из конфига
+    // Р¦РІРµС‚Р° РёР· РєРѕРЅС„РёРіР°
     glm::vec3 skyColor;
     glm::vec3 floorColor;
     glm::vec3 gridColor;
 
-    // Текстура пола
+    // РўРµРєСЃС‚СѓСЂР° РїРѕР»Р°
     Texture floorTexture;
     bool useFloorTexture;
 
-    // Настройки сетки
+    // РќР°СЃС‚СЂРѕР№РєРё СЃРµС‚РєРё
     bool gridEnabled;
     float gridLineWidth;
 
-    // Размеры игрового поля из конфига
+    // Р Р°Р·РјРµСЂС‹ РёРіСЂРѕРІРѕРіРѕ РїРѕР»СЏ РёР· РєРѕРЅС„РёРіР°
     int m_gridWidth;
     int m_gridDepth;
     float m_cellSize;
 
-    // Ray Tracing настройки
+    // Ray Tracing РЅР°СЃС‚СЂРѕР№РєРё
     bool m_rayTracingEnabled;
     RayTracer m_rayTracer;
     bool m_renderWireframe;
@@ -86,8 +88,8 @@ private:
     GLuint m_rayTracingShader;
     bool m_showTestSquare;
     GLuint m_testVAO, m_testVBO, m_testShader;
-    int m_rayTracingStepSize;      // Через сколько пикселей шагать
-    bool m_rayTracingUseAdaptive;  // Адаптивная выборка
+    int m_rayTracingStepSize;      // Р§РµСЂРµР· СЃРєРѕР»СЊРєРѕ РїРёРєСЃРµР»РµР№ С€Р°РіР°С‚СЊ
+    bool m_rayTracingUseAdaptive;  // РђРґР°РїС‚РёРІРЅР°СЏ РІС‹Р±РѕСЂРєР°
     bool shadow_map;
     glm::vec3 m_lightDir;
     glm::vec3 m_lightColor;
@@ -99,9 +101,23 @@ private:
 
     LightType m_lightType ;
     glm::vec3 m_lightPos;
-    int m_samplesPerCellX;  // Сэмплов на клетку по X (1 = 1:1, 2 = 1:2 и т.д.)
-    int m_samplesPerCellZ;  // Сэмплов на клетку по Z
+    int m_samplesPerCellX;  // РЎСЌРјРїР»РѕРІ РЅР° РєР»РµС‚РєСѓ РїРѕ X (1 = 1:1, 2 = 1:2 Рё С‚.Рґ.)
+    int m_samplesPerCellZ;  // РЎСЌРјРїР»РѕРІ РЅР° РєР»РµС‚РєСѓ РїРѕ Z
+    bool m_showRayVisualization;
+    std::vector<std::pair<glm::vec3, glm::vec3>> m_debugRays;  // Р”Р»СЏ С…СЂР°РЅРµРЅРёСЏ Р»СѓС‡РµР№ РґР»СЏ РѕС‚СЂРёСЃРѕРІРєРё
+    std::vector<glm::vec3> m_hitPoints;  // РўРѕС‡РєРё РїРµСЂРµСЃРµС‡РµРЅРёСЏ
+
+    // РџРѕР·РёС†РёРё РґР»СЏ С‚РµРЅРµР№
+    std::vector<glm::vec3> m_shadowLightPositions;  // 4 РїРѕР·РёС†РёРё РёСЃС‚РѕС‡РЅРёРєР° СЃРІРµС‚Р°
+    int m_currentShadowPosition;
 public:
+    void computeShadowsAtPositions(const GameObjects& objects, int positionIndex);
+    void visualizeShadowRays(const GameObjects& objects);
+    void toggleRayVisualization() { m_showRayVisualization = !m_showRayVisualization; }
+    bool isRayVisualizationEnabled() const { return m_showRayVisualization; }
+
+    // Р РµРЅРґРµСЂ Р»СѓС‡РµР№ РґР»СЏ РІРёР·СѓР°Р»РёР·Р°С†РёРё
+    void renderShadowRays(const GameObjects& objects);
     GameRenderer();
     glm::vec3 traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, int depth = 0);
     void drawLightSource();
@@ -114,22 +130,35 @@ public:
     int getRayTracingStepSize() const { return m_rayTracingStepSize; }
     void setRayTracingAdaptive(bool adaptive) { m_rayTracingUseAdaptive = adaptive; }
     bool getRayTracingUseAdaptive() const { return m_rayTracingUseAdaptive; }
-    // Методы для установки цветов
+    // РњРµС‚РѕРґС‹ РґР»СЏ СѓСЃС‚Р°РЅРѕРІРєРё С†РІРµС‚РѕРІ
     void setSkyColor(const glm::vec3& color) { skyColor = color; }
     void setFloorColor(const glm::vec3& color) { floorColor = color; }
     void setGridColor(const glm::vec3& color) { gridColor = color; }
     void markDynamicShadowsDirty();
-    // Методы для настроек сетки
+    // РњРµС‚РѕРґС‹ РґР»СЏ РЅР°СЃС‚СЂРѕРµРє СЃРµС‚РєРё
     void setGridSettings(bool enabled, float lineWidth) {
         gridEnabled = enabled;
         gridLineWidth = lineWidth;
+    }
+    void setShadowRatio(int ratioX, int ratioZ) {
+        // ratioX:Z = 1:1 в†’ stride=1
+        // ratioX:Z = 1:2 в†’ stride=2 (РІ 2 СЂР°Р·Р° РјРµРЅСЊС€Рµ СЃСЌРјРїР»РѕРІ)
+        // ratioX:Z = 2:1 в†’ stride=0.5? РќСѓР¶РЅРѕ РїРµСЂРµРґР°РІР°С‚СЊ stride=1, РЅРѕ СѓРІРµР»РёС‡РёРІР°С‚СЊ СЃРµС‚РєСѓ
+        m_shadowStrideX = 1;
+        m_shadowStrideZ = 4;
+
+        m_staticShadow.setStride(ratioX, ratioZ);
+        m_dynamicShadow.setStride(ratioX, ratioZ);
+
+        m_staticShadowsDirty = true;
+        m_dynamicShadowsDirty = true;
     }
     void markStaticShadowsDirty() {
         m_staticShadowsDirty = true;
     }
     void resetShadows();
     void switch_m_staticShadowsDirty() {m_staticShadowsDirty=true; }
-    // Метод для установки размеров игрового поля
+    // РњРµС‚РѕРґ РґР»СЏ СѓСЃС‚Р°РЅРѕРІРєРё СЂР°Р·РјРµСЂРѕРІ РёРіСЂРѕРІРѕРіРѕ РїРѕР»СЏ
     void setGridDimensions(int width, int depth, float cellSize) {
         m_gridWidth = width;
         m_gridDepth = depth;
@@ -150,7 +179,7 @@ public:
     int getGridDepth() const { return m_gridDepth; }
     float getCellSize() const { return m_cellSize; }
 
-    // Метод для установки текстуры пола
+    // РњРµС‚РѕРґ РґР»СЏ СѓСЃС‚Р°РЅРѕРІРєРё С‚РµРєСЃС‚СѓСЂС‹ РїРѕР»Р°
     void setFloorTexture(const std::string& texturePath);
 
     const Model& getSnakeHeadModel() const { return snakeHeadModel; }
@@ -187,7 +216,7 @@ public:
         const glm::vec3& color, float rotationAngle);
     float calculateSegmentRotation(const std::vector<Point>& snake, size_t index);
 
-    // НОВЫЕ МЕТОДЫ
+    // РќРћР’Р«Р• РњР•РўРћР”Р«
     void createPrimitives();
     void loadModelsFromConfig(const GameObjects& objects);
     bool loadModelWithFallback(Model& model, const std::string& modelPath,
@@ -220,7 +249,7 @@ public:
     void createTexturedFloorModel(Model& model);
     void createFenceModel(Model& model);
 
-    // Ray Tracing методы
+    // Ray Tracing РјРµС‚РѕРґС‹
     void toggleRayTracing() { m_rayTracingEnabled = !m_rayTracingEnabled; }
     void toggleshadow_map() { shadow_map = !shadow_map; }
     bool isRayTracingEnabled() const { return m_rayTracingEnabled; }
@@ -229,13 +258,13 @@ public:
     void toggleWireframe() { m_renderWireframe = !m_renderWireframe; }
     bool isWireframeEnabled() const { return m_renderWireframe; }
 
-    // Метод для отрисовки с трассировкой лучей
+    // РњРµС‚РѕРґ РґР»СЏ РѕС‚СЂРёСЃРѕРІРєРё СЃ С‚СЂР°СЃСЃРёСЂРѕРІРєРѕР№ Р»СѓС‡РµР№
     void renderWithRayTracing(const GameObjects& objects);
 
-    // Коллбек для пересечения лучей
+    // РљРѕР»Р»Р±РµРє РґР»СЏ РїРµСЂРµСЃРµС‡РµРЅРёСЏ Р»СѓС‡РµР№
     HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
 
-    // Методы для пересечения лучей с примитивами
+    // РњРµС‚РѕРґС‹ РґР»СЏ РїРµСЂРµСЃРµС‡РµРЅРёСЏ Р»СѓС‡РµР№ СЃ РїСЂРёРјРёС‚РёРІР°РјРё
     bool rayIntersectsAABB(const Ray& ray, const glm::vec3& min, const glm::vec3& max, float& tMin, float& tMax);
     bool rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius, float& tHit);
     glm::vec3 computeNormal(const glm::vec3& point, const glm::vec3& min, const glm::vec3& max);
