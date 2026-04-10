@@ -6,7 +6,6 @@
 #include "Core/Constants.h"
 
 // Глобальные экземпляры
-ShaderManager g_shaderManager;
 Camera g_camera;
 Game g_game;
 GLuint uiVAO = 0, uiVBO = 0;
@@ -59,11 +58,7 @@ int main() {
     // Инициализация сид рандома
     srand(static_cast<unsigned int>(time(0)));
 
-    // Инициализация шейдеров
-    if (!g_shaderManager.initialize()) {
-        glfwTerminate();
-        return -1;
-    }
+  
     g_game.initialize();
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

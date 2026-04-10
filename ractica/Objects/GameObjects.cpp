@@ -1,17 +1,13 @@
 ﻿#include "../pch.h"
 #include "GameObjects.h"
-#include "../Graphics/ShaderManager.h"
 #include "../Graphics/Camera.h"
 #include "../Core/Constants.h"
 #include <algorithm>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
-#include "../Graphics/GameRenderer.h"
 
-extern ShaderManager g_shaderManager;
 extern Camera g_camera;
-extern GameRenderer renderer;
 
 //=============================================================================
 // КОНСТРУКТОР - здесь только минимальные значения по умолчанию
@@ -54,7 +50,8 @@ GameObjects::GameObjects()
     cloudCount(20),
     birdCount(15),
     flowerCount(25),
-     floorTileSize(2),
+    floorTileSize(2),
+
     // Модели окружения (будут перезаписаны из конфига)
     appleModel("apple.fbx"),
     treeModel("tree.fbx"),
@@ -299,9 +296,12 @@ void GameObjects::initGame() {
     generateClouds();
     generateBirds();
     generateGroundSprites();
-    renderer.resetShadows();
-    renderer.markStaticShadowsDirty();
-    renderer.markDynamicShadowsDirty();
+
+    // УДАЛЕНЫ ВСЕ ВЫЗОВЫ renderer
+    // renderer.resetShadows();
+    // renderer.markStaticShadowsDirty();
+    // renderer.markDynamicShadowsDirty();
+
     currentDirection = FORWARD;
     verticalDirection = 0;
     score = 0;
@@ -310,7 +310,6 @@ void GameObjects::initGame() {
     gameTimer = 0.0f;
 
     g_camera.setTargetDistance(5.0f);
-
 }
 
 //=============================================================================
@@ -387,12 +386,13 @@ void GameObjects::update() {
         score++;
         food.erase(foodIt);
         generateSingleFood();
-        renderer.markDynamicShadowsDirty();
+        // renderer.markDynamicShadowsDirty(); // УДАЛЕНО
     }
     else {
         snake.pop_back();
     }
-    renderer.markDynamicShadowsDirty();
+    // renderer.markDynamicShadowsDirty(); // УДАЛЕНО
+
     updateClouds();
     updateBirds();
 }
@@ -534,7 +534,6 @@ void GameObjects::generateGroundSprites() {
 void GameObjects::generateFence() {
     fenceBlocks.clear();
 
-    // Используем gridWidth и gridDepth из конфига
     fenceBlocks.push_back(Point(0, 0, 0));
     fenceBlocks.push_back(Point(gridWidth - 1, 0, 0));
     fenceBlocks.push_back(Point(0, 0, gridDepth - 1));
@@ -557,7 +556,6 @@ void GameObjects::generateFence() {
 void GameObjects::generateObstacles() {
     obstacles.clear();
 
-    // Используем obstacleCount из конфига
     for (int i = 0; i < obstacleCount; i++) {
         Point center;
         bool validPosition = false;
@@ -671,10 +669,9 @@ void GameObjects::generateSingleFood() {
 
 void GameObjects::generateInitialFood() {
     food.clear();
-    // Используем initialFoodCount из конфига
     for (int i = 0; i < initialFoodCount; i++) {
         generateSingleFood();
-        renderer.markDynamicShadowsDirty();
+        // renderer.markDynamicShadowsDirty(); // УДАЛЕНО
     }
 }
 
@@ -833,7 +830,6 @@ void GameObjects::handleMenuKeyPress(int key) {
 
     case GAME_OVER:
         switch (key) {
-
         case GLFW_KEY_M:
             gameState = MAIN_MENU;
             break;

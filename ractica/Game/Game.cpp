@@ -8,7 +8,7 @@
 #include <iostream>
 
 // Внешние глобальные переменные
-extern ShaderManager g_shaderManager;
+
 extern Camera g_camera;
 extern GLuint uiVAO, uiVBO;
 extern bool g_shouldExitGame;
