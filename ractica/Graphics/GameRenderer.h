@@ -156,7 +156,9 @@ private:
     glm::vec3 getBirdPosition(const Bird& bird);
     glm::vec3 getCloudPosition(const Sprite& cloud);
     glm::vec3 getFlowerPosition(const Sprite& flower);
-
+    void drawTiledFloor(const GameObjects& objects);
+    void drawFallbackFloor();
+    void drawFloorGrid();
     // ========== МОДЕЛИ ==========
 private:
     // Основные модели примитивов
@@ -172,7 +174,7 @@ private:
     Model m_sphereModel;
     Model m_cylinderModel;
     Model m_fenceModel;
-
+    Model m_floorModel;
     // Загруженные FBX модели (путь к файлу -> модель)
     std::map<std::string, Model> m_loadedFBXModels;
 

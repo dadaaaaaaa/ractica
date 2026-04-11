@@ -397,10 +397,14 @@ void GameRenderer::loadModelsFromConfig(const GameObjects& objects) {
     else {
         SnakeTailPrimitive::create(m_snakeTailModel);
     }
-
-    // Загружаем текстуру пола
-    if (!objects.getFloorTexture().empty()) {
-        setFloorTexture(objects.getFloorTexture());
+    std::cout << "\n--- Loading Floor Model ---" << std::endl;
+    if (!objects.getFloorModel().empty()) {
+        if (!loadFBXModelToModel(objects.getFloorModel(), m_floorModel, "floor")) {
+            std::cout << "  Fallback to textured quad for floor" << std::endl;
+        }
+    }
+    else {
+        std::cout << "  No floor model specified, using fallback" << std::endl;
     }
 
     std::cout << "================================================\n" << std::endl;
@@ -493,7 +497,13 @@ void GameRenderer::renderGame(const GameObjects& objects) {
         computeShadowsIfNeeded(objects);
     }
 
-    drawFloor();
+    // В renderGame() замените drawFloor(); на:
+    if (m_floorModel.vertices.empty() || objects.getFloorModel().empty()) {
+        drawFallbackFloor(); // Старый способ
+    }
+    else {
+        drawTiledFloor(objects); // Новый тайловый способ
+    }
     drawObstaclesAsTrees(objects.getObstacles());
     drawFence(objects.getFenceBlocks());
     drawFood(objects.getFood());
@@ -1554,4 +1564,240 @@ void GameRenderer::setupCallbacks(GLFWwindow* window) {
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
+}
+//=============================================================================
+// ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ
+//=============================================================================
+//=============================================================================
+// ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ
+//=============================================================================
+
+//=============================================================================
+// ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ (ОПТИМИЗИРОВАННАЯ ВЕРСИЯ)
+//=============================================================================
+
+//=============================================================================
+// ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ (СТЫК В СТЫК)
+//=============================================================================
+//=============================================================================
+// ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ (С ПРИНУДИТЕЛЬНЫМ ПОДЪЁМОМ)
+//=============================================================================
+void GameRenderer::drawTiledFloor(const GameObjects& objects) {
+    // Проверяем, есть ли модель пола
+    if (m_floorModel.vertices.empty()) {
+        std::string floorModelPath = objects.getFloorModel();
+        if (!floorModelPath.empty()) {
+            if (!loadFBXModelToModel(floorModelPath, m_floorModel, "floor")) {
+                std::cout << "Failed to load floor model, using fallback" << std::endl;
+                drawFallbackFloor();
+                return;
+            }
+        }
+        else {
+            drawFallbackFloor();
+            return;
+        }
+    }
+
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(5.0f, 10.0f);
+
+    // Размер игрового поля
+    float worldWidth = m_gridWidth * m_cellSize;
+    float worldDepth = m_gridDepth * m_cellSize;
+
+    // ВЫЧИСЛЯЕМ РЕАЛЬНЫЕ ГАБАРИТЫ МОДЕЛИ
+    float modelMinX = 999999.0f, modelMaxX = -999999.0f;
+    float modelMinY = 999999.0f, modelMaxY = -999999.0f;
+    float modelMinZ = 999999.0f, modelMaxZ = -999999.0f;
+
+    for (const auto& vertex : m_floorModel.vertices) {
+        modelMinX = std::min(modelMinX, vertex.position.x);
+        modelMaxX = std::max(modelMaxX, vertex.position.x);
+        modelMinY = std::min(modelMinY, vertex.position.y);
+        modelMaxY = std::max(modelMaxY, vertex.position.y);
+        modelMinZ = std::min(modelMinZ, vertex.position.z);
+        modelMaxZ = std::max(modelMaxZ, vertex.position.z);
+    }
+
+    float modelCenterX = (modelMinX + modelMaxX) / 2.0f;
+    float modelCenterY = (modelMinY + modelMaxY) / 2.0f;
+    float modelCenterZ = (modelMinZ + modelMaxZ) / 2.0f;
+
+    float modelSizeX = modelMaxX - modelMinX;
+    float modelSizeY = modelMaxY - modelMinY;
+    float modelSizeZ = modelMaxZ - modelMinZ;
+
+    // Количество тайлов
+    int tilesX = 8;
+    int tilesZ = 8;
+
+    float tileWidth = worldWidth / tilesX;
+    float tileDepth = worldDepth / tilesZ;
+
+    // Масштаб
+    float scaleX = tileWidth / modelSizeX;
+    float scaleZ = tileDepth / modelSizeZ;
+    float scale = std::min(scaleX, scaleZ);
+
+    // Стартовая позиция
+    float startX = -worldWidth / 2.0f;
+    float startZ = -worldDepth / 2.0f;
+
+    // ========== ПРИНУДИТЕЛЬНЫЙ ПОДЪЁМ ==========
+    // ПОДБЕРИТЕ ЭТО ЗНАЧЕНИЕ ВИЗУАЛЬНО!
+    // Попробуйте: 0.0f, 0.2f, 0.5f, 0.8f, 1.0f, 1.5f
+    float manualRaise = 0.5f;  // <-- МЕНЯЙТЕ ЭТО ЗНАЧЕНИЕ
+
+    float baseY = manualRaise;
+
+    bool hasTexture = (m_floorModel.hasTexture && m_floorModel.textureID != 0);
+    glm::vec3 floorColorObj = objects.getFloorColor();
+
+    std::cout << "\n========== FLOOR TILING DEBUG ==========" << std::endl;
+    std::cout << "World size: " << worldWidth << " x " << worldDepth << std::endl;
+    std::cout << "Tiles: " << tilesX << " x " << tilesZ << " = " << (tilesX * tilesZ) << std::endl;
+    std::cout << "Scale: " << scale << std::endl;
+    std::cout << "Manual raise: " << manualRaise << std::endl;
+    std::cout << "Base Y: " << baseY << std::endl;
+    std::cout << "========================================\n" << std::endl;
+
+    // Рисуем сетку
+    if (gridEnabled) {
+        drawFloorGrid();
+    }
+
+    int drawnTiles = 0;
+
+    for (int i = 0; i < tilesX; i++) {
+        for (int j = 0; j < tilesZ; j++) {
+            float posX = startX + i * tileWidth + tileWidth / 2.0f;
+            float posZ = startZ + j * tileDepth + tileDepth / 2.0f;
+
+            glPushMatrix();
+
+            // Перемещаем на позицию с принудительным подъёмом
+            glTranslatef(posX, baseY, posZ);
+
+            // Поворот (если нужен)
+            glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+
+            // Смещаем центр
+            glTranslatef(-modelCenterX, -modelCenterY, -modelCenterZ);
+
+            // Масштабируем
+            glScalef(scale, scale, scale);
+
+            if (hasTexture) {
+                setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 32.0f, 0.3f);
+                setupTexture(m_floorModel.textureID);
+            }
+            else {
+                setMaterial(floorColorObj, 32.0f, 0.3f);
+                setupTexture(0);
+            }
+
+            m_floorModel.draw();
+            glPopMatrix();
+            drawnTiles++;
+        }
+    }
+
+    std::cout << "Drew " << drawnTiles << " floor tiles" << std::endl;
+    std::cout << "Adjust 'manualRaise' value (current: " << manualRaise << ") until floor looks correct" << std::endl;
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
+}
+void GameRenderer::drawFloorGrid() {
+    float worldWidth = m_gridWidth * m_cellSize;
+    float worldDepth = m_gridDepth * m_cellSize;
+    float offsetX = worldWidth / 2.0f;
+    float offsetZ = worldDepth / 2.0f;
+
+    glDisable(GL_LIGHTING);
+    glLineWidth(gridLineWidth);
+    glColor3f(gridColor.r, gridColor.g, gridColor.b);
+
+    glBegin(GL_LINES);
+    // Вертикальные линии сетки
+    for (int i = 0; i <= m_gridWidth; i++) {
+        float x = i * m_cellSize - offsetX;
+        glVertex3f(x, 0.01f, -offsetZ);
+        glVertex3f(x, 0.01f, worldDepth - offsetZ);
+    }
+    // Горизонтальные линии сетки
+    for (int i = 0; i <= m_gridDepth; i++) {
+        float z = i * m_cellSize - offsetZ;
+        glVertex3f(-offsetX, 0.01f, z);
+        glVertex3f(worldWidth - offsetX, 0.01f, z);
+    }
+    glEnd();
+    glEnable(GL_LIGHTING);
+}
+
+void GameRenderer::drawFallbackFloor() {
+    // Старый способ отрисовки пола (квадратами)
+    float worldWidth = m_gridWidth * m_cellSize;
+    float worldDepth = m_gridDepth * m_cellSize;
+    float offsetX = worldWidth / 2.0f;
+    float offsetZ = worldDepth / 2.0f;
+
+    if (gridEnabled) {
+        drawFloorGrid();
+    }
+
+    if (useFloorTexture && floorTexture.id != 0) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, floorTexture.id);
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    }
+    else {
+        glDisable(GL_TEXTURE_2D);
+    }
+
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+
+    float texRepeat = worldWidth / 2.0f;
+
+    for (int z = 0; z < m_gridDepth; z++) {
+        for (int x = 0; x < m_gridWidth; x++) {
+            float posX = x * m_cellSize - offsetX;
+            float posZ = z * m_cellSize - offsetZ;
+
+            float shadowValue = 1.0f;
+            if (m_shadowMapEnabled) {
+                shadowValue = m_dynamicShadow.getShadowAtCell(x, z);
+                float staticShadow = m_staticShadow.getShadowAtCell(x, z);
+                shadowValue = std::min(shadowValue, staticShadow);
+            }
+
+            glm::vec3 finalColor = floorColor * shadowValue;
+            glColor3f(finalColor.r, finalColor.g, finalColor.b);
+
+            glBegin(GL_QUADS);
+            glNormal3f(0.0f, 1.0f, 0.0f);
+
+            if (useFloorTexture && floorTexture.id != 0) {
+                float u1 = (float)x / texRepeat;
+                float v1 = (float)z / texRepeat;
+                float u2 = (float)(x + 1) / texRepeat;
+                float v2 = (float)(z + 1) / texRepeat;
+
+                glTexCoord2f(u1, v1); glVertex3f(posX, -0.02f, posZ);
+                glTexCoord2f(u2, v1); glVertex3f(posX + m_cellSize, -0.02f, posZ);
+                glTexCoord2f(u2, v2); glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
+                glTexCoord2f(u1, v2); glVertex3f(posX, -0.02f, posZ + m_cellSize);
+            }
+            else {
+                glVertex3f(posX, -0.02f, posZ);
+                glVertex3f(posX + m_cellSize, -0.02f, posZ);
+                glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
+                glVertex3f(posX, -0.02f, posZ + m_cellSize);
+            }
+            glEnd();
+        }
+    }
+
+    glDisable(GL_TEXTURE_2D);
 }
