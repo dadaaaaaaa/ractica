@@ -1,5 +1,6 @@
 ﻿#include "../pch.h"
 #include "GameRenderer.h"
+#include "Model.h"
 #include "../Graphics/Camera.h"
 #include "../Core/Constants.h"
 #include "../Utils/MathUtils.h"
@@ -14,7 +15,10 @@
 #include "../Primitives/BirdPrimitive.h"
 #include "../Primitives/FlowerPrimitive.h"
 #include "../Primitives/FencePrimitive.h"
-#include "Model.h"
+#include "../Primitives/SnakeHeadPrimitive.h"
+#include "../Primitives/SnakeBodyPrimitive.h"
+#include "../Primitives/SnakeTailPrimitive.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -45,18 +49,19 @@ GameRenderer::GameRenderer()
     , m_renderWireframe(false)
     , m_rayTracingStepSize(1)
     , m_rayTracingUseAdaptive(true)
-    , shadow_map(false)
-    , m_shadowStrideX(8)
-    , m_shadowStrideZ(8)
+    , m_shadowMapEnabled(false)
+    , m_debugRaysEnabled(false)
+    , m_showGroundRays(true)
+    , m_shadowStrideX(1)
+    , m_shadowStrideZ(1)
     , m_staticShadowsDirty(true)
     , m_dynamicShadowsDirty(true)
-    , m_debugRaysEnabled(false)
-    , m_showGroundRays(false)
+    , shadow_map(false)
 {
     m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));
     m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
     m_lightType = LightType::Directional;
-    m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f);
+    m_lightPos = glm::vec3(0.0f, 100.0f, 0.0f);
 }
 
 void GameRenderer::initialize() {
@@ -79,9 +84,9 @@ void GameRenderer::initOpenGLSettings() {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    // Временно используем серый цвет, потом он будет изменён в renderGame()
+    glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
 
-    // Настройка сглаживания
     GLint samples;
     glGetIntegerv(GL_SAMPLES, &samples);
     if (samples > 0) {
@@ -93,78 +98,45 @@ void GameRenderer::initOpenGLSettings() {
 }
 
 void GameRenderer::setupFixedPipelineLighting() {
-    // Включаем освещение
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
-    glEnable(GL_LIGHT1);
-    glEnable(GL_COLOR_MATERIAL);
 
-    // Настройка материала
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-    glMateriali(GL_FRONT_AND_BACK, GL_SHININESS, 32);
 
-    // Глобальная ambient освещенность
-    GLfloat global_ambient[] = { 0.25f, 0.25f, 0.25f, 1.0f };
+    glEnable(GL_NORMALIZE);
+
+    GLfloat global_ambient[] = { 0.6f, 0.6f, 0.6f, 1.0f };
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
-    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
-    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
 
-    // Настройка направленного света (солнце) - LIGHT0
-    GLfloat light0_ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
-    GLfloat light0_diffuse[] = { 0.9f, 0.9f, 0.85f, 1.0f };
-    GLfloat light0_specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+    GLfloat light0_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    GLfloat light0_diffuse[] = { m_lightColor.r, m_lightColor.g, m_lightColor.b, 1.0f };
+    GLfloat light0_specular[] = { 0.4f, 0.4f, 0.4f, 1.0f };
+    GLfloat light0_position[] = { -m_lightDir.x, -m_lightDir.y, -m_lightDir.z, 0.0f };
 
     glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
     glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
-
-    // Дополнительный рассеянный свет снизу - LIGHT1
-    GLfloat light1_ambient[] = { 0.1f, 0.1f, 0.1f, 1.0f };
-    GLfloat light1_diffuse[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-    GLfloat light1_specular[] = { 0.1f, 0.1f, 0.1f, 1.0f };
-    GLfloat light1_position[] = { 0.0f, -1.0f, 0.0f, 0.0f };
-
-    glLightfv(GL_LIGHT1, GL_AMBIENT, light1_ambient);
-    glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_diffuse);
-    glLightfv(GL_LIGHT1, GL_SPECULAR, light1_specular);
-    glLightfv(GL_LIGHT1, GL_POSITION, light1_position);
+    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
 
     std::cout << "Fixed pipeline lighting configured" << std::endl;
 }
 
 void GameRenderer::updateLightPosition() {
-    if (m_lightType == LightType::Directional) {
-        // Направленный свет (бесконечность)
-        GLfloat light0_position[] = {
-            -m_lightDir.x, -m_lightDir.y, -m_lightDir.z, 0.0f
-        };
-        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
-    }
-    else {
-        // Точечный свет или прожектор
-        GLfloat light0_position[] = {
-            m_lightPos.x, m_lightPos.y, m_lightPos.z, 1.0f
-        };
-        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
-
-        if (m_lightType == LightType::Spot) {
-            GLfloat spot_direction[] = { m_lightDir.x, m_lightDir.y, m_lightDir.z };
-            glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
-            glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 30.0f);
-            glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 2.0f);
-        }
-    }
+    GLfloat light0_position[] = { -m_lightDir.x, -m_lightDir.y, -m_lightDir.z, 0.0f };
+    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
 }
 
-void GameRenderer::setupMaterial(const glm::vec3& color, float shininess) {
+void GameRenderer::setMaterial(const glm::vec3& color, float shininess, float specularStrength) {
+    glDisable(GL_COLOR_MATERIAL);
+
     GLfloat ambient[] = { color.r * 0.3f, color.g * 0.3f, color.b * 0.3f, 1.0f };
     GLfloat diffuse[] = { color.r * 0.7f, color.g * 0.7f, color.b * 0.7f, 1.0f };
-    GLfloat specular[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    GLfloat specular[] = { specularStrength, specularStrength, specularStrength, 1.0f };
 
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ambient);
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, diffuse);
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular);
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
+
 }
 
 void GameRenderer::setupTexture(GLuint textureID) {
@@ -191,31 +163,22 @@ void GameRenderer::resetDepthState() {
 //=============================================================================
 
 void GameRenderer::renderGame(const GameObjects& objects) {
-    auto frameStartTime = std::chrono::high_resolution_clock::now();
-    static int frameCount = 0;
-    static float totalFrameTime = 0.0f;
-
-    if (m_rayTracingEnabled) {
-        renderWithRayTracing(objects);
-        return;
-    }
-
-    resetDepthState();
-
-    // Очистка буферов
+    // Используем цвет неба из параметра objects
+    skyColor = objects.getSkyColor();  // Сохраняем в член класса
     glClearColor(skyColor.r, skyColor.g, skyColor.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Включаем тест глубины
+    // Также обновляем другие цвета из конфига
+    floorColor = objects.getFloorColor();
+    gridColor = objects.getGridColor();
+
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
 
-    // Настройка проекции
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     gluPerspective(60.0, 1200.0 / 800.0, 0.2, 100.0);
 
-    // Настройка вида (камера)
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
@@ -227,11 +190,11 @@ void GameRenderer::renderGame(const GameObjects& objects) {
         camTarget.x, camTarget.y, camTarget.z,
         camUp.x, camUp.y, camUp.z);
 
-    // Обновляем позицию источника света
     updateLightPosition();
 
-    // Рисуем все объекты
-    auto drawStart = std::chrono::high_resolution_clock::now();
+    if (m_shadowMapEnabled) {
+        computeShadowsIfNeeded(objects);
+    }
 
     drawFloor();
     drawObstaclesAsTrees(objects.getObstacles());
@@ -243,28 +206,88 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     drawBirds(objects.getBirds());
     drawLightSource();
 
-    auto drawEnd = std::chrono::high_resolution_clock::now();
-    auto drawMs = std::chrono::duration_cast<std::chrono::milliseconds>(drawEnd - drawStart).count();
+    if (m_debugRaysEnabled && m_shadowMapEnabled) {
+        drawDebugRaysIfEnabled();
+    }
+}
 
-    // Отладочные лучи
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    drawDebugRaysIfEnabled();
+void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
+    if (m_staticShadowsDirty) {
+        std::cout << "[STATIC SHADOWS] Computing..." << std::endl;
 
-    // Статистика производительности
-    auto frameEndTime = std::chrono::high_resolution_clock::now();
-    auto frameMs = std::chrono::duration_cast<std::chrono::milliseconds>(frameEndTime - frameStartTime).count();
+        m_staticShadow.clearObjectBounds();
+        m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, 0.0f);
+        std::vector<BoundingSphere> staticSpheres;
 
-    frameCount++;
-    totalFrameTime += frameMs;
-    if (frameCount >= 60) {
-        float avgFrameTime = totalFrameTime / frameCount;
-        float fps = 1000.0f / avgFrameTime;
-        std::cout << "[PERFORMANCE] Frame: " << frameMs << " ms, "
-            << "Draw: " << drawMs << " ms, "
-            << "FPS: " << std::fixed << std::setprecision(1) << fps << std::endl;
-        frameCount = 0;
-        totalFrameTime = 0.0f;
+        for (const auto& obstacle : objects.getObstacles()) {
+            for (const auto& block : obstacle.blocks) {
+                float x = block.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
+                float z = block.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
+                float treeSize = m_cellSize * 1.5f;
+                float radius = treeSize * 0.4f;
+                staticSpheres.emplace_back(glm::vec3(x, treeSize / 2.0f, z), radius);
+            }
+        }
+
+        m_staticShadow.registerObjectBounds(staticSpheres);
+        m_staticShadow.setIntersectCallback(
+            [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+                float offsetX = m_gridWidth * m_cellSize / 2.0f;
+                float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+                HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
+                if (hit.hit && hit.distance > 0.01f) {
+                    hitDist = hit.distance;
+                    hitPoint = hit.point;
+                    return true;
+                }
+                return false;
+            }
+        );
+
+        m_staticShadow.computeShadows();
+        m_staticShadowsDirty = false;
+        std::cout << "[STATIC SHADOWS] Completed" << std::endl;
+    }
+
+    if (m_dynamicShadowsDirty) {
+        std::cout << "[DYNAMIC SHADOWS] Computing..." << std::endl;
+
+        m_dynamicShadow.clearObjectBounds();
+        std::vector<BoundingSphere> dynamicSpheres;
+
+        for (size_t i = 0; i < objects.getSnake().size(); i++) {
+            const auto& segment = objects.getSnake()[i];
+            float x = segment.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
+            float z = segment.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
+            float radius = m_cellSize * 0.4f;
+            dynamicSpheres.emplace_back(glm::vec3(x, 0.15f, z), radius);
+        }
+
+        for (const auto& apple : objects.getFood()) {
+            float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
+            float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
+            float radius = m_cellSize * 0.25f;
+            dynamicSpheres.emplace_back(glm::vec3(x, 0.1f, z), radius);
+        }
+
+        m_dynamicShadow.registerObjectBounds(dynamicSpheres);
+        m_dynamicShadow.setIntersectCallback(
+            [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+                float offsetX = m_gridWidth * m_cellSize / 2.0f;
+                float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+                HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
+                if (hit.hit && hit.distance > 0.01f) {
+                    hitDist = hit.distance;
+                    hitPoint = hit.point;
+                    return true;
+                }
+                return false;
+            }
+        );
+
+        m_dynamicShadow.computeShadows();
+        m_dynamicShadowsDirty = false;
+        std::cout << "[DYNAMIC SHADOWS] Completed" << std::endl;
     }
 }
 
@@ -280,20 +303,17 @@ void GameRenderer::drawFloor() {
     float offsetX = worldWidth / 2.0f;
     float offsetZ = worldDepth / 2.0f;
 
-    // Рисуем сетку пола
     if (gridEnabled) {
         glDisable(GL_LIGHTING);
         glLineWidth(gridLineWidth);
         glColor3f(gridColor.r, gridColor.g, gridColor.b);
 
         glBegin(GL_LINES);
-        // Линии по X
         for (int i = 0; i <= m_gridWidth; i++) {
             float x = i * m_cellSize - offsetX;
             glVertex3f(x, 0.01f, -offsetZ);
             glVertex3f(x, 0.01f, worldDepth - offsetZ);
         }
-        // Линии по Z
         for (int i = 0; i <= m_gridDepth; i++) {
             float z = i * m_cellSize - offsetZ;
             glVertex3f(-offsetX, 0.01f, z);
@@ -303,121 +323,57 @@ void GameRenderer::drawFloor() {
         glEnable(GL_LIGHTING);
     }
 
-    // Рисуем сам пол
-    setupMaterial(floorColor, 16.0f);
     glDisable(GL_TEXTURE_2D);
 
-    glBegin(GL_QUADS);
-    glNormal3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(-offsetX, -0.05f, -offsetZ);
-    glVertex3f(worldWidth - offsetX, -0.05f, -offsetZ);
-    glVertex3f(worldWidth - offsetX, -0.05f, worldDepth - offsetZ);
-    glVertex3f(-offsetX, -0.05f, worldDepth - offsetZ);
-    glEnd();
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+
+    // Рисуем пол на ВСЕХ клетках, включая границы
+    for (int z = 0; z < m_gridDepth; z++) {
+        for (int x = 0; x < m_gridWidth; x++) {
+            float posX = x * m_cellSize - offsetX;
+            float posZ = z * m_cellSize - offsetZ;
+
+            float shadowValue = 1.0f;
+            if (m_shadowMapEnabled) {
+                shadowValue = m_dynamicShadow.getShadowAtCell(x, z);
+                float staticShadow = m_staticShadow.getShadowAtCell(x, z);
+                shadowValue = std::min(shadowValue, staticShadow);
+            }
+
+            glm::vec3 finalColor = floorColor * shadowValue;
+            glColor3f(finalColor.r, finalColor.g, finalColor.b);
+
+            glBegin(GL_QUADS);
+            glNormal3f(0.0f, 1.0f, 0.0f);
+            // Опускаем пол чуть ниже, чтобы забор не перекрывал
+            glVertex3f(posX, -0.02f, posZ);
+            glVertex3f(posX + m_cellSize, -0.02f, posZ);
+            glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
+            glVertex3f(posX, -0.02f, posZ + m_cellSize);
+            glEnd();
+        }
+    }
 
     glPopMatrix();
 }
+void GameRenderer::drawSnakeEyes() {
+    glDisable(GL_LIGHTING);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glPointSize(6.0f);
+    glBegin(GL_POINTS);
+    glVertex3f(0.38f, 0.38f, 0.55f);
+    glVertex3f(-0.38f, 0.38f, 0.55f);
+    glEnd();
 
-void GameRenderer::drawSnake(const std::vector<Point>& snake) {
-    if (snake.empty()) return;
-
-    float offsetX = m_gridWidth * m_cellSize / 2.0f;
-    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-
-    for (size_t i = 0; i < snake.size(); i++) {
-        const Point& segment = snake[i];
-
-        float x = segment.x * m_cellSize - offsetX;
-        float y = segment.y * m_cellSize + 0.1f;
-        float z = segment.z * m_cellSize - offsetZ;
-
-        glm::vec3 color;
-        float scale = m_cellSize * 0.8f;
-
-        if (i == 0) {
-            color = g_game.getSnakeHeadColor();
-            scale *= g_game.getSnakeHeadScale();
-        }
-        else if (i == snake.size() - 1) {
-            color = g_game.getSnakeTailColor();
-            scale *= g_game.getSnakeTailScale();
-        }
-        else {
-            color = g_game.getSnakeBodyColor();
-            scale *= g_game.getSnakeBodyScale();
-        }
-
-        float rotationAngle = calculateSegmentRotation(snake, i);
-
-        glPushMatrix();
-        glTranslatef(x, y, z);
-        glRotatef(rotationAngle, 0.0f, 1.0f, 0.0f);
-        glScalef(scale, scale, scale);
-
-        setupMaterial(color, 64.0f);
-        glDisable(GL_TEXTURE_2D);
-
-        // Рисуем куб для сегмента змейки
-        glBegin(GL_QUADS);
-        // Передняя грань (Z+)
-        glNormal3f(0.0f, 0.0f, 1.0f);
-        glVertex3f(-0.5f, -0.5f, 0.5f);
-        glVertex3f(0.5f, -0.5f, 0.5f);
-        glVertex3f(0.5f, 0.5f, 0.5f);
-        glVertex3f(-0.5f, 0.5f, 0.5f);
-
-        // Задняя грань (Z-)
-        glNormal3f(0.0f, 0.0f, -1.0f);
-        glVertex3f(-0.5f, -0.5f, -0.5f);
-        glVertex3f(-0.5f, 0.5f, -0.5f);
-        glVertex3f(0.5f, 0.5f, -0.5f);
-        glVertex3f(0.5f, -0.5f, -0.5f);
-
-        // Левая грань (X-)
-        glNormal3f(-1.0f, 0.0f, 0.0f);
-        glVertex3f(-0.5f, -0.5f, -0.5f);
-        glVertex3f(-0.5f, -0.5f, 0.5f);
-        glVertex3f(-0.5f, 0.5f, 0.5f);
-        glVertex3f(-0.5f, 0.5f, -0.5f);
-
-        // Правая грань (X+)
-        glNormal3f(1.0f, 0.0f, 0.0f);
-        glVertex3f(0.5f, -0.5f, -0.5f);
-        glVertex3f(0.5f, 0.5f, -0.5f);
-        glVertex3f(0.5f, 0.5f, 0.5f);
-        glVertex3f(0.5f, -0.5f, 0.5f);
-
-        // Верхняя грань (Y+)
-        glNormal3f(0.0f, 1.0f, 0.0f);
-        glVertex3f(-0.5f, 0.5f, -0.5f);
-        glVertex3f(-0.5f, 0.5f, 0.5f);
-        glVertex3f(0.5f, 0.5f, 0.5f);
-        glVertex3f(0.5f, 0.5f, -0.5f);
-
-        // Нижняя грань (Y-)
-        glNormal3f(0.0f, -1.0f, 0.0f);
-        glVertex3f(-0.5f, -0.5f, -0.5f);
-        glVertex3f(0.5f, -0.5f, -0.5f);
-        glVertex3f(0.5f, -0.5f, 0.5f);
-        glVertex3f(-0.5f, -0.5f, 0.5f);
-        glEnd();
-
-        // Глаза для головы
-        if (i == 0) {
-            glDisable(GL_LIGHTING);
-            glColor3f(1.0f, 1.0f, 1.0f);
-            glPointSize(4.0f);
-            glBegin(GL_POINTS);
-            glVertex3f(0.35f, 0.35f, 0.51f);
-            glVertex3f(-0.35f, 0.35f, 0.51f);
-            glEnd();
-            glEnable(GL_LIGHTING);
-        }
-
-        glPopMatrix();
-    }
+    glColor3f(0.0f, 0.0f, 0.0f);
+    glPointSize(3.0f);
+    glBegin(GL_POINTS);
+    glVertex3f(0.38f, 0.35f, 0.58f);
+    glVertex3f(-0.38f, 0.35f, 0.58f);
+    glEnd();
+    glEnable(GL_LIGHTING);
 }
-
 float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, size_t index) {
     if (snake.size() <= 1) return 0.0f;
 
@@ -438,12 +394,68 @@ float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, si
 
     return 0.0f;
 }
+void GameRenderer::drawSnake(const std::vector<Point>& snake) {
+    if (snake.empty()) return;
 
-void GameRenderer::drawFood(const std::vector<Point>& food) {
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    GLUquadric* quad = gluNewQuadric();
+    const GameObjects& gameObjects = g_game.getGameObjects();
+
+    for (size_t i = 0; i < snake.size(); i++) {
+        const Point& segment = snake[i];
+
+        float x = segment.x * m_cellSize - offsetX;
+        float y = segment.y * m_cellSize + 0.1f;
+        float z = segment.z * m_cellSize - offsetZ;
+
+        float scale;
+        glm::vec3 color;
+        const Model* currentModel = nullptr;
+
+        if (i == 0) {
+            scale = m_cellSize * gameObjects.getSnakeHeadScale();
+            color = gameObjects.getSnakeHeadColor();
+            currentModel = &m_snakeHeadModel;
+        }
+        else if (i == snake.size() - 1) {
+            scale = m_cellSize * gameObjects.getSnakeTailScale();
+            color = gameObjects.getSnakeTailColor();
+            currentModel = &m_snakeTailModel;
+        }
+        else {
+            scale = m_cellSize * gameObjects.getSnakeBodyScale();
+            color = gameObjects.getSnakeBodyColor();
+            currentModel = &m_snakeBodyModel;
+        }
+
+        float rotationAngle = calculateSegmentRotation(snake, i);
+
+        glPushMatrix();
+        glTranslatef(x, y, z);
+        glRotatef(rotationAngle, 0.0f, 1.0f, 0.0f);
+        glScalef(scale, scale, scale);
+
+        // setMaterial уже отключает COLOR_MATERIAL
+        setMaterial(color, 64.0f, 0.2f);
+
+        if (currentModel) {
+            currentModel->draw();
+        }
+
+        if (i == 0) {
+            drawSnakeEyes();
+        }
+
+        glPopMatrix();
+    }
+}
+
+void GameRenderer::drawFood(const std::vector<Point>& food) {
+    if (food.empty()) return;
+
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
     for (const auto& apple : food) {
         float x = apple.x * m_cellSize - offsetX;
@@ -454,22 +466,19 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
         glTranslatef(x, y, z);
         glScalef(m_cellSize * 0.6f, m_cellSize * 0.6f, m_cellSize * 0.6f);
 
-        setupMaterial(glm::vec3(1.0f, 0.8f, 0.2f), 32.0f);
-        glDisable(GL_TEXTURE_2D);
-
-        gluSphere(quad, 0.5, 16, 16);
+        // Красный цвет для яблока
+        setMaterial(glm::vec3(0.9f, 0.2f, 0.2f), 80.0f, 0.4f);
+        m_appleModel.draw();
 
         glPopMatrix();
     }
-
-    gluDeleteQuadric(quad);
 }
 
 void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) {
+    if (obstacles.empty()) return;
+
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-
-    GLUquadric* quad = gluNewQuadric();
 
     for (const auto& obstacle : obstacles) {
         for (const auto& block : obstacle.blocks) {
@@ -479,190 +488,18 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
 
             glPushMatrix();
             glTranslatef(x, y, z);
+            glScalef(m_cellSize * 1.2f, m_cellSize * 1.2f, m_cellSize * 1.2f);
 
-            // Ствол
-            glPushMatrix();
-            glScalef(m_cellSize * 0.4f, m_cellSize * 0.8f, m_cellSize * 0.4f);
-            setupMaterial(glm::vec3(0.55f, 0.27f, 0.07f), 16.0f);
-            gluCylinder(quad, 0.5, 0.5, 1.0, 8, 8);
-            glPopMatrix();
-
-            // Крона (нижний ярус)
-            glPushMatrix();
-            glTranslatef(0.0f, m_cellSize * 0.6f, 0.0f);
-            glScalef(m_cellSize * 0.9f, m_cellSize * 0.7f, m_cellSize * 0.9f);
-            setupMaterial(glm::vec3(0.1f, 0.5f, 0.1f), 32.0f);
-            gluSphere(quad, 0.6, 12, 12);
-            glPopMatrix();
-
-            // Крона (верхний ярус)
-            glPushMatrix();
-            glTranslatef(0.0f, m_cellSize * 1.0f, 0.0f);
-            glScalef(m_cellSize * 0.7f, m_cellSize * 0.6f, m_cellSize * 0.7f);
-            gluSphere(quad, 0.5, 12, 12);
-            glPopMatrix();
+            // Зелёный цвет для дерева
+            setMaterial(glm::vec3(0.2f, 0.6f, 0.2f), 30.0f, 0.2f);
+            m_treeModel.draw();
 
             glPopMatrix();
         }
     }
-
-    gluDeleteQuadric(quad);
-}
-
-void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
-    if (fenceBlocks.empty()) return;
-
-    float offsetX = m_gridWidth * m_cellSize / 2.0f;
-    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-
-    for (const auto& fenceBlock : fenceBlocks) {
-        float x = fenceBlock.x * m_cellSize - offsetX;
-        float y = fenceBlock.y * m_cellSize;
-        float z = fenceBlock.z * m_cellSize - offsetZ;
-
-        bool isCorner = (fenceBlock.x == 0 && fenceBlock.z == 0) ||
-            (fenceBlock.x == m_gridWidth - 1 && fenceBlock.z == 0) ||
-            (fenceBlock.x == 0 && fenceBlock.z == m_gridDepth - 1) ||
-            (fenceBlock.x == m_gridWidth - 1 && fenceBlock.z == m_gridDepth - 1);
-
-        bool isNorth = (fenceBlock.z == 0);
-        bool isSouth = (fenceBlock.z == m_gridDepth - 1);
-        bool isWest = (fenceBlock.x == 0);
-        bool isEast = (fenceBlock.x == m_gridWidth - 1);
-
-        glPushMatrix();
-
-        if (isCorner) {
-            // Угловой столб - рисуем куб через glBegin/glEnd
-            glTranslatef(x, y + m_cellSize * 0.2f, z);
-            glScalef(m_cellSize * 0.8f, m_cellSize * 0.4f, m_cellSize * 0.8f);
-            setupMaterial(glm::vec3(0.55f, 0.27f, 0.07f), 16.0f);
-            glDisable(GL_TEXTURE_2D);
-
-            drawCube();
-        }
-        else if (isNorth || isSouth || isWest || isEast) {
-            // Обычный столб забора
-            glTranslatef(x, y + m_cellSize * 0.2f, z);
-            glScalef(m_cellSize * 0.6f, m_cellSize * 0.4f, m_cellSize * 0.6f);
-            setupMaterial(glm::vec3(0.55f, 0.27f, 0.07f), 16.0f);
-            glDisable(GL_TEXTURE_2D);
-
-            drawCube();
-
-            // Горизонтальные перекладины
-            glPushMatrix();
-            if (isNorth || isSouth) {
-                glTranslatef(0.0f, -0.3f, 0.0f);
-                glScalef(1.6f, 0.2f, 0.3f);
-            }
-            else {
-                glTranslatef(0.0f, -0.3f, 0.0f);
-                glScalef(0.3f, 0.2f, 1.6f);
-            }
-            setupMaterial(glm::vec3(0.45f, 0.17f, 0.05f), 16.0f);
-            drawCube();
-            glPopMatrix();
-        }
-
-        glPopMatrix();
-    }
-}
-
-// Добавить этот метод в класс GameRenderer:
-void GameRenderer::drawCube() {
-    glBegin(GL_QUADS);
-    // Передняя грань
-    glNormal3f(0.0f, 0.0f, 1.0f);
-    glVertex3f(-0.5f, -0.5f, 0.5f);
-    glVertex3f(0.5f, -0.5f, 0.5f);
-    glVertex3f(0.5f, 0.5f, 0.5f);
-    glVertex3f(-0.5f, 0.5f, 0.5f);
-
-    // Задняя грань
-    glNormal3f(0.0f, 0.0f, -1.0f);
-    glVertex3f(-0.5f, -0.5f, -0.5f);
-    glVertex3f(-0.5f, 0.5f, -0.5f);
-    glVertex3f(0.5f, 0.5f, -0.5f);
-    glVertex3f(0.5f, -0.5f, -0.5f);
-
-    // Левая грань
-    glNormal3f(-1.0f, 0.0f, 0.0f);
-    glVertex3f(-0.5f, -0.5f, -0.5f);
-    glVertex3f(-0.5f, -0.5f, 0.5f);
-    glVertex3f(-0.5f, 0.5f, 0.5f);
-    glVertex3f(-0.5f, 0.5f, -0.5f);
-
-    // Правая грань
-    glNormal3f(1.0f, 0.0f, 0.0f);
-    glVertex3f(0.5f, -0.5f, -0.5f);
-    glVertex3f(0.5f, 0.5f, -0.5f);
-    glVertex3f(0.5f, 0.5f, 0.5f);
-    glVertex3f(0.5f, -0.5f, 0.5f);
-
-    // Верхняя грань
-    glNormal3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(-0.5f, 0.5f, -0.5f);
-    glVertex3f(-0.5f, 0.5f, 0.5f);
-    glVertex3f(0.5f, 0.5f, 0.5f);
-    glVertex3f(0.5f, 0.5f, -0.5f);
-
-    // Нижняя грань
-    glNormal3f(0.0f, -1.0f, 0.0f);
-    glVertex3f(-0.5f, -0.5f, -0.5f);
-    glVertex3f(0.5f, -0.5f, -0.5f);
-    glVertex3f(0.5f, -0.5f, 0.5f);
-    glVertex3f(-0.5f, -0.5f, 0.5f);
-    glEnd();
-}
-
-// Вспомогательная функция для куба через GLU
-static void gluCube(GLUquadric* quad, float size) {
-    // Простая реализация куба через glBegin/glEnd
-    float h = size / 2.0f;
-    glBegin(GL_QUADS);
-    // Передняя грань
-    glNormal3f(0, 0, 1);
-    glVertex3f(-h, -h, h);
-    glVertex3f(h, -h, h);
-    glVertex3f(h, h, h);
-    glVertex3f(-h, h, h);
-    // Задняя грань
-    glNormal3f(0, 0, -1);
-    glVertex3f(-h, -h, -h);
-    glVertex3f(-h, h, -h);
-    glVertex3f(h, h, -h);
-    glVertex3f(h, -h, -h);
-    // Левая грань
-    glNormal3f(-1, 0, 0);
-    glVertex3f(-h, -h, -h);
-    glVertex3f(-h, -h, h);
-    glVertex3f(-h, h, h);
-    glVertex3f(-h, h, -h);
-    // Правая грань
-    glNormal3f(1, 0, 0);
-    glVertex3f(h, -h, -h);
-    glVertex3f(h, h, -h);
-    glVertex3f(h, h, h);
-    glVertex3f(h, -h, h);
-    // Верхняя грань
-    glNormal3f(0, 1, 0);
-    glVertex3f(-h, h, -h);
-    glVertex3f(-h, h, h);
-    glVertex3f(h, h, h);
-    glVertex3f(h, h, -h);
-    // Нижняя грань
-    glNormal3f(0, -1, 0);
-    glVertex3f(-h, -h, -h);
-    glVertex3f(h, -h, -h);
-    glVertex3f(h, -h, h);
-    glVertex3f(-h, -h, h);
-    glEnd();
 }
 
 void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
-    GLUquadric* quad = gluNewQuadric();
-
     for (const auto& cloud : cloudSprites) {
         float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
         if (distanceToCenter < 8.0f) continue;
@@ -671,34 +508,12 @@ void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
         glTranslatef(cloud.position.x, cloud.position.y, cloud.position.z);
         glScalef(cloud.size, cloud.size, cloud.size);
 
-        setupMaterial(cloud.color, 16.0f);
-        glDisable(GL_TEXTURE_2D);
-
-        // Облако из нескольких сфер
-        glPushMatrix();
-        glTranslatef(-0.6f, 0.0f, 0.0f);
-        gluSphere(quad, 0.4, 12, 12);
-        glPopMatrix();
-
-        glPushMatrix();
-        glTranslatef(0.6f, 0.0f, 0.0f);
-        gluSphere(quad, 0.4, 12, 12);
-        glPopMatrix();
-
-        glPushMatrix();
-        glTranslatef(0.0f, 0.3f, 0.0f);
-        gluSphere(quad, 0.5, 12, 12);
-        glPopMatrix();
-
-        glPushMatrix();
-        glTranslatef(0.0f, -0.2f, 0.0f);
-        gluSphere(quad, 0.45, 12, 12);
-        glPopMatrix();
+        // Цвет облака из конфига
+        setMaterial(cloud.color, 40.0f, 0.3f);
+        m_cloudModel.draw();
 
         glPopMatrix();
     }
-
-    gluDeleteQuadric(quad);
 }
 
 void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
@@ -706,7 +521,6 @@ void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
         glPushMatrix();
         glTranslatef(bird.position.x, bird.position.y, bird.position.z);
 
-        // Поворот в направлении полёта
         if (glm::length(bird.direction) > 0.1f) {
             float angle = atan2f(bird.direction.x, bird.direction.z) * 180.0f / 3.14159f;
             glRotatef(angle, 0.0f, 1.0f, 0.0f);
@@ -717,83 +531,131 @@ void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
         }
 
         glScalef(bird.size, bird.size, bird.size);
-        setupMaterial(bird.color, 32.0f);
-        glDisable(GL_TEXTURE_2D);
 
-        // ИСПРАВЛЕНО: добавил объявление wingOffset
-        float wingOffset = sin(glfwGetTime() * 8.0f) * 0.15f;
-
-        // Простая птица из треугольников
-        glBegin(GL_TRIANGLES);
-        // Тело
-        glNormal3f(0.0f, 0.0f, 1.0f);
-        glVertex3f(-0.3f, 0.0f, 0.0f);
-        glVertex3f(0.0f, 0.2f, 0.0f);
-        glVertex3f(0.3f, 0.0f, 0.0f);
-
-        glNormal3f(0.0f, 0.0f, -1.0f);
-        glVertex3f(-0.3f, 0.0f, 0.0f);
-        glVertex3f(0.0f, -0.2f, 0.0f);
-        glVertex3f(0.3f, 0.0f, 0.0f);
-
-        // Крылья с анимацией - ИСПРАВЛЕНО: используем wingOffset
-        glNormal3f(-0.5f, 0.5f, 0.0f);
-        glVertex3f(0.0f, 0.0f, 0.0f);
-        glVertex3f(-0.4f, 0.15f + wingOffset, -0.2f);
-        glVertex3f(-0.2f, 0.0f, -0.1f);
-
-        glNormal3f(0.5f, 0.5f, 0.0f);
-        glVertex3f(0.0f, 0.0f, 0.0f);
-        glVertex3f(0.4f, 0.15f + wingOffset, -0.2f);
-        glVertex3f(0.2f, 0.0f, -0.1f);
-        glEnd();
+        // Цвет птицы из конфига
+        setMaterial(bird.color, 40.0f, 0.2f);
+        m_birdModel.draw();
 
         glPopMatrix();
     }
 }
 
 void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
-    GLUquadric* quad = gluNewQuadric();
-
     for (const auto& flower : flowerSprites) {
         glPushMatrix();
         glTranslatef(flower.position.x, flower.position.y + 0.05f, flower.position.z);
         glScalef(flower.size, flower.size, flower.size);
 
-        setupMaterial(flower.color, 32.0f);
-        glDisable(GL_TEXTURE_2D);
-
-        // Стебель
-        glPushMatrix();
-        glScalef(0.05f, 0.5f, 0.05f);
-        gluCylinder(quad, 0.5, 0.3, 1.0, 4, 4);
-        glPopMatrix();
-
-        // Лепестки
-        glBegin(GL_TRIANGLES);
-        for (int i = 0; i < 6; i++) {
-            float angle = i * 60.0f * 3.14159f / 180.0f;
-            float x = cos(angle) * 0.2f;
-            float z = sin(angle) * 0.2f;
-
-            glNormal3f(x, 0.5f, z);
-            glVertex3f(0.0f, 0.25f, 0.0f);
-            glVertex3f(x, 0.05f, z);
-            glVertex3f(0.0f, 0.05f, 0.0f);
-        }
-        glEnd();
-
-        // Серединка
-        glColor3f(1.0f, 0.8f, 0.0f);
-        glPushMatrix();
-        glTranslatef(0.0f, 0.18f, 0.0f);
-        gluSphere(quad, 0.08, 6, 6);
-        glPopMatrix();
+        // Цвет цветка из конфига
+        setMaterial(flower.color, 50.0f, 0.2f);
+        m_flowerModel.draw();
 
         glPopMatrix();
     }
+}
 
-    gluDeleteQuadric(quad);
+void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
+    if (fenceBlocks.empty()) return;
+
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+    // Временно отключаем COLOR_MATERIAL для забора
+    glDisable(GL_COLOR_MATERIAL);
+
+    setMaterial(glm::vec3(0.55f, 0.27f, 0.07f), 24.0f, 0.15f);
+
+    for (const auto& fenceBlock : fenceBlocks) {
+        float x = fenceBlock.x * m_cellSize - offsetX;
+        float z = fenceBlock.z * m_cellSize - offsetZ;
+
+        bool isNorth = (fenceBlock.z == 0);
+        bool isSouth = (fenceBlock.z == m_gridDepth - 1);
+        bool isWest = (fenceBlock.x == 0);
+        bool isEast = (fenceBlock.x == m_gridWidth - 1);
+
+        bool isCorner = (isNorth || isSouth) && (isWest || isEast);
+
+        float postHeight = m_cellSize * 0.5f;
+        float postWidth = m_cellSize * 0.08f;
+        float railHeight = m_cellSize * 0.05f;
+
+        if (isCorner) {
+            // Угловой столб
+            glPushMatrix();
+            glTranslatef(x, postHeight / 2.0f, z);
+            glScalef(postWidth * 1.2f, postHeight, postWidth * 1.2f);
+PrimitiveBase::drawCube();
+            glPopMatrix();
+        }
+        else if (isNorth || isSouth) {
+            // Север/Юг - забор вдоль X
+            float railLength = m_cellSize * 0.92f;
+
+            // Левый столб
+            glPushMatrix();
+            glTranslatef(x - m_cellSize / 2.0f + postWidth, postHeight / 2.0f, z);
+            glScalef(postWidth, postHeight, postWidth);
+PrimitiveBase::drawCube();
+            glPopMatrix();
+
+            // Правый столб
+            glPushMatrix();
+            glTranslatef(x + m_cellSize / 2.0f - postWidth, postHeight / 2.0f, z);
+            glScalef(postWidth, postHeight, postWidth);
+PrimitiveBase::drawCube();
+            glPopMatrix();
+
+            // Верхняя рейка
+            glPushMatrix();
+            glTranslatef(x, postHeight * 0.7f, z);
+            glScalef(railLength, railHeight, postWidth);
+PrimitiveBase::drawCube();
+            glPopMatrix();
+
+            // Нижняя рейка
+            glPushMatrix();
+            glTranslatef(x, postHeight * 0.25f, z);
+            glScalef(railLength, railHeight, postWidth);
+PrimitiveBase::drawCube();
+            glPopMatrix();
+        }
+        else if (isWest || isEast) {
+            // Запад/Восток - забор вдоль Z
+            float railLength = m_cellSize * 0.92f;
+
+            // Нижний столб
+            glPushMatrix();
+            glTranslatef(x, postHeight / 2.0f, z - m_cellSize / 2.0f + postWidth);
+            glScalef(postWidth, postHeight, postWidth);
+PrimitiveBase::drawCube();
+            glPopMatrix();
+
+            // Верхний столб
+            glPushMatrix();
+            glTranslatef(x, postHeight / 2.0f, z + m_cellSize / 2.0f - postWidth);
+            glScalef(postWidth, postHeight, postWidth);
+PrimitiveBase::drawCube();
+            glPopMatrix();
+
+            // Верхняя рейка
+            glPushMatrix();
+            glTranslatef(x, postHeight * 0.7f, z);
+            glScalef(postWidth, railHeight, railLength);
+PrimitiveBase::drawCube();
+            glPopMatrix();
+
+            // Нижняя рейка
+            glPushMatrix();
+            glTranslatef(x, postHeight * 0.25f, z);
+            glScalef(postWidth, railHeight, railLength);
+PrimitiveBase::drawCube();
+            glPopMatrix();
+        }
+    }
+
+    // Включаем обратно
+    glEnable(GL_COLOR_MATERIAL);
 }
 
 void GameRenderer::drawLightSource() {
@@ -834,30 +696,9 @@ void GameRenderer::drawModel(const Model& model, float x, float y, float z,
     glTranslatef(x, y, z);
     glScalef(scale, scale, scale);
 
-    setupMaterial(color);
+    setMaterial(color, 32.0f, 0.3f);
     setupTexture(model.hasTexture ? model.textureID : 0);
-
-    if (model.vertices.size() > 0) {
-        glEnableClientState(GL_VERTEX_ARRAY);
-        glEnableClientState(GL_NORMAL_ARRAY);
-        if (model.hasTexture) {
-            glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-        }
-
-        glVertexPointer(3, GL_FLOAT, sizeof(Vertex), &model.vertices[0].position);
-        glNormalPointer(GL_FLOAT, sizeof(Vertex), &model.vertices[0].normal);
-        if (model.hasTexture) {
-            glTexCoordPointer(2, GL_FLOAT, sizeof(Vertex), &model.vertices[0].texCoords);
-        }
-
-        glDrawArrays(GL_TRIANGLES, 0, model.vertices.size());
-
-        glDisableClientState(GL_VERTEX_ARRAY);
-        glDisableClientState(GL_NORMAL_ARRAY);
-        if (model.hasTexture) {
-            glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-        }
-    }
+    model.draw();
 
     glPopMatrix();
 }
@@ -870,30 +711,9 @@ void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, f
     glRotatef(rotationAngle, 0.0f, 1.0f, 0.0f);
     glScalef(scale, scale, scale);
 
-    setupMaterial(color);
+    setMaterial(color, 32.0f, 0.3f);
     setupTexture(model.hasTexture ? model.textureID : 0);
-
-    if (model.vertices.size() > 0) {
-        glEnableClientState(GL_VERTEX_ARRAY);
-        glEnableClientState(GL_NORMAL_ARRAY);
-        if (model.hasTexture) {
-            glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-        }
-
-        glVertexPointer(3, GL_FLOAT, sizeof(Vertex), &model.vertices[0].position);
-        glNormalPointer(GL_FLOAT, sizeof(Vertex), &model.vertices[0].normal);
-        if (model.hasTexture) {
-            glTexCoordPointer(2, GL_FLOAT, sizeof(Vertex), &model.vertices[0].texCoords);
-        }
-
-        glDrawArrays(GL_TRIANGLES, 0, model.vertices.size());
-
-        glDisableClientState(GL_VERTEX_ARRAY);
-        glDisableClientState(GL_NORMAL_ARRAY);
-        if (model.hasTexture) {
-            glDisableClientState(GL_TEXTURE_COORD_ARRAY);
-        }
-    }
+    model.draw();
 
     glPopMatrix();
 }
@@ -903,17 +723,20 @@ void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, f
 //=============================================================================
 
 void GameRenderer::createPrimitives() {
-    std::cout << "Creating primitive fallback models..." << std::endl;
+    std::cout << "Creating primitive models..." << std::endl;
 
-    PrimitiveBase::createCube(cubePrimitive);
-    PrimitiveBase::createSphere(spherePrimitive);
-    ApplePrimitive::create(appleModel);
-    TreePrimitive::create(treeModel);
-    CloudPrimitive::create(cloudModel);
-    BirdPrimitive::create(birdModel);
-    FlowerPrimitive::create(flowerModel);
+    ApplePrimitive::create(m_appleModel);
+    TreePrimitive::create(m_treeModel);
+    CloudPrimitive::create(m_cloudModel);
+    BirdPrimitive::create(m_birdModel);
+    FlowerPrimitive::create(m_flowerModel);
+    FencePrimitive::create(m_fenceModel);
 
-    std::cout << "Primitives created successfully" << std::endl;
+    SnakeHeadPrimitive::create(m_snakeHeadModel);
+    SnakeBodyPrimitive::create(m_snakeBodyModel);
+    SnakeTailPrimitive::create(m_snakeTailModel);
+
+    std::cout << "All primitives created successfully" << std::endl;
 }
 
 void GameRenderer::createTexturedFloorModel(Model& model) {
@@ -953,9 +776,6 @@ void GameRenderer::loadModelsFromConfig(const GameObjects& objects) {
     std::cout << "\n========== LOADING MODELS FROM CONFIG ==========" << std::endl;
 
     createPrimitives();
-
-    // Здесь можно добавить загрузку моделей из FBX/OBJ файлов
-    // Для fixed pipeline используем только примитивы
 
     std::cout << "================================================\n" << std::endl;
 }
@@ -1013,20 +833,50 @@ void GameRenderer::setFloorTexture(const std::string& texturePath) {
 // ТЕНИ
 //=============================================================================
 
+void GameRenderer::toggleShadowMap() {
+    m_shadowMapEnabled = !m_shadowMapEnabled;
+    std::cout << "Shadow mapping: " << (m_shadowMapEnabled ? "ENABLED" : "DISABLED") << std::endl;
+
+    if (m_shadowMapEnabled) {
+        resetShadows();
+        m_staticShadowsDirty = true;
+        m_dynamicShadowsDirty = true;
+    }
+}
+
+void GameRenderer::toggleDebugRays() {
+    m_debugRaysEnabled = !m_debugRaysEnabled;
+    std::cout << "Debug rays: " << (m_debugRaysEnabled ? "ENABLED" : "DISABLED") << std::endl;
+
+    if (m_debugRaysEnabled && m_shadowMapEnabled) {
+        m_staticShadow.enableDebugRays(true);
+        m_dynamicShadow.enableDebugRays(true);
+        m_staticShadowsDirty = true;
+        m_dynamicShadowsDirty = true;
+    }
+    else if (!m_debugRaysEnabled) {
+        m_staticShadow.enableDebugRays(false);
+        m_dynamicShadow.enableDebugRays(false);
+    }
+}
+
 void GameRenderer::resetShadows() {
     m_staticShadow = ShadowMapper(
-        m_gridWidth, m_gridDepth, m_cellSize, gridLineWidth,
+        m_gridWidth, m_gridDepth, m_cellSize, 0.0f,
         m_lightDir, m_lightColor, m_lightType, m_lightPos,
-        m_shadowStrideX, m_shadowStrideZ
+        1, 1
     );
 
-    m_dynamicShadow = m_staticShadow;
+    m_dynamicShadow = ShadowMapper(
+        m_gridWidth, m_gridDepth, m_cellSize, 0.0f,
+        m_lightDir, m_lightColor, m_lightType, m_lightPos,
+        1, 1
+    );
 
     m_staticShadowsDirty = true;
     m_dynamicShadowsDirty = true;
 
-    std::cout << "Shadows reset. Total samples: "
-        << (m_gridWidth * m_gridDepth) << std::endl;
+    std::cout << "Shadows reset. Total cells: " << (m_gridWidth * m_gridDepth) << std::endl;
 }
 
 void GameRenderer::markDynamicShadowsDirty() {
@@ -1035,7 +885,6 @@ void GameRenderer::markDynamicShadowsDirty() {
 
 void GameRenderer::renderShadowMap() {
     // Упрощённая версия теней для fixed pipeline
-    // Просто затемняем область в зависимости от позиции
 }
 
 //=============================================================================
@@ -1054,35 +903,71 @@ void GameRenderer::drawSphereImmediate(const glm::vec3& center, float radius) {
 }
 
 void GameRenderer::drawDebugRaysIfEnabled() {
-    if (!m_debugRaysEnabled) return;
+    if (!m_debugRaysEnabled || !m_shadowMapEnabled) return;
 
     auto staticRays = m_staticShadow.getDebugRays();
     auto dynamicRays = m_dynamicShadow.getDebugRays();
 
     if (staticRays.empty() && dynamicRays.empty()) return;
 
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT);
+
     glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
     glLineWidth(2.0f);
 
-    // Рисуем красные линии (попавшие в объекты)
     for (const auto& ray : staticRays) {
         if (ray.hit) {
             glColor3f(1.0f, 0.0f, 0.0f);
-            glBegin(GL_LINES);
-            glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
-            glVertex3f(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);
-            glEnd();
         }
         else if (m_showGroundRays) {
             glColor3f(0.2f, 0.6f, 1.0f);
-            glBegin(GL_LINES);
-            glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
-            glVertex3f(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);
-            glEnd();
+        }
+        else {
+            continue;
+        }
+
+        glBegin(GL_LINES);
+        glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
+        glVertex3f(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);
+        glEnd();
+
+        if (ray.hit) {
+            glColor3f(1.0f, 0.0f, 0.0f);
+            drawSphereImmediate(ray.hitPoint, 0.08f);
         }
     }
 
-    glEnable(GL_LIGHTING);
+    for (const auto& ray : dynamicRays) {
+        if (ray.hit) {
+            glColor3f(1.0f, 0.0f, 0.0f);
+        }
+        else if (m_showGroundRays) {
+            glColor3f(0.2f, 0.6f, 1.0f);
+        }
+        else {
+            continue;
+        }
+
+        glBegin(GL_LINES);
+        glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
+        glVertex3f(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);
+        glEnd();
+
+        if (ray.hit) {
+            glColor3f(1.0f, 0.0f, 0.0f);
+            drawSphereImmediate(ray.hitPoint, 0.08f);
+        }
+    }
+
+    glColor3f(0.0f, 1.0f, 0.0f);
+    for (const auto& ray : staticRays) {
+        drawSphereImmediate(ray.origin, 0.05f);
+    }
+
+    glPopAttrib();
+    glEnable(GL_DEPTH_TEST);
 }
 
 void GameRenderer::drawDebugRays(const std::vector<DebugRay>& rays, float lineWidth) {
@@ -1093,17 +978,91 @@ void GameRenderer::drawRay(const DebugRay& ray, const glm::vec3& color) {
     // Реализация для отладки
 }
 
-void GameRenderer::toggleDebugRays() {
-    m_debugRaysEnabled = !m_debugRaysEnabled;
+HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
+    HitInfo closestHit;
+    closestHit.hit = false;
+    closestHit.distance = 1000.0f;
 
-    m_staticShadow.enableDebugRays(m_debugRaysEnabled);
-    m_dynamicShadow.enableDebugRays(m_debugRaysEnabled);
+    float maxDistance = 50.0f;
+    float treeSize = m_cellSize * 1.5f;
+    float treeHalf = treeSize / 2.0f;
 
-    if (m_debugRaysEnabled) {
-        m_staticShadowsDirty = true;
-        m_dynamicShadowsDirty = true;
-        shadow_map = true;
+    float tGround = -ray.origin.y / ray.direction.y;
+    if (tGround > 0 && tGround < maxDistance && tGround < closestHit.distance) {
+        glm::vec3 hitPoint = ray.pointAt(tGround);
+        float halfWidth = m_gridWidth * m_cellSize / 2.0f;
+        float halfDepth = m_gridDepth * m_cellSize / 2.0f;
+
+        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+            closestHit.hit = true;
+            closestHit.distance = tGround;
+            closestHit.point = hitPoint;
+            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
     }
+
+    for (const auto& obstacle : objects.getObstacles()) {
+        for (const auto& block : obstacle.blocks) {
+            float x = block.x * m_cellSize - offsetX;
+            float z = block.z * m_cellSize - offsetZ;
+            float y = block.y * m_cellSize;
+
+            glm::vec3 boxMin(x - treeHalf, y, z - treeHalf);
+            glm::vec3 boxMax(x + treeHalf, y + treeSize, z + treeHalf);
+
+            float tMin, tMax;
+            if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
+                if (tMin > 0.01f && tMin < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = tMin;
+                    closestHit.point = ray.pointAt(tMin);
+                    closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
+                }
+            }
+        }
+    }
+
+    const auto& snake = objects.getSnake();
+    float snakeSize = m_cellSize * 0.8f;
+    float snakeHalf = snakeSize / 2.0f;
+
+    for (size_t i = 0; i < snake.size(); i++) {
+        float x = snake[i].x * m_cellSize - offsetX;
+        float z = snake[i].z * m_cellSize - offsetZ;
+        float y = snake[i].y * m_cellSize + 0.1f;
+
+        glm::vec3 boxMin(x - snakeHalf, y - snakeHalf, z - snakeHalf);
+        glm::vec3 boxMax(x + snakeHalf, y + snakeHalf, z + snakeHalf);
+
+        float tMin, tMax;
+        if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
+            if (tMin > 0.01f && tMin < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tMin;
+                closestHit.point = ray.pointAt(tMin);
+                closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
+            }
+        }
+    }
+
+    float foodRadius = m_cellSize * 0.4f;
+    for (const auto& apple : objects.getFood()) {
+        float x = apple.x * m_cellSize - offsetX;
+        float z = apple.z * m_cellSize - offsetZ;
+        float y = apple.y * m_cellSize + 0.1f;
+
+        float tHit;
+        if (rayIntersectsSphere(ray, glm::vec3(x, y, z), foodRadius, tHit)) {
+            if (tHit > 0.01f && tHit < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tHit;
+                closestHit.point = ray.pointAt(tHit);
+                closestHit.normal = glm::normalize(closestHit.point - glm::vec3(x, y, z));
+            }
+        }
+    }
+
+    return closestHit;
 }
 
 void GameRenderer::checkGLError(const char* functionName) {
@@ -1118,7 +1077,6 @@ void GameRenderer::checkGLError(const char* functionName) {
 //=============================================================================
 
 void GameRenderer::initRayTracingResources() {
-    // Упрощённая инициализация для fixed pipeline
     std::cout << "Ray tracing resources initialized (simplified for fixed pipeline)" << std::endl;
 }
 
@@ -1127,12 +1085,10 @@ void GameRenderer::cleanupRayTracingResources() {
 }
 
 void GameRenderer::renderWithRayTracing(const GameObjects& objects) {
-    // Упрощённая версия для fixed pipeline
     std::cout << "Ray tracing not fully implemented in fixed pipeline mode" << std::endl;
 }
 
 glm::vec3 GameRenderer::traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, int depth) {
-    // Упрощённая версия
     return skyColor;
 }
 
@@ -1217,45 +1173,46 @@ glm::vec3 GameRenderer::computeNormal(const glm::vec3& point, const glm::vec3& m
 //=============================================================================
 
 glm::vec3 GameRenderer::getSnakeSegmentPosition(const Point& segment, size_t index) {
-    float offsetX = 120 * 0.1f / 2.0f;  // m_gridWidth * m_cellSize / 2
-    float offsetZ = 120 * 0.1f / 2.0f;
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    float x = segment.x * 0.1f - offsetX;
-    float z = segment.z * 0.1f - offsetZ;
-    float y = segment.y * 0.1f + 0.1f;
+    float x = segment.x * m_cellSize - offsetX;
+    float z = segment.z * m_cellSize - offsetZ;
+    float y = segment.y * m_cellSize + 0.1f;
 
     return glm::vec3(x, y, z);
 }
 
 glm::vec3 GameRenderer::getSnakeSegmentScale(const Point& segment, size_t index) {
-    float baseScale = 0.1f * 0.8f;
+    const GameObjects& objects = g_game.getGameObjects();
+    float baseScale = m_cellSize * 0.8f;
     float scale = baseScale;
 
-    if (index == 0) scale *= 1.2f;
-    else if (index == g_game.getSnake().size() - 1) scale *= 0.9f;
-    else scale *= 1.0f;
+    if (index == 0) scale *= objects.getSnakeHeadScale();
+    else if (index == g_game.getSnake().size() - 1) scale *= objects.getSnakeTailScale();
+    else scale *= objects.getSnakeBodyScale();
 
     return glm::vec3(scale);
 }
 
 glm::vec3 GameRenderer::getFoodPosition(const Point& food) {
-    float offsetX = 120 * 0.1f / 2.0f;
-    float offsetZ = 120 * 0.1f / 2.0f;
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    float x = food.x * 0.1f - offsetX;
-    float z = food.z * 0.1f - offsetZ;
-    float y = food.y * 0.1f + 0.1f;
+    float x = food.x * m_cellSize - offsetX;
+    float z = food.z * m_cellSize - offsetZ;
+    float y = food.y * m_cellSize + 0.1f;
 
     return glm::vec3(x, y, z);
 }
 
 glm::vec3 GameRenderer::getObstaclePosition(const Point& block) {
-    float offsetX = 120 * 0.1f / 2.0f;
-    float offsetZ = 120 * 0.1f / 2.0f;
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    float x = block.x * 0.1f - offsetX;
-    float z = block.z * 0.1f - offsetZ;
-    float y = block.y * 0.1f;
+    float x = block.x * m_cellSize - offsetX;
+    float z = block.z * m_cellSize - offsetZ;
+    float y = block.y * m_cellSize;
 
     return glm::vec3(x, y, z);
 }
@@ -1296,7 +1253,7 @@ bool GameRenderer::initGLEW() {
         std::cerr << "Failed to initialize GLEW: " << glewGetErrorString(glewError) << std::endl;
         return false;
     }
-    glGetError(); // Игнорируем первую ошибку
+    glGetError();
     return true;
 }
 

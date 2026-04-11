@@ -1,36 +1,35 @@
 #pragma once
 #include "../Core/Types.h"
 #include <vector>
-#include <GLEW/glew.h>
+#include <GL/glew.h>
 #include <glm/glm.hpp>
 #include <functional>
 
-// Структура для 3D модели
+// Структура для 3D модели - Fixed Pipeline версия
 class Model {
 public:
     std::vector<Vertex> vertices;
-    GLuint VAO, VBO;
-    GLuint textureID;  // ID текстуры в OpenGL
+    GLuint displayList;     // Используем Display List вместо VBO для Fixed Pipeline
+    GLuint textureID;
     bool hasTexture;
+    bool isCompiled;        // Флаг, скомпилирована ли display list
 
     // Для пола - данные о высоте в каждой точке
-    std::vector<float> heightMap;  // Карта высот
-    float minX, maxX, minZ, maxZ;  // Границы модели
-    float width, depth;             // Размеры модели
+    std::vector<float> heightMap;
+    float minX, maxX, minZ, maxZ;
+    float width, depth;
 
     Model();
     void setupBuffers();
     void draw() const;
     void cleanup();
 
-    // Новый метод для получения высоты в точке
     float getHeightAt(float worldX, float worldZ) const;
-
-    // Установка текстуры
     void setTexture(GLuint texID) {
         textureID = texID;
         hasTexture = (texID != 0);
     }
+
     float getMinY() const {
         if (vertices.empty()) return 0.0f;
         float minY = vertices[0].position.y;
@@ -39,6 +38,6 @@ public:
         }
         return minY;
     }
-    // Вычисление границ модели
+
     void calculateBounds();
 };

@@ -152,7 +152,6 @@
     <ClCompile Include="Graphics\Model.cpp" />
     <ClCompile Include="Graphics\ModelLoader.cpp" />
     <ClCompile Include="Graphics\RayTracer.cpp" />
-    <ClCompile Include="Graphics\ShaderManager.cpp" />
     <ClCompile Include="Graphics\ShadowMapper.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Objects\GameObjects.cpp" />
@@ -163,6 +162,9 @@
     <ClCompile Include="Primitives\FencePrimitive.cpp" />
     <ClCompile Include="Primitives\BirdPrimitive.cpp" />
     <ClCompile Include="Primitives\FlowerPrimitive.cpp" />
+    <ClCompile Include="Primitives\SnakeBodyPrimitive.cpp" />
+    <ClCompile Include="Primitives\SnakeHeadPrimitive.cpp" />
+    <ClCompile Include="Primitives\SnakeTailPrimitive.cpp" />
     <ClCompile Include="Primitives\TreePrimitive.cpp" />
     <ClCompile Include="UI\GameUI.cpp" />
     <ClCompile Include="UI\MenuButton.cpp" />
@@ -195,6 +197,9 @@
     <ClInclude Include="pch.h" />
     <ClInclude Include="Primitives\FencePrimitive.h" />
     <ClInclude Include="Primitives\CloudPrimitive.h" />
+    <ClInclude Include="Primitives\SnakeBodyPrimitive.h" />
+    <ClInclude Include="Primitives\SnakeHeadPrimitive.h" />
+    <ClInclude Include="Primitives\SnakeTailPrimitive.h" />
     <ClInclude Include="Primitives\TreePrimitive.h" />
     <ClInclude Include="Primitives\FlowerPrimitive.h" />
     <ClInclude Include="Primitives\BirdPrimitive.h" />

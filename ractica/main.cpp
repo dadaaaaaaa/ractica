@@ -1,6 +1,5 @@
 ﻿#include "pch.h"
 #include "Game/Game.h"
-#include "Graphics/ShaderManager.h"
 #include "Graphics/Camera.h"
 #include "Graphics/GameRenderer.h"
 #include "Core/Constants.h"

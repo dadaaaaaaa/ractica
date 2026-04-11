@@ -1,6 +1,5 @@
 ﻿#include "../pch.h"
 #include "Game.h"
-#include "../Graphics/ShaderManager.h"
 #include "../Graphics/Camera.h"
 #include "../ConfigEditor/ConfigManager.h"
 #include "../Shared/ConfigTypes.h"
@@ -382,8 +381,12 @@ void Game::handleKeyPress(int key) {
             renderer.markStaticShadowsDirty();
             renderer.markDynamicShadowsDirty();
             break;
+        case GLFW_KEY_Y:
+            renderer.toggleShadowMap();  // Включает/выключает тени
+            std::cout << "Shadow map toggled" << std::endl;
+            break;
         case GLFW_KEY_F6:
-            renderer.toggleDebugRays();
+            renderer.toggleDebugRays();  // Включает/выключает лучи
             break;
         }
 

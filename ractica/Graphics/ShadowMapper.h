@@ -1,5 +1,5 @@
 #pragma once
-
+#include "RayTracer.h"
 #include <glm/glm.hpp>
 #include <vector>
 #include <functional>
@@ -14,20 +14,22 @@ struct DebugRay {
     glm::vec3 direction;
     glm::vec3 hitPoint;
     float distance;
-    bool hit;
+    bool hit;           // true = пересек объект (красный), false = только пол (синий)
     int rayId;
+    int cellX, cellZ;   // Координаты клетки, для которой пускался луч
 
     DebugRay() : origin(0.0f), direction(0.0f), hitPoint(0.0f),
-        distance(0.0f), hit(false), rayId(-1) {
+        distance(0.0f), hit(false), rayId(-1), cellX(0), cellZ(0) {
     }
 };
 
 struct ShadowSample {
     bool computed;
     float value;        // 0.0 = в тени, 1.0 = на свету
-    glm::vec3 position;
+    glm::vec3 position; // Позиция клетки (центр)
+    int cellX, cellZ;   // Координаты клетки в сетке
 
-    ShadowSample() : computed(false), value(1.0f), position(0.0f) {}
+    ShadowSample() : computed(false), value(1.0f), position(0.0f), cellX(0), cellZ(0) {}
 };
 
 struct BoundingSphere {
@@ -38,7 +40,6 @@ struct BoundingSphere {
     BoundingSphere(const glm::vec3& c, float r) : center(c), radius(r) {}
 };
 
-
 class ShadowMapper {
 private:
     int m_gridWidth;        // Количество клеток в игровой сетке
@@ -46,14 +47,11 @@ private:
     float m_cellSize;
     float m_groundHeight;
 
-    // Соотношение: 1:1, 1:2, 2:1
-    int m_strideX;          // Шаг по X (1 = каждый, 2 = каждый второй)
-    int m_strideZ;          // Шаг по Z
-
-    int m_totalSamplesX;    // Всего сэмплов = gridWidth / strideX
-    int m_totalSamplesZ;    // Всего сэмплов = gridDepth / strideZ
+    int m_totalCellsX;      // Всего клеток по X
+    int m_totalCellsZ;      // Всего клеток по Z
 
     std::vector<std::vector<ShadowSample>> m_shadowGrid;
+
     LightType m_lightType;
     glm::vec3 m_lightPos;
     glm::vec3 m_lightDirection;
@@ -67,6 +65,12 @@ private:
     bool m_recordDebugRays;
     int m_nextRayId;
 
+    // Вспомогательные методы
+    glm::vec3 getCellCenter(int cellX, int cellZ) const;
+    bool isPointInShadow(const glm::vec3& point, int& hitCellX, int& hitCellZ, float& hitDistance);
+    bool traceShadowRay(const glm::vec3& start, const glm::vec3& direction,
+        float maxDistance, float& hitDistance, glm::vec3& hitPoint);
+
 public:
     ShadowMapper();
 
@@ -74,16 +78,6 @@ public:
         const glm::vec3& lightDirection, const glm::vec3& lightColor,
         LightType lightType, const glm::vec3& lightPos,
         int strideX, int strideZ);
-
-    // Установка соотношения (1:1, 1:2, 2:1)
-    void setStride(int strideX, int strideZ) {
-        m_strideX = std::max(1, strideX);
-        m_strideZ = std::max(1, strideZ);
-        m_totalSamplesX = m_gridWidth / m_strideX;
-        m_totalSamplesZ = m_gridDepth / m_strideZ;
-        // Пересоздаём сетку с новым размером
-        setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_groundHeight);
-    }
 
     void setGrid(int width, int depth, float cellSize, float groundHeight);
     void setLightType(LightType type) { m_lightType = type; }
@@ -93,21 +87,22 @@ public:
     void registerObjectBounds(const std::vector<BoundingSphere>& spheres);
     void clearObjectBounds();
     void setIntersectCallback(std::function<bool(const struct Ray&, float&, glm::vec3&)> callback);
+
+    // Главный метод - вычисляет тени для всех клеток
     void computeShadows();
 
-    bool isVertexInShadow(const glm::vec3& position);
+    // Получить значение тени для клетки по координатам
+    float getShadowAtCell(int cellX, int cellZ) const;
 
+    // Получить значение тени для точки в мире (биlinear интерполяция)
     float getShadowAtPoint(const glm::vec3& point) const;
     float getShadowAtWorldPos(float x, float z) const;
 
     const std::vector<std::vector<ShadowSample>>& getShadowGrid() const { return m_shadowGrid; }
 
-    int getTotalSamplesX() const { return m_totalSamplesX; }
-    int getTotalSamplesZ() const { return m_totalSamplesZ; }
-    int getStrideX() const { return m_strideX; }
-    int getStrideZ() const { return m_strideZ; }
+    int getTotalCellsX() const { return m_totalCellsX; }
+    int getTotalCellsZ() const { return m_totalCellsZ; }
 
-    glm::vec3 getVertexPosition(int sampleX, int sampleZ) const;
     bool isInGridBounds(int x, int z) const;
 
     // ===== ОТЛАДОЧНЫЕ МЕТОДЫ ДЛЯ ЛУЧЕЙ =====
@@ -115,18 +110,10 @@ public:
     bool isDebugRaysEnabled() const { return m_recordDebugRays; }
     void clearDebugRays() { m_debugRays.clear(); m_nextRayId = 0; }
     const std::vector<DebugRay>& getDebugRays() const { return m_debugRays; }
-
-    // Получить последние N лучей для отображения
-    std::vector<DebugRay> getLastDebugRays(int count = 100) const;
-
-    // Получить лучи, попавшие в определённую область
-    std::vector<DebugRay> getDebugRaysInArea(const glm::vec3& center, float radius) const;
+    std::vector<DebugRay> getDebugRays() { return m_debugRays; }
 
 private:
-    bool intersectsAnyBoundingSphere(const struct Ray& ray, float& hitDistance);
-    float bilinearInterpolate(float x, float z) const;
-
-    // ===== ОТЛАДОЧНЫЙ МЕТОД ДЛЯ ЗАПИСИ ЛУЧА =====
+    bool intersectsAnyObject(const struct Ray& ray, float& hitDistance, glm::vec3& hitPoint);
     void recordRay(const glm::vec3& origin, const glm::vec3& direction,
-        const glm::vec3& hitPoint, float distance, bool hit);
+        const glm::vec3& hitPoint, float distance, bool hit, int cellX, int cellZ);
 };

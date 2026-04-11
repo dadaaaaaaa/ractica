@@ -10,7 +10,16 @@
 #include <functional>
 #include <chrono>
 #include <iomanip>
-
+#include "../Primitives/SnakeTailPrimitive.h"
+#include "../Primitives/TreePrimitive.h"
+#include "../Primitives/ApplePrimitive.h"
+#include "../Primitives/BirdPrimitive.h"
+#include "../Primitives/CloudPrimitive.h"
+#include "../Primitives/FencePrimitive.h"
+#include "../Primitives/FlowerPrimitive.h"
+#include "../Primitives/SnakeHeadPrimitive.h"
+#include "../Primitives/SnakeBodyPrimitive.h"
+#include "../Primitives/PrimitiveBase.h"
 #include "../Core/Types.h"
 #include "../Objects/GameObjects.h"
 #include "../Graphics/ShadowMapper.h"
@@ -28,14 +37,12 @@ public:
     void setFloorTexture(const std::string& texturePath);
     void markDynamicShadowsDirty();
     void resetShadows();
-    void toggleDebugRays();
 
     // Настройки
     void setRayTracingEnabled(bool enabled) { m_rayTracingEnabled = enabled; }
     void setShadowMapEnabled(bool enabled) { shadow_map = enabled; }
     void setGridEnabled(bool enabled) { gridEnabled = enabled; }
     void setRenderWireframe(bool enabled) { m_renderWireframe = enabled; }
-    void setShowGroundRays(bool show) { m_showGroundRays = show; }
 
     // ДОБАВЛЕННЫЕ МЕТОДЫ
     void setSkyColor(const glm::vec3& color) { skyColor = color; }
@@ -50,8 +57,8 @@ public:
     void toggleRayTracing() { m_rayTracingEnabled = !m_rayTracingEnabled; }
     void toggleshadow_map() { shadow_map = !shadow_map; }
     void markStaticShadowsDirty() { m_staticShadowsDirty = true; }
-    void createPrimitives();  // Теперь public
-
+    void createPrimitives();
+    void drawSnakeEyes();
     // Геттеры
     bool isRayTracingEnabled() const { return m_rayTracingEnabled; }
     bool isShadowMapEnabled() const { return shadow_map; }
@@ -64,20 +71,27 @@ public:
     static void printGraphicsInfo();
     static void checkDoubleBufferSupport(GLFWwindow* window);
     static void setupVSync(GLFWwindow* window, bool enabled);
-    static void initOpenGLSettings();  // Сделали static
-    static void checkGLError(const char* functionName);  // Сделали static
+    static void initOpenGLSettings();
+    static void checkGLError(const char* functionName);
 
     // Вспомогательные методы
     void drawSphereImmediate(const glm::vec3& center, float radius);
 
+    // ========== МЕТОДЫ ТЕНЕЙ ==========
+    void renderShadowMap();
+    void toggleShadowMap();
+    void toggleDebugRays();
+    void setShowGroundRays(bool show) { m_showGroundRays = show; }
+    void setMaterial(const glm::vec3& color, float shininess = 32.0f, float specularStrength = 0.3f);
 private:
     // ========== ОСНОВНЫЕ МЕТОДЫ РЕНДЕРИНГА ==========
     void setupFixedPipelineLighting();
     void updateLightPosition();
-    void setupMaterial(const glm::vec3& color, float shininess = 32.0f);
     void setupTexture(GLuint textureID);
     void resetDepthState();
-    void drawCube();  // Добавлен метод для рисования куба
+    void drawCube();
+    void computeShadowsIfNeeded(const GameObjects& objects);
+    HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
 
     // ========== МЕТОДЫ ОТРИСОВКИ ОБЪЕКТОВ ==========
     void drawFloor();
@@ -94,6 +108,10 @@ private:
         const glm::vec3& color, float rotationAngle);
     float calculateSegmentRotation(const std::vector<Point>& snake, size_t index);
 
+    // ========== СОЗДАНИЕ ПРИМИТИВОВ ==========
+    void createSnakePrimitives();
+    void createFenceModels();
+
     // ========== ПРИМИТИВЫ ДЛЯ ЗАБОРА ==========
     void createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
         float width, float height, const glm::vec3& color);
@@ -103,9 +121,6 @@ private:
         float length, float thickness, const glm::vec3& color);
     void createFenceCorner(std::vector<Vertex>& vertices, float x, float y, float z,
         const glm::vec3& color);
-
-    // ========== МЕТОДЫ ТЕНЕЙ ==========
-    void renderShadowMap();
 
     // ========== МЕТОДЫ ТРАССИРОВКИ ЛУЧЕЙ ==========
     void initRayTracingResources();
@@ -122,27 +137,28 @@ private:
     void drawRay(const DebugRay& ray, const glm::vec3& color);
 
     // ========== ПОЗИЦИОНИРОВАНИЕ ОБЪЕКТОВ ==========
-    static glm::vec3 getSnakeSegmentPosition(const Point& segment, size_t index);
-    static glm::vec3 getSnakeSegmentScale(const Point& segment, size_t index);
-    static glm::vec3 getFoodPosition(const Point& food);
-    static glm::vec3 getObstaclePosition(const Point& block);
-    static glm::vec3 getBirdPosition(const Bird& bird);
-    static glm::vec3 getCloudPosition(const Sprite& cloud);
-    static glm::vec3 getFlowerPosition(const Sprite& flower);
-
+    glm::vec3 getSnakeSegmentPosition(const Point& segment, size_t index);
+    glm::vec3 getSnakeSegmentScale(const Point& segment, size_t index);
+    glm::vec3 getFoodPosition(const Point& food);
+    glm::vec3 getObstaclePosition(const Point& block);
+    glm::vec3 getBirdPosition(const Bird& bird);
+    glm::vec3 getCloudPosition(const Sprite& cloud);
+    glm::vec3 getFlowerPosition(const Sprite& flower);
+    // Добавьте в public секцию:
     // ========== МОДЕЛИ ==========
-    Model snakeHeadModel;
-    Model snakeBodyModel;
-    Model snakeTailModel;
-    Model appleModel;
-    Model treeModel;
-    Model cloudModel;
-    Model birdModel;
-    Model flowerModel;
-    Model floorModel;
-    Model spherePrimitive;
-    Model cubePrimitive;
-
+private:
+    Model m_snakeHeadModel;
+    Model m_snakeBodyModel;
+    Model m_snakeTailModel;
+    Model m_appleModel;
+    Model m_treeModel;
+    Model m_cloudModel;
+    Model m_birdModel;
+    Model m_flowerModel;
+    Model m_cubeModel;
+    Model m_sphereModel;
+    Model m_cylinderModel;
+    Model m_fenceModel;
     void createTexturedFloorModel(Model& model);
 
     // ========== НАСТРОЙКИ ОКРУЖЕНИЯ ==========
@@ -162,6 +178,7 @@ private:
     LightType m_lightType;
     glm::vec3 m_lightPos;
     bool shadow_map;
+    bool m_shadowMapEnabled;
     int m_shadowStrideX;
     int m_shadowStrideZ;
 

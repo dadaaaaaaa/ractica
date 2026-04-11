@@ -32,7 +32,8 @@ public:
     // лерндш дкъ осреи х йнмтхцю
     void initPaths();
     void loadConfig();
-
+    GameObjects& getGameObjects() { return objects; }
+    const GameObjects& getGameObjects() const { return objects; }
     // === церрепш дкъ глеийх ===
     const std::string& getSnakeHeadModel() const { return objects.getSnakeHeadModel(); }
     const std::string& getSnakeBodyModel() const { return objects.getSnakeBodyModel(); }

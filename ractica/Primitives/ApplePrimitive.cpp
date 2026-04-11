@@ -5,37 +5,61 @@
 void ApplePrimitive::create(Model& model) {
     model.vertices.clear();
 
-    // Яблоко - сфера
-    PrimitiveBase::createSphere(model, 12, 8);
+    // Создаём сферу с правильными нормалями
+    const int segments = 20;
+    const int rings = 20;
+    float radius = 0.5f;
 
-    // Добавляем черенок
-    std::vector<Vertex> stemVertices;
-    float stemHeight = 0.3f;
-    float stemRadius = 0.05f;
+    for (int i = 0; i < rings; ++i) {
+        float theta1 = (float)i / rings * 3.14159f;
+        float theta2 = (float)(i + 1) / rings * 3.14159f;
 
-    for (int i = 0; i < 8; i++) {
-        float angle1 = 2.0f * 3.14159f * i / 8;
-        float angle2 = 2.0f * 3.14159f * (i + 1) / 8;
+        for (int j = 0; j < segments; ++j) {
+            float phi1 = (float)j / segments * 2.0f * 3.14159f;
+            float phi2 = (float)(j + 1) / segments * 2.0f * 3.14159f;
 
-        glm::vec3 p1(0.0f + cos(angle1) * stemRadius, 0.5f, 0.0f + sin(angle1) * stemRadius);
-        glm::vec3 p2(0.0f + cos(angle2) * stemRadius, 0.5f, 0.0f + sin(angle2) * stemRadius);
-        glm::vec3 p3(0.0f + cos(angle1) * stemRadius, 0.5f + stemHeight, 0.0f + sin(angle1) * stemRadius);
-        glm::vec3 p4(0.0f + cos(angle2) * stemRadius, 0.5f + stemHeight, 0.0f + sin(angle2) * stemRadius);
+            // Вершины
+            glm::vec3 v1(
+                radius * sin(theta1) * cos(phi1),
+                radius * cos(theta1) * 1.1f,  // Вытянутость по Y
+                radius * sin(theta1) * sin(phi1)
+            );
+            glm::vec3 v2(
+                radius * sin(theta1) * cos(phi2),
+                radius * cos(theta1) * 1.1f,
+                radius * sin(theta1) * sin(phi2)
+            );
+            glm::vec3 v3(
+                radius * sin(theta2) * cos(phi2),
+                radius * cos(theta2) * 1.1f,
+                radius * sin(theta2) * sin(phi2)
+            );
+            glm::vec3 v4(
+                radius * sin(theta2) * cos(phi1),
+                radius * cos(theta2) * 1.1f,
+                radius * sin(theta2) * sin(phi1)
+            );
 
-        glm::vec3 normal1 = glm::normalize(glm::vec3(cos(angle1), 0.0f, sin(angle1)));
-        glm::vec3 normal2 = glm::normalize(glm::vec3(cos(angle2), 0.0f, sin(angle2)));
+            // Нормали (ВАЖНО: нормализуем)
+            glm::vec3 n1 = glm::normalize(v1);
+            glm::vec3 n2 = glm::normalize(v2);
+            glm::vec3 n3 = glm::normalize(v3);
+            glm::vec3 n4 = glm::normalize(v4);
 
-        stemVertices.push_back({ p1, normal1, glm::vec2(0.0f, 0.0f) });
-        stemVertices.push_back({ p3, normal1, glm::vec2(0.0f, 1.0f) });
-        stemVertices.push_back({ p2, normal2, glm::vec2(1.0f, 0.0f) });
+            // Треугольник 1
+            model.vertices.push_back({ v1, n1, glm::vec2(0,0) });
+            model.vertices.push_back({ v2, n2, glm::vec2(1,0) });
+            model.vertices.push_back({ v3, n3, glm::vec2(1,1) });
 
-        stemVertices.push_back({ p2, normal2, glm::vec2(1.0f, 0.0f) });
-        stemVertices.push_back({ p3, normal1, glm::vec2(0.0f, 1.0f) });
-        stemVertices.push_back({ p4, normal2, glm::vec2(1.0f, 1.0f) });
+            // Треугольник 2
+            model.vertices.push_back({ v3, n3, glm::vec2(1,1) });
+            model.vertices.push_back({ v4, n4, glm::vec2(0,1) });
+            model.vertices.push_back({ v1, n1, glm::vec2(0,0) });
+        }
     }
 
-    // Добавляем черенок к яблоку
-    model.vertices.insert(model.vertices.end(), stemVertices.begin(), stemVertices.end());
     model.hasTexture = false;
     model.setupBuffers();
+
+    std::cout << "Apple created with " << model.vertices.size() << " vertices" << std::endl;
 }

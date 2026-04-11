@@ -1,6 +1,6 @@
 #include "../pch.h"
 #include "PrimitiveBase.h"
-
+#include <GL/glu.h>
 void PrimitiveBase::createCube(Model& model) {
     model.vertices.clear();
 
@@ -60,6 +60,56 @@ void PrimitiveBase::createCube(Model& model) {
     model.hasTexture = false;
     model.setupBuffers();
 }
+void PrimitiveBase::createCube(Model& model, const glm::vec3& color) {
+    createCube(model);
+}
+void PrimitiveBase::drawCube() {
+    glBegin(GL_QUADS);
+
+    // Передняя грань (Z+)
+    glNormal3f(0.0f, 0.0f, 1.0f);
+    glVertex3f(-0.5f, -0.5f, 0.5f);
+    glVertex3f(0.5f, -0.5f, 0.5f);
+    glVertex3f(0.5f, 0.5f, 0.5f);
+    glVertex3f(-0.5f, 0.5f, 0.5f);
+
+    // Задняя грань (Z-)
+    glNormal3f(0.0f, 0.0f, -1.0f);
+    glVertex3f(-0.5f, -0.5f, -0.5f);
+    glVertex3f(-0.5f, 0.5f, -0.5f);
+    glVertex3f(0.5f, 0.5f, -0.5f);
+    glVertex3f(0.5f, -0.5f, -0.5f);
+
+    // Левая грань (X-)
+    glNormal3f(-1.0f, 0.0f, 0.0f);
+    glVertex3f(-0.5f, -0.5f, -0.5f);
+    glVertex3f(-0.5f, -0.5f, 0.5f);
+    glVertex3f(-0.5f, 0.5f, 0.5f);
+    glVertex3f(-0.5f, 0.5f, -0.5f);
+
+    // Правая грань (X+)
+    glNormal3f(1.0f, 0.0f, 0.0f);
+    glVertex3f(0.5f, -0.5f, -0.5f);
+    glVertex3f(0.5f, 0.5f, -0.5f);
+    glVertex3f(0.5f, 0.5f, 0.5f);
+    glVertex3f(0.5f, -0.5f, 0.5f);
+
+    // Верхняя грань (Y+)
+    glNormal3f(0.0f, 1.0f, 0.0f);
+    glVertex3f(-0.5f, 0.5f, -0.5f);
+    glVertex3f(-0.5f, 0.5f, 0.5f);
+    glVertex3f(0.5f, 0.5f, 0.5f);
+    glVertex3f(0.5f, 0.5f, -0.5f);
+
+    // Нижняя грань (Y-)
+    glNormal3f(0.0f, -1.0f, 0.0f);
+    glVertex3f(-0.5f, -0.5f, -0.5f);
+    glVertex3f(0.5f, -0.5f, -0.5f);
+    glVertex3f(0.5f, -0.5f, 0.5f);
+    glVertex3f(-0.5f, -0.5f, 0.5f);
+
+    glEnd();
+}
 
 void PrimitiveBase::createSphere(Model& model, int segments, int rings) {
     model.vertices.clear();
@@ -112,6 +162,12 @@ void PrimitiveBase::createSphere(Model& model, int segments, int rings) {
     model.setupBuffers();
 }
 
+void PrimitiveBase::drawSphere(float radius, int segments, int rings) {
+    GLUquadric* quad = gluNewQuadric();
+    gluSphere(quad, radius, segments, rings);
+    gluDeleteQuadric(quad);
+}
+
 void PrimitiveBase::createCylinder(Model& model, float radius, float height, int segments) {
     model.vertices.clear();
 
@@ -138,6 +194,12 @@ void PrimitiveBase::createCylinder(Model& model, float radius, float height, int
 
     model.hasTexture = false;
     model.setupBuffers();
+}
+
+void PrimitiveBase::drawCylinder(float radius, float height, int segments) {
+    GLUquadric* quad = gluNewQuadric();
+    gluCylinder(quad, radius, radius, height, segments, 1);
+    gluDeleteQuadric(quad);
 }
 
 void PrimitiveBase::createCircle(std::vector<Vertex>& vertices, float cx, float cy, float radius, int segments) {
