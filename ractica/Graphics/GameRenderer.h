@@ -10,6 +10,7 @@
 #include <functional>
 #include <chrono>
 #include <iomanip>
+#include <map>
 #include "../Primitives/SnakeTailPrimitive.h"
 #include "../Primitives/TreePrimitive.h"
 #include "../Primitives/ApplePrimitive.h"
@@ -25,11 +26,12 @@
 #include "../Graphics/ShadowMapper.h"
 #include "../Graphics/RayTracer.h"
 #include "Model.h"
+#include "ModelLoader.h"
 
 class GameRenderer {
 public:
     GameRenderer();
-    ~GameRenderer() = default;
+    ~GameRenderer();
 
     void initialize();
     void renderGame(const GameObjects& objects);
@@ -59,6 +61,7 @@ public:
     void markStaticShadowsDirty() { m_staticShadowsDirty = true; }
     void createPrimitives();
     void drawSnakeEyes();
+
     // Геттеры
     bool isRayTracingEnabled() const { return m_rayTracingEnabled; }
     bool isShadowMapEnabled() const { return shadow_map; }
@@ -83,6 +86,11 @@ public:
     void toggleDebugRays();
     void setShowGroundRays(bool show) { m_showGroundRays = show; }
     void setMaterial(const glm::vec3& color, float shininess = 32.0f, float specularStrength = 0.3f);
+
+    // ========== МЕТОДЫ ДЛЯ FBX МОДЕЛЕЙ ==========
+    bool loadFBXModelToModel(const std::string& filename, Model& outModel, const std::string& subFolder = "");
+    void drawModelWithMaterial(const Model& model, float x, float y, float z, float scale, const glm::vec3& color = glm::vec3(1.0f));
+
 private:
     // ========== ОСНОВНЫЕ МЕТОДЫ РЕНДЕРИНГА ==========
     void setupFixedPipelineLighting();
@@ -107,6 +115,10 @@ private:
     void drawModelWithRotation(const Model& model, float x, float y, float z, float scale,
         const glm::vec3& color, float rotationAngle);
     float calculateSegmentRotation(const std::vector<Point>& snake, size_t index);
+
+    // ========== ЗАГРУЗКА FBX МОДЕЛЕЙ ==========
+    bool convertModelDataToModel(const ModelData& modelData, Model& outModel);
+    void setupModelTexture(Model& model, GLuint textureID);
 
     // ========== СОЗДАНИЕ ПРИМИТИВОВ ==========
     void createSnakePrimitives();
@@ -144,9 +156,10 @@ private:
     glm::vec3 getBirdPosition(const Bird& bird);
     glm::vec3 getCloudPosition(const Sprite& cloud);
     glm::vec3 getFlowerPosition(const Sprite& flower);
-    // Добавьте в public секцию:
+
     // ========== МОДЕЛИ ==========
 private:
+    // Основные модели примитивов
     Model m_snakeHeadModel;
     Model m_snakeBodyModel;
     Model m_snakeTailModel;
@@ -159,6 +172,10 @@ private:
     Model m_sphereModel;
     Model m_cylinderModel;
     Model m_fenceModel;
+
+    // Загруженные FBX модели (путь к файлу -> модель)
+    std::map<std::string, Model> m_loadedFBXModels;
+
     void createTexturedFloorModel(Model& model);
 
     // ========== НАСТРОЙКИ ОКРУЖЕНИЯ ==========

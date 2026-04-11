@@ -64,11 +64,18 @@ GameRenderer::GameRenderer()
     m_lightPos = glm::vec3(0.0f, 100.0f, 0.0f);
 }
 
+GameRenderer::~GameRenderer() {
+    // Очищаем загруженные FBX модели
+    for (auto& pair : m_loadedFBXModels) {
+        pair.second.cleanup();
+    }
+    m_loadedFBXModels.clear();
+}
+
 void GameRenderer::initialize() {
     initOpenGLSettings();
     setupFixedPipelineLighting();
     initRayTracingResources();
-    createPrimitives();
 }
 
 void GameRenderer::initOpenGLSettings() {
@@ -100,7 +107,6 @@ void GameRenderer::initOpenGLSettings() {
 void GameRenderer::setupFixedPipelineLighting() {
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
-
 
     glEnable(GL_NORMALIZE);
 
@@ -136,7 +142,6 @@ void GameRenderer::setMaterial(const glm::vec3& color, float shininess, float sp
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, diffuse);
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular);
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
-
 }
 
 void GameRenderer::setupTexture(GLuint textureID) {
@@ -159,12 +164,304 @@ void GameRenderer::resetDepthState() {
 }
 
 //=============================================================================
+// ЗАГРУЗКА FBX МОДЕЛЕЙ
+//=============================================================================
+
+bool GameRenderer::loadFBXModelToModel(const std::string& filename, Model& outModel, const std::string& subFolder) {
+    // Проверяем, не загружена ли уже эта модель
+    std::string cacheKey = subFolder + "/" + filename;
+    auto it = m_loadedFBXModels.find(cacheKey);
+    if (it != m_loadedFBXModels.end()) {
+        std::cout << "Using cached FBX model: " << cacheKey << std::endl;
+        outModel = it->second;
+        return true;
+    }
+
+    std::cout << "Loading FBX model: " << filename << " from folder: " << subFolder << std::endl;
+
+    ModelData modelData;
+    if (!loadFBXModel(filename, modelData, subFolder)) {
+        std::cout << "Failed to load FBX model: " << filename << std::endl;
+        return false;
+    }
+
+    if (!convertModelDataToModel(modelData, outModel)) {
+        std::cout << "Failed to convert model data for: " << filename << std::endl;
+        return false;
+    }
+
+    // Кешируем модель
+    m_loadedFBXModels[cacheKey] = outModel;
+    std::cout << "FBX model loaded and cached: " << cacheKey << std::endl;
+
+    return true;
+}
+
+bool GameRenderer::convertModelDataToModel(const ModelData& modelData, Model& outModel) {
+    if (modelData.vertices.empty()) {
+        std::cout << "ModelData has no vertices" << std::endl;
+        return false;
+    }
+
+    outModel.vertices.clear();
+    outModel.hasTexture = false;
+    outModel.textureID = 0;
+
+    size_t vertexCount = modelData.vertices.size() / 3;
+    bool hasNormals = !modelData.normals.empty();
+    bool hasTexCoords = !modelData.texCoords.empty();
+
+    std::cout << "Converting model: " << vertexCount << " vertices, "
+        << "normals: " << (hasNormals ? "yes" : "no") << ", "
+        << "texCoords: " << (hasTexCoords ? "yes" : "no") << std::endl;
+
+    for (size_t i = 0; i < vertexCount; i++) {
+        Vertex vertex;
+
+        // Позиция
+        vertex.position.x = modelData.vertices[i * 3];
+        vertex.position.y = modelData.vertices[i * 3 + 1];
+        vertex.position.z = modelData.vertices[i * 3 + 2];
+
+        // Нормаль
+        if (hasNormals && i * 3 + 2 < modelData.normals.size()) {
+            vertex.normal.x = modelData.normals[i * 3];
+            vertex.normal.y = modelData.normals[i * 3 + 1];
+            vertex.normal.z = modelData.normals[i * 3 + 2];
+        }
+        else {
+            vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+
+        // Текстурные координаты
+        if (hasTexCoords && i * 2 + 1 < modelData.texCoords.size()) {
+            vertex.texCoords.x = modelData.texCoords[i * 2];
+            vertex.texCoords.y = modelData.texCoords[i * 2 + 1];
+        }
+        else {
+            vertex.texCoords = glm::vec2(0.0f, 0.0f);
+        }
+
+        outModel.vertices.push_back(vertex);
+    }
+
+    // Если есть текстура в первом материале, используем её
+    if (!modelData.materials.empty() && modelData.materials[0].textureID != 0) {
+        outModel.textureID = modelData.materials[0].textureID;
+        outModel.hasTexture = true;
+        std::cout << "Model has texture ID: " << outModel.textureID << std::endl;
+    }
+
+    outModel.setupBuffers();
+
+    std::cout << "Model converted successfully with " << outModel.vertices.size() << " vertices" << std::endl;
+    return true;
+}
+
+void GameRenderer::setupModelTexture(Model& model, GLuint textureID) {
+    model.textureID = textureID;
+    model.hasTexture = (textureID != 0);
+
+    // Перекомпилируем display list с текстурой
+    if (model.isCompiled && model.displayList != 0) {
+        model.setupBuffers();
+    }
+}
+
+void GameRenderer::drawModelWithMaterial(const Model& model, float x, float y, float z, float scale, const glm::vec3& color) {
+    glPushMatrix();
+    glTranslatef(x, y, z);
+    glScalef(scale, scale, scale);
+
+    if (model.hasTexture && model.textureID != 0) {
+        // Если у модели есть текстура, используем белый цвет для материала
+        setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 32.0f, 0.3f);
+        setupTexture(model.textureID);
+    }
+    else {
+        setMaterial(color, 32.0f, 0.3f);
+        setupTexture(0);
+    }
+
+    model.draw();
+    glPopMatrix();
+}
+
+//=============================================================================
+// ЗАГРУЗКА ВСЕХ МОДЕЛЕЙ ИЗ КОНФИГА
+//=============================================================================
+
+void GameRenderer::loadModelsFromConfig(const GameObjects& objects) {
+    std::cout << "\n========== LOADING MODELS FROM CONFIG ==========" << std::endl;
+
+    // Сначала пытаемся загрузить FBX модели из конфига
+    // Если не удалось - создаём примитивы как fallback
+
+    std::cout << "\n--- Loading Apple Model ---" << std::endl;
+    if (!objects.getAppleModel().empty()) {
+        if (!loadFBXModelToModel(objects.getAppleModel(), m_appleModel, "food")) {
+            std::cout << "  Fallback to primitive for apple" << std::endl;
+            ApplePrimitive::create(m_appleModel);
+        }
+    }
+    else {
+        ApplePrimitive::create(m_appleModel);
+    }
+
+    std::cout << "\n--- Loading Tree Model ---" << std::endl;
+    if (!objects.getTreeModel().empty()) {
+        if (!loadFBXModelToModel(objects.getTreeModel(), m_treeModel, "obstacles")) {
+            std::cout << "  Fallback to primitive for tree" << std::endl;
+            TreePrimitive::create(m_treeModel);
+        }
+    }
+    else {
+        TreePrimitive::create(m_treeModel);
+    }
+
+    std::cout << "\n--- Loading Cloud Model ---" << std::endl;
+    if (!objects.getCloudModel().empty()) {
+        if (!loadFBXModelToModel(objects.getCloudModel(), m_cloudModel, "clouds")) {
+            std::cout << "  Fallback to primitive for cloud" << std::endl;
+            CloudPrimitive::create(m_cloudModel);
+        }
+    }
+    else {
+        CloudPrimitive::create(m_cloudModel);
+    }
+
+    std::cout << "\n--- Loading Bird Model ---" << std::endl;
+    if (!objects.getBirdModel().empty()) {
+        if (!loadFBXModelToModel(objects.getBirdModel(), m_birdModel, "birds")) {
+            std::cout << "  Fallback to primitive for bird" << std::endl;
+            BirdPrimitive::create(m_birdModel);
+        }
+    }
+    else {
+        BirdPrimitive::create(m_birdModel);
+    }
+
+    std::cout << "\n--- Loading Flower Model ---" << std::endl;
+    if (!objects.getFlowerModel().empty()) {
+        if (!loadFBXModelToModel(objects.getFlowerModel(), m_flowerModel, "flowers")) {
+            std::cout << "  Fallback to primitive for flower" << std::endl;
+            FlowerPrimitive::create(m_flowerModel);
+        }
+    }
+    else {
+        FlowerPrimitive::create(m_flowerModel);
+    }
+
+    std::cout << "\n--- Loading Fence Model ---" << std::endl;
+    if (!objects.getFenceModel().empty()) {
+        if (!loadFBXModelToModel(objects.getFenceModel(), m_fenceModel, "fence")) {
+            std::cout << "  Fallback to primitive for fence" << std::endl;
+            FencePrimitive::create(m_fenceModel);
+        }
+    }
+    else {
+        FencePrimitive::create(m_fenceModel);
+    }
+
+    std::cout << "\n--- Loading Snake Models ---" << std::endl;
+
+    // Загружаем модель головы змеи
+    if (!objects.getSnakeHeadModel().empty()) {
+        if (!loadFBXModelToModel(objects.getSnakeHeadModel(), m_snakeHeadModel, "snake")) {
+            std::cout << "  Fallback to primitive for snake head" << std::endl;
+            SnakeHeadPrimitive::create(m_snakeHeadModel);
+        }
+    }
+    else {
+        SnakeHeadPrimitive::create(m_snakeHeadModel);
+    }
+
+    // Загружаем модель тела змеи
+    if (!objects.getSnakeBodyModel().empty()) {
+        if (!loadFBXModelToModel(objects.getSnakeBodyModel(), m_snakeBodyModel, "snake")) {
+            std::cout << "  Fallback to primitive for snake body" << std::endl;
+            SnakeBodyPrimitive::create(m_snakeBodyModel);
+        }
+    }
+    else {
+        SnakeBodyPrimitive::create(m_snakeBodyModel);
+    }
+
+    // Загружаем модель хвоста змеи
+    if (!objects.getSnakeTailModel().empty()) {
+        if (!loadFBXModelToModel(objects.getSnakeTailModel(), m_snakeTailModel, "snake")) {
+            std::cout << "  Fallback to primitive for snake tail" << std::endl;
+            SnakeTailPrimitive::create(m_snakeTailModel);
+        }
+    }
+    else {
+        SnakeTailPrimitive::create(m_snakeTailModel);
+    }
+
+    // Загружаем текстуру пола
+    if (!objects.getFloorTexture().empty()) {
+        setFloorTexture(objects.getFloorTexture());
+    }
+
+    std::cout << "================================================\n" << std::endl;
+}
+
+void GameRenderer::setFloorTexture(const std::string& texturePath) {
+    if (texturePath.empty()) {
+        useFloorTexture = false;
+        std::cout << "Floor texture cleared, using color" << std::endl;
+        return;
+    }
+
+    std::string fullPath = g_texturesPath + texturePath;
+    std::cout << "Loading floor texture from: " << fullPath << std::endl;
+
+    if (floorTexture.id != 0) {
+        glDeleteTextures(1, &floorTexture.id);
+        floorTexture.id = 0;
+    }
+
+    glGenTextures(1, &floorTexture.id);
+    glBindTexture(GL_TEXTURE_2D, floorTexture.id);
+
+    int width, height, channels;
+    unsigned char* data = stbi_load(fullPath.c_str(), &width, &height, &channels, 0);
+
+    if (data) {
+        GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
+
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        stbi_image_free(data);
+
+        floorTexture.width = width;
+        floorTexture.height = height;
+        floorTexture.path = texturePath;
+        useFloorTexture = true;
+
+        std::cout << "✓ Floor texture loaded: " << width << "x" << height << std::endl;
+    }
+    else {
+        std::cout << "✗ Failed to load floor texture: " << stbi_failure_reason() << std::endl;
+        glDeleteTextures(1, &floorTexture.id);
+        floorTexture.id = 0;
+        useFloorTexture = false;
+    }
+}
+
+//=============================================================================
 // ОСНОВНОЙ РЕНДЕРИНГ
 //=============================================================================
 
 void GameRenderer::renderGame(const GameObjects& objects) {
     // Используем цвет неба из параметра objects
-    skyColor = objects.getSkyColor();  // Сохраняем в член класса
+    skyColor = objects.getSkyColor();
     glClearColor(skyColor.r, skyColor.g, skyColor.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -323,12 +620,21 @@ void GameRenderer::drawFloor() {
         glEnable(GL_LIGHTING);
     }
 
-    glDisable(GL_TEXTURE_2D);
+    // Используем текстуру пола если включена
+    if (useFloorTexture && floorTexture.id != 0) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, floorTexture.id);
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    }
+    else {
+        glDisable(GL_TEXTURE_2D);
+    }
 
     glEnable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
-    // Рисуем пол на ВСЕХ клетках, включая границы
+    float texRepeat = worldWidth / 2.0f; // Повтор текстуры
+
     for (int z = 0; z < m_gridDepth; z++) {
         for (int x = 0; x < m_gridWidth; x++) {
             float posX = x * m_cellSize - offsetX;
@@ -346,17 +652,32 @@ void GameRenderer::drawFloor() {
 
             glBegin(GL_QUADS);
             glNormal3f(0.0f, 1.0f, 0.0f);
-            // Опускаем пол чуть ниже, чтобы забор не перекрывал
-            glVertex3f(posX, -0.02f, posZ);
-            glVertex3f(posX + m_cellSize, -0.02f, posZ);
-            glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
-            glVertex3f(posX, -0.02f, posZ + m_cellSize);
+
+            if (useFloorTexture && floorTexture.id != 0) {
+                float u1 = (float)x / texRepeat;
+                float v1 = (float)z / texRepeat;
+                float u2 = (float)(x + 1) / texRepeat;
+                float v2 = (float)(z + 1) / texRepeat;
+
+                glTexCoord2f(u1, v1); glVertex3f(posX, -0.02f, posZ);
+                glTexCoord2f(u2, v1); glVertex3f(posX + m_cellSize, -0.02f, posZ);
+                glTexCoord2f(u2, v2); glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
+                glTexCoord2f(u1, v2); glVertex3f(posX, -0.02f, posZ + m_cellSize);
+            }
+            else {
+                glVertex3f(posX, -0.02f, posZ);
+                glVertex3f(posX + m_cellSize, -0.02f, posZ);
+                glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
+                glVertex3f(posX, -0.02f, posZ + m_cellSize);
+            }
             glEnd();
         }
     }
 
+    glDisable(GL_TEXTURE_2D);
     glPopMatrix();
 }
+
 void GameRenderer::drawSnakeEyes() {
     glDisable(GL_LIGHTING);
     glColor3f(1.0f, 1.0f, 1.0f);
@@ -374,6 +695,7 @@ void GameRenderer::drawSnakeEyes() {
     glEnd();
     glEnable(GL_LIGHTING);
 }
+
 float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, size_t index) {
     if (snake.size() <= 1) return 0.0f;
 
@@ -394,6 +716,7 @@ float GameRenderer::calculateSegmentRotation(const std::vector<Point>& snake, si
 
     return 0.0f;
 }
+
 void GameRenderer::drawSnake(const std::vector<Point>& snake) {
     if (snake.empty()) return;
 
@@ -436,8 +759,14 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
         glRotatef(rotationAngle, 0.0f, 1.0f, 0.0f);
         glScalef(scale, scale, scale);
 
-        // setMaterial уже отключает COLOR_MATERIAL
-        setMaterial(color, 64.0f, 0.2f);
+        if (currentModel->hasTexture && currentModel->textureID != 0) {
+            setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 64.0f, 0.2f);
+            setupTexture(currentModel->textureID);
+        }
+        else {
+            setMaterial(color, 64.0f, 0.2f);
+            setupTexture(0);
+        }
 
         if (currentModel) {
             currentModel->draw();
@@ -466,10 +795,16 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
         glTranslatef(x, y, z);
         glScalef(m_cellSize * 0.6f, m_cellSize * 0.6f, m_cellSize * 0.6f);
 
-        // Красный цвет для яблока
-        setMaterial(glm::vec3(0.9f, 0.2f, 0.2f), 80.0f, 0.4f);
-        m_appleModel.draw();
+        if (m_appleModel.hasTexture && m_appleModel.textureID != 0) {
+            setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 80.0f, 0.4f);
+            setupTexture(m_appleModel.textureID);
+        }
+        else {
+            setMaterial(glm::vec3(0.9f, 0.2f, 0.2f), 80.0f, 0.4f);
+            setupTexture(0);
+        }
 
+        m_appleModel.draw();
         glPopMatrix();
     }
 }
@@ -490,10 +825,16 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
             glTranslatef(x, y, z);
             glScalef(m_cellSize * 1.2f, m_cellSize * 1.2f, m_cellSize * 1.2f);
 
-            // Зелёный цвет для дерева
-            setMaterial(glm::vec3(0.2f, 0.6f, 0.2f), 30.0f, 0.2f);
-            m_treeModel.draw();
+            if (m_treeModel.hasTexture && m_treeModel.textureID != 0) {
+                setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 30.0f, 0.2f);
+                setupTexture(m_treeModel.textureID);
+            }
+            else {
+                setMaterial(glm::vec3(0.2f, 0.6f, 0.2f), 30.0f, 0.2f);
+                setupTexture(0);
+            }
 
+            m_treeModel.draw();
             glPopMatrix();
         }
     }
@@ -508,10 +849,16 @@ void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
         glTranslatef(cloud.position.x, cloud.position.y, cloud.position.z);
         glScalef(cloud.size, cloud.size, cloud.size);
 
-        // Цвет облака из конфига
-        setMaterial(cloud.color, 40.0f, 0.3f);
-        m_cloudModel.draw();
+        if (m_cloudModel.hasTexture && m_cloudModel.textureID != 0) {
+            setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 40.0f, 0.3f);
+            setupTexture(m_cloudModel.textureID);
+        }
+        else {
+            setMaterial(cloud.color, 40.0f, 0.3f);
+            setupTexture(0);
+        }
 
+        m_cloudModel.draw();
         glPopMatrix();
     }
 }
@@ -524,7 +871,6 @@ void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
         if (glm::length(bird.direction) > 0.1f) {
             float angle = atan2f(bird.direction.x, bird.direction.z) * 180.0f / 3.14159f;
             glRotatef(angle, 0.0f, 1.0f, 0.0f);
-
             float pitch = atan2f(bird.direction.y,
                 glm::length(glm::vec2(bird.direction.x, bird.direction.z))) * 180.0f / 3.14159f;
             glRotatef(pitch, 1.0f, 0.0f, 0.0f);
@@ -532,10 +878,16 @@ void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
 
         glScalef(bird.size, bird.size, bird.size);
 
-        // Цвет птицы из конфига
-        setMaterial(bird.color, 40.0f, 0.2f);
-        m_birdModel.draw();
+        if (m_birdModel.hasTexture && m_birdModel.textureID != 0) {
+            setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 40.0f, 0.2f);
+            setupTexture(m_birdModel.textureID);
+        }
+        else {
+            setMaterial(bird.color, 40.0f, 0.2f);
+            setupTexture(0);
+        }
 
+        m_birdModel.draw();
         glPopMatrix();
     }
 }
@@ -546,10 +898,16 @@ void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
         glTranslatef(flower.position.x, flower.position.y + 0.05f, flower.position.z);
         glScalef(flower.size, flower.size, flower.size);
 
-        // Цвет цветка из конфига
-        setMaterial(flower.color, 50.0f, 0.2f);
-        m_flowerModel.draw();
+        if (m_flowerModel.hasTexture && m_flowerModel.textureID != 0) {
+            setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 50.0f, 0.2f);
+            setupTexture(m_flowerModel.textureID);
+        }
+        else {
+            setMaterial(flower.color, 50.0f, 0.2f);
+            setupTexture(0);
+        }
 
+        m_flowerModel.draw();
         glPopMatrix();
     }
 }
@@ -560,102 +918,27 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    // Временно отключаем COLOR_MATERIAL для забора
-    glDisable(GL_COLOR_MATERIAL);
-
-    setMaterial(glm::vec3(0.55f, 0.27f, 0.07f), 24.0f, 0.15f);
-
     for (const auto& fenceBlock : fenceBlocks) {
         float x = fenceBlock.x * m_cellSize - offsetX;
         float z = fenceBlock.z * m_cellSize - offsetZ;
+        float y = 0.1f;
 
-        bool isNorth = (fenceBlock.z == 0);
-        bool isSouth = (fenceBlock.z == m_gridDepth - 1);
-        bool isWest = (fenceBlock.x == 0);
-        bool isEast = (fenceBlock.x == m_gridWidth - 1);
+        glPushMatrix();
+        glTranslatef(x, y, z);
+        glScalef(m_cellSize, m_cellSize * 0.5f, m_cellSize);
 
-        bool isCorner = (isNorth || isSouth) && (isWest || isEast);
-
-        float postHeight = m_cellSize * 0.5f;
-        float postWidth = m_cellSize * 0.08f;
-        float railHeight = m_cellSize * 0.05f;
-
-        if (isCorner) {
-            // Угловой столб
-            glPushMatrix();
-            glTranslatef(x, postHeight / 2.0f, z);
-            glScalef(postWidth * 1.2f, postHeight, postWidth * 1.2f);
-PrimitiveBase::drawCube();
-            glPopMatrix();
+        if (m_fenceModel.hasTexture && m_fenceModel.textureID != 0) {
+            setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 24.0f, 0.15f);
+            setupTexture(m_fenceModel.textureID);
         }
-        else if (isNorth || isSouth) {
-            // Север/Юг - забор вдоль X
-            float railLength = m_cellSize * 0.92f;
-
-            // Левый столб
-            glPushMatrix();
-            glTranslatef(x - m_cellSize / 2.0f + postWidth, postHeight / 2.0f, z);
-            glScalef(postWidth, postHeight, postWidth);
-PrimitiveBase::drawCube();
-            glPopMatrix();
-
-            // Правый столб
-            glPushMatrix();
-            glTranslatef(x + m_cellSize / 2.0f - postWidth, postHeight / 2.0f, z);
-            glScalef(postWidth, postHeight, postWidth);
-PrimitiveBase::drawCube();
-            glPopMatrix();
-
-            // Верхняя рейка
-            glPushMatrix();
-            glTranslatef(x, postHeight * 0.7f, z);
-            glScalef(railLength, railHeight, postWidth);
-PrimitiveBase::drawCube();
-            glPopMatrix();
-
-            // Нижняя рейка
-            glPushMatrix();
-            glTranslatef(x, postHeight * 0.25f, z);
-            glScalef(railLength, railHeight, postWidth);
-PrimitiveBase::drawCube();
-            glPopMatrix();
+        else {
+            setMaterial(glm::vec3(0.55f, 0.27f, 0.07f), 24.0f, 0.15f);
+            setupTexture(0);
         }
-        else if (isWest || isEast) {
-            // Запад/Восток - забор вдоль Z
-            float railLength = m_cellSize * 0.92f;
 
-            // Нижний столб
-            glPushMatrix();
-            glTranslatef(x, postHeight / 2.0f, z - m_cellSize / 2.0f + postWidth);
-            glScalef(postWidth, postHeight, postWidth);
-PrimitiveBase::drawCube();
-            glPopMatrix();
-
-            // Верхний столб
-            glPushMatrix();
-            glTranslatef(x, postHeight / 2.0f, z + m_cellSize / 2.0f - postWidth);
-            glScalef(postWidth, postHeight, postWidth);
-PrimitiveBase::drawCube();
-            glPopMatrix();
-
-            // Верхняя рейка
-            glPushMatrix();
-            glTranslatef(x, postHeight * 0.7f, z);
-            glScalef(postWidth, railHeight, railLength);
-PrimitiveBase::drawCube();
-            glPopMatrix();
-
-            // Нижняя рейка
-            glPushMatrix();
-            glTranslatef(x, postHeight * 0.25f, z);
-            glScalef(postWidth, railHeight, railLength);
-PrimitiveBase::drawCube();
-            glPopMatrix();
-        }
+        m_fenceModel.draw();
+        glPopMatrix();
     }
-
-    // Включаем обратно
-    glEnable(GL_COLOR_MATERIAL);
 }
 
 void GameRenderer::drawLightSource() {
@@ -716,117 +999,6 @@ void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, f
     model.draw();
 
     glPopMatrix();
-}
-
-//=============================================================================
-// ПРИМИТИВЫ
-//=============================================================================
-
-void GameRenderer::createPrimitives() {
-    std::cout << "Creating primitive models..." << std::endl;
-
-    ApplePrimitive::create(m_appleModel);
-    TreePrimitive::create(m_treeModel);
-    CloudPrimitive::create(m_cloudModel);
-    BirdPrimitive::create(m_birdModel);
-    FlowerPrimitive::create(m_flowerModel);
-    FencePrimitive::create(m_fenceModel);
-
-    SnakeHeadPrimitive::create(m_snakeHeadModel);
-    SnakeBodyPrimitive::create(m_snakeBodyModel);
-    SnakeTailPrimitive::create(m_snakeTailModel);
-
-    std::cout << "All primitives created successfully" << std::endl;
-}
-
-void GameRenderer::createTexturedFloorModel(Model& model) {
-    model.vertices.clear();
-    float floorSize = 1.0f;
-
-    Vertex v1, v2, v3, v4;
-    v1.position = glm::vec3(-floorSize, 0.0f, -floorSize);
-    v2.position = glm::vec3(-floorSize, 0.0f, floorSize);
-    v3.position = glm::vec3(floorSize, 0.0f, -floorSize);
-    v4.position = glm::vec3(floorSize, 0.0f, floorSize);
-
-    glm::vec3 normal(0.0f, 1.0f, 0.0f);
-    v1.normal = v2.normal = v3.normal = v4.normal = normal;
-
-    v1.texCoords = glm::vec2(0.0f, 0.0f);
-    v2.texCoords = glm::vec2(0.0f, 1.0f);
-    v3.texCoords = glm::vec2(1.0f, 0.0f);
-    v4.texCoords = glm::vec2(1.0f, 1.0f);
-
-    model.vertices.push_back(v1);
-    model.vertices.push_back(v3);
-    model.vertices.push_back(v4);
-    model.vertices.push_back(v4);
-    model.vertices.push_back(v2);
-    model.vertices.push_back(v1);
-
-    model.hasTexture = false;
-    model.setupBuffers();
-}
-
-//=============================================================================
-// ЗАГРУЗКА МОДЕЛЕЙ
-//=============================================================================
-
-void GameRenderer::loadModelsFromConfig(const GameObjects& objects) {
-    std::cout << "\n========== LOADING MODELS FROM CONFIG ==========" << std::endl;
-
-    createPrimitives();
-
-    std::cout << "================================================\n" << std::endl;
-}
-
-void GameRenderer::setFloorTexture(const std::string& texturePath) {
-    if (texturePath.empty()) {
-        useFloorTexture = false;
-        std::cout << "Floor texture cleared, using color" << std::endl;
-        return;
-    }
-
-    std::string fullPath = g_texturesPath + texturePath;
-    std::cout << "Loading floor texture from: " << fullPath << std::endl;
-
-    if (floorTexture.id != 0) {
-        glDeleteTextures(1, &floorTexture.id);
-        floorTexture.id = 0;
-    }
-
-    glGenTextures(1, &floorTexture.id);
-    glBindTexture(GL_TEXTURE_2D, floorTexture.id);
-
-    int width, height, channels;
-    unsigned char* data = stbi_load(fullPath.c_str(), &width, &height, &channels, 0);
-
-    if (data) {
-        GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
-
-        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        stbi_image_free(data);
-
-        floorTexture.width = width;
-        floorTexture.height = height;
-        floorTexture.path = texturePath;
-        useFloorTexture = true;
-
-        std::cout << "✓ Floor texture loaded: " << width << "x" << height << std::endl;
-    }
-    else {
-        std::cout << "✗ Failed to load floor texture: " << stbi_failure_reason() << std::endl;
-        glDeleteTextures(1, &floorTexture.id);
-        floorTexture.id = 0;
-        useFloorTexture = false;
-    }
 }
 
 //=============================================================================
@@ -1354,7 +1526,27 @@ namespace {
         glViewport(0, 0, width, height);
     }
 }
+//=============================================================================
+// ПРИМИТИВЫ (FALLBACK ДЛЯ СЛУЧАЯ, КОГДА FBX МОДЕЛИ НЕ ЗАГРУЗИЛИСЬ)
+//=============================================================================
 
+void GameRenderer::createPrimitives() {
+    std::cout << "Creating primitive models (fallback)..." << std::endl;
+
+    // Создаём примитивы на случай, если FBX модели не загрузятся
+    ApplePrimitive::create(m_appleModel);
+    TreePrimitive::create(m_treeModel);
+    CloudPrimitive::create(m_cloudModel);
+    BirdPrimitive::create(m_birdModel);
+    FlowerPrimitive::create(m_flowerModel);
+    FencePrimitive::create(m_fenceModel);
+
+    SnakeHeadPrimitive::create(m_snakeHeadModel);
+    SnakeBodyPrimitive::create(m_snakeBodyModel);
+    SnakeTailPrimitive::create(m_snakeTailModel);
+
+    std::cout << "All primitive models created successfully" << std::endl;
+}
 void GameRenderer::setupCallbacks(GLFWwindow* window) {
     glfwSetKeyCallback(window, keyCallback);
     glfwSetCharCallback(window, charCallback);
