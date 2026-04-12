@@ -72,8 +72,7 @@ private:
         float maxDistance, float& hitDistance, glm::vec3& hitPoint);
 
 public:
-    ShadowMapper();
-
+    ShadowMapper(); 
     ShadowMapper(int width, int depth, float cellSize, float groundHeight,
         const glm::vec3& lightDirection, const glm::vec3& lightColor,
         LightType lightType, const glm::vec3& lightPos,

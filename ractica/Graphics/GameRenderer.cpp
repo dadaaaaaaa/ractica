@@ -59,10 +59,25 @@ GameRenderer::GameRenderer()
     , shadow_map(false)
     , m_debugNormalsEnabled(false)
 {
-    m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));
+    // ========== НАСТРОЙКИ ОСВЕЩЕНИЯ ==========
+    // 1. Directional (направленный свет) - использует m_lightDir, позиция не важна
+    // 2. Points (точечный свет) - использует m_lightPos, светит во все стороны
+    // 3. Spot (прожектор) - использует m_lightPos (позиция) и m_lightDir (направление)
+
+    m_lightType = LightType::Spot;   // Текущий тип света
+
+    // Общие настройки
     m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    m_lightType = LightType::Points;
-    m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f);
+
+    // Для Directional (направленный свет) - куда светит
+    m_lightDir = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));  // Светит сверху-сбоку
+
+    // Для Points и Spot (позиция источника)
+    m_lightPos = glm::vec3(0.0f, 2.0f, 0.0f);  // Высоко над центром поля
+
+    // Для Spot дополнительно - направление луча (светит строго вниз)
+    // НЕ ПЕРЕОПРЕДЕЛЯТЬ m_lightDir для Spot, т.к. он используется для направления!
+    // Если нужно чтобы прожектор светил вниз - m_lightDir = (0, -1, 0)
 }
 
 GameRenderer::~GameRenderer() {
@@ -269,30 +284,160 @@ void GameRenderer::drawModelNormals(const Model& model, const glm::mat4& transfo
 }
 void GameRenderer::setupFixedPipelineLighting() {
     glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
-
     glEnable(GL_NORMALIZE);
 
-    GLfloat global_ambient[] = { 0.6f, 0.6f, 0.6f, 1.0f };
+    // Глобальная ambient - оставляем как есть
+    GLfloat global_ambient[] = { 0.4f, 0.4f, 0.4f, 1.0f };
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
 
+    // Включаем два источника света
+    glEnable(GL_LIGHT0);
+    glEnable(GL_LIGHT1);
+
+    // Настраиваем в зависимости от типа
+    switch (m_lightType) {
+    case LightType::Directional:
+        setupDirectionalLight();
+        break;
+    case LightType::Points:
+        setupPointLight();
+        break;
+    case LightType::Spot:
+        setupSpotLight();
+        break;
+    }
+
+    std::cout << "Fixed pipeline lighting configured, type: " << (int)m_lightType << std::endl;
+}
+
+void GameRenderer::setupDirectionalLight() {
+    // LIGHT0 - направленный свет
     GLfloat light0_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
     GLfloat light0_diffuse[] = { m_lightColor.r, m_lightColor.g, m_lightColor.b, 1.0f };
-    GLfloat light0_specular[] = { 0.4f, 0.4f, 0.4f, 1.0f };
-    GLfloat light0_position[] = { -m_lightDir.x, -m_lightDir.y, -m_lightDir.z, 0.0f };
+    GLfloat light0_specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+    GLfloat light0_position[] = { -m_lightDir.x, -m_lightDir.y, -m_lightDir.z, 0.0f }; // w=0 для направленного
 
     glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
     glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
     glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
 
-    std::cout << "Fixed pipeline lighting configured" << std::endl;
+    // Выключаем LIGHT1
+    glDisable(GL_LIGHT1);
+}
+
+void GameRenderer::setupPointLight() {
+    // LIGHT0 - точечный источник (Point Light) - правильная реализация
+    GLfloat light0_ambient[] = { 0.15f, 0.15f, 0.15f, 1.0f };      // Небольшая ambient составляющая
+    GLfloat light0_diffuse[] = { m_lightColor.r, m_lightColor.g, m_lightColor.b, 1.0f };
+    GLfloat light0_specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+    GLfloat light0_position[] = { m_lightPos.x, m_lightPos.y, m_lightPos.z, 1.0f }; // w=1 для позиционного света
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+    // Настройка затухания для точечного источника (реалистичное)
+    glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 1.0f);   // Постоянное затухание
+    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.09f);    // Линейное затухание
+    glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.032f); // Квадратичное затухание
+
+    // Выключаем дополнительный свет, так как точечный должен быть один
+    glDisable(GL_LIGHT1);
+
+    std::cout << "Point Light configured at position: "
+        << m_lightPos.x << ", " << m_lightPos.y << ", " << m_lightPos.z << std::endl;
+}
+
+void GameRenderer::setupSpotLight() {
+    // LIGHT0 - прожектор (Spot Light) - УСИЛЕННЫЙ
+    GLfloat light0_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    GLfloat light0_diffuse[] = { m_lightColor.r * 1.5f, m_lightColor.g * 1.5f, m_lightColor.b * 1.5f, 1.0f };
+    GLfloat light0_specular[] = { 0.9f, 0.9f, 0.9f, 1.0f };
+    GLfloat light0_position[] = { m_lightPos.x, m_lightPos.y, m_lightPos.z, 1.0f };
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+    // Направление прожектора (светит вниз)
+    GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
+    glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
+
+    // Угол конуса прожектора (шире)
+    glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 60.0f);  // Увеличил до 60 градусов
+    glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 1.0f); // Мягче края
+
+    // Затухание (меньше)
+    glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.5f);
+    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.03f);
+    glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.01f);
+
+    // Дополнительный заполняющий свет
+    GLfloat light1_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    GLfloat light1_diffuse[] = { 0.4f, 0.4f, 0.4f, 1.0f };
+    GLfloat light1_position[] = { 0.0f, 5.0f, 0.0f, 1.0f };
+
+    glLightfv(GL_LIGHT1, GL_AMBIENT, light1_ambient);
+    glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_diffuse);
+    glLightfv(GL_LIGHT1, GL_POSITION, light1_position);
 }
 
 void GameRenderer::updateLightPosition() {
-    GLfloat light0_position[] = { -m_lightDir.x, -m_lightDir.y, -m_lightDir.z, 0.0f };
-    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+    switch (m_lightType) {
+    case LightType::Directional: {
+        GLfloat light0_position[] = { -m_lightDir.x, -m_lightDir.y, -m_lightDir.z, 0.0f };
+        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+        break;
+    }
+    case LightType::Points: {
+        GLfloat light0_position[] = { m_lightPos.x, m_lightPos.y, m_lightPos.z, 1.0f };
+        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+        break;
+    }
+    case LightType::Spot: {
+        GLfloat light0_position[] = { m_lightPos.x, m_lightPos.y, m_lightPos.z, 1.0f };
+        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+        // Обновляем направление прожектора (светит вниз от позиции)
+        GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
+        glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
+        break;
+    }
+    }
 }
+
+// Добавить методы-сеттеры:
+void GameRenderer::setLightType(LightType type) {
+    m_lightType = type;
+    setupFixedPipelineLighting();
+    std::cout << "Light type changed to: " << (type == LightType::Directional ? "Directional" :
+        (type == LightType::Points ? "Points" : "Spot")) << std::endl;
+}
+
+void GameRenderer::setLightPosition(const glm::vec3& pos) {
+    m_lightPos = pos;
+    if (m_lightType != LightType::Directional) {
+        updateLightPosition();
+    }
+}
+
+void GameRenderer::setLightDirection(const glm::vec3& dir) {
+    m_lightDir = glm::normalize(dir);
+    if (m_lightType == LightType::Directional) {
+        updateLightPosition();
+    }
+}
+
+void GameRenderer::setLightColor(const glm::vec3& color) {
+    m_lightColor = color;
+    // Обновляем diffuse компоненту
+    GLfloat light0_diffuse[] = { m_lightColor.r, m_lightColor.g, m_lightColor.b, 1.0f };
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+}
+
 
 void GameRenderer::setMaterial(const glm::vec3& color, float shininess, float specularStrength) {
     glDisable(GL_COLOR_MATERIAL);
@@ -682,6 +827,13 @@ void GameRenderer::renderGame(const GameObjects& objects) {
 }
 
 void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
+    m_staticShadow.setLightType(m_lightType);
+    m_staticShadow.setLightPos(m_lightPos);
+    m_staticShadow.setLightDirection(m_lightDir);
+
+    m_dynamicShadow.setLightType(m_lightType);
+    m_dynamicShadow.setLightPos(m_lightPos);
+    m_dynamicShadow.setLightDirection(m_lightDir);
     if (m_staticShadowsDirty) {
         std::cout << "[STATIC SHADOWS] Computing..." << std::endl;
 
@@ -1116,32 +1268,51 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
 
 void GameRenderer::drawLightSource() {
     glPushMatrix();
+    glDisable(GL_LIGHTING);
 
-    if (m_lightType == LightType::Directional) {
-        glDisable(GL_LIGHTING);
-        glColor3f(1.0f, 1.0f, 0.8f);
-
-        glm::vec3 lightPos = -m_lightDir * 5.0f;
+    switch (m_lightType) {
+    case LightType::Directional: {
+        glColor3f(1.0f, 0.9f, 0.6f);
+        glm::vec3 lightPos = -m_lightDir * 10.0f;
         glTranslatef(lightPos.x, lightPos.y, lightPos.z);
+        GLUquadric* quad = gluNewQuadric();
+        gluSphere(quad, 0.4, 16, 16);
+        gluDeleteQuadric(quad);
+        break;
+    }
+    case LightType::Points: {
+        // Маленькая яркая сфера - источник света
+        glTranslatef(m_lightPos.x, m_lightPos.y, m_lightPos.z);
+
+        // Внешнее свечение (полупрозрачное)
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glColor4f(1.0f, 0.7f, 0.3f, 0.3f);
 
         GLUquadric* quad = gluNewQuadric();
-        gluSphere(quad, 0.2, 8, 8);
+        gluSphere(quad, 0.35, 16, 16);
+
+        // Внутренняя яркая сфера
+        glColor4f(1.0f, 0.9f, 0.5f, 0.8f);
+        gluSphere(quad, 0.2, 16, 16);
         gluDeleteQuadric(quad);
 
-        glEnable(GL_LIGHTING);
+        glDisable(GL_BLEND);
+        break;
     }
-    else {
-        glDisable(GL_LIGHTING);
-        glColor3f(1.0f, 0.8f, 0.3f);
+    case LightType::Spot: {
+        glColor3f(1.0f, 0.7f, 0.2f);
         glTranslatef(m_lightPos.x, m_lightPos.y, m_lightPos.z);
 
         GLUquadric* quad = gluNewQuadric();
-        gluSphere(quad, 0.25, 8, 8);
+        glRotatef(-90, 1, 0, 0);
+        gluCylinder(quad, 0.2, 0.6, 0.8, 12, 2);
         gluDeleteQuadric(quad);
-
-        glEnable(GL_LIGHTING);
+        break;
+    }
     }
 
+    glEnable(GL_LIGHTING);
     glPopMatrix();
 }
 
@@ -1212,16 +1383,26 @@ void GameRenderer::resetShadows() {
         1, 1
     );
 
+    // Дополнительно устанавливаем тип и позицию
+    m_staticShadow.setLightType(m_lightType);
+    m_staticShadow.setLightPos(m_lightPos);
+    m_staticShadow.setLightDirection(m_lightDir);
+
     m_dynamicShadow = ShadowMapper(
         m_gridWidth, m_gridDepth, m_cellSize, 0.0f,
         m_lightDir, m_lightColor, m_lightType, m_lightPos,
         1, 1
     );
 
+    m_dynamicShadow.setLightType(m_lightType);
+    m_dynamicShadow.setLightPos(m_lightPos);
+    m_dynamicShadow.setLightDirection(m_lightDir);
+
     m_staticShadowsDirty = true;
     m_dynamicShadowsDirty = true;
 
-    std::cout << "Shadows reset. Total cells: " << (m_gridWidth * m_gridDepth) << std::endl;
+    std::cout << "Shadows reset. Light type: " << (int)m_lightType
+        << ", Light pos: " << m_lightPos.x << "," << m_lightPos.y << "," << m_lightPos.z << std::endl;
 }
 
 void GameRenderer::markDynamicShadowsDirty() {

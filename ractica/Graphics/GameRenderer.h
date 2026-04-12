@@ -95,8 +95,14 @@ public:
     void setLightDirection(const glm::vec3& dir);
     void setLightColor(const glm::vec3& color);
     void updateLighting();
+    LightType getLightType() const { return m_lightType; }
+    glm::vec3 getLightColor() const { return m_lightColor; }
+    glm::vec3 getLightPosition() const { return m_lightPos; }
+    glm::vec3 getLightDirection() const { return m_lightDir; }
 private:
-
+    void setupPointLight();
+    void setupSpotLight();
+    void setupDirectionalLight();
     void setupFixedPipelineLighting();
     void updateLightPosition();
     void setupTexture(GLuint textureID);
@@ -178,7 +184,10 @@ private:
     Model m_cylinderModel;
     Model m_fenceModel;
     Model m_floorModel;
-
+    LightType m_lightType;
+    glm::vec3 m_lightDir;
+    glm::vec3 m_lightPos;
+    glm::vec3 m_lightColor;
     std::map<std::string, Model> m_loadedFBXModels;
 
     void createTexturedFloorModel(Model& model);
@@ -193,10 +202,6 @@ private:
     int m_gridDepth;
     float m_cellSize;
 
-    glm::vec3 m_lightDir;
-    glm::vec3 m_lightColor;
-    LightType m_lightType;
-    glm::vec3 m_lightPos;
     bool shadow_map;
     bool m_shadowMapEnabled;
     int m_shadowStrideX;
