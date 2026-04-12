@@ -18,23 +18,19 @@ void Model::setupBuffers() {
         return;
     }
 
-    // Удаляем старую display list если есть
     if (displayList != 0) {
         glDeleteLists(displayList, 1);
         displayList = 0;
     }
 
-    // Создаём новую display list
     displayList = glGenLists(1);
     if (displayList == 0) {
         std::cout << "Error: Failed to generate display list!" << std::endl;
         return;
     }
 
-    // Компилируем display list
     glNewList(displayList, GL_COMPILE);
 
-    // Рисуем все треугольники
     glBegin(GL_TRIANGLES);
     for (const auto& vertex : vertices) {
         glNormal3f(vertex.normal.x, vertex.normal.y, vertex.normal.z);
@@ -50,8 +46,6 @@ void Model::setupBuffers() {
     glEndList();
 
     isCompiled = true;
-
-    // Вычисляем границы
     calculateBounds();
 
     std::cout << "Model compiled into display list (ID: " << displayList
@@ -77,7 +71,6 @@ void Model::cleanup() {
 
 void Model::draw() const {
     if (!isCompiled || displayList == 0) {
-        // Если не скомпилировано, пробуем нарисовать напрямую (fallback)
         if (!vertices.empty()) {
             glBegin(GL_TRIANGLES);
             for (const auto& vertex : vertices) {
@@ -92,16 +85,13 @@ void Model::draw() const {
         return;
     }
 
-    // Устанавливаем текстуру если есть
     if (hasTexture && textureID != 0) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, textureID);
     }
 
-    // Вызываем display list
     glCallList(displayList);
 
-    // Отключаем текстуру
     if (hasTexture && textureID != 0) {
         glDisable(GL_TEXTURE_2D);
     }
@@ -123,7 +113,6 @@ void Model::calculateBounds() {
     width = maxX - minX;
     depth = maxZ - minZ;
 
-    // Создаем карту высот
     heightMap.clear();
     heightMap.resize(vertices.size() / 3);
 
@@ -168,4 +157,56 @@ float Model::getHeightAt(float worldX, float worldZ) const {
 
     heightCache[key] = bestY;
     return bestY;
+}
+
+// НОВАЯ ФУНКЦИЯ - вычисление нормалей для модели
+void Model::computeNormals() {
+    if (vertices.empty()) return;
+
+    std::cout << "Computing normals for model with " << vertices.size() << " vertices" << std::endl;
+
+    // Сначала обнуляем все нормали
+    for (auto& vertex : vertices) {
+        vertex.normal = glm::vec3(0.0f);
+    }
+
+    // Для каждого треугольника вычисляем нормаль грани
+    for (size_t i = 0; i < vertices.size(); i += 3) {
+        // Получаем три вершины треугольника
+        glm::vec3& v0 = vertices[i].position;
+        glm::vec3& v1 = vertices[i + 1].position;
+        glm::vec3& v2 = vertices[i + 2].position;
+
+        // Векторы двух сторон треугольника
+        glm::vec3 edge1 = v1 - v0;
+        glm::vec3 edge2 = v2 - v0;
+
+        // Вычисляем нормаль грани (векторное произведение)
+        glm::vec3 faceNormal = glm::cross(edge1, edge2);
+        float length = glm::length(faceNormal);
+        if (length > 0.0001f) {
+            faceNormal = faceNormal / length;
+        }
+        else {
+            faceNormal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+
+        // Добавляем эту нормаль ко всем трём вершинам
+        vertices[i].normal += faceNormal;
+        vertices[i + 1].normal += faceNormal;
+        vertices[i + 2].normal += faceNormal;
+    }
+
+    // Нормализуем итоговые нормали для каждой вершины
+    for (auto& vertex : vertices) {
+        float length = glm::length(vertex.normal);
+        if (length > 0.0001f) {
+            vertex.normal = vertex.normal / length;
+        }
+        else {
+            vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+    }
+
+    std::cout << "Normals computed successfully" << std::endl;
 }

@@ -57,11 +57,12 @@ GameRenderer::GameRenderer()
     , m_staticShadowsDirty(true)
     , m_dynamicShadowsDirty(true)
     , shadow_map(false)
+    , m_debugNormalsEnabled(false)
 {
     m_lightDir = glm::normalize(glm::vec3(-1.0f, -1.0f, -0.5f));
     m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
-    m_lightType = LightType::Directional;
-    m_lightPos = glm::vec3(0.0f, 100.0f, 0.0f);
+    m_lightType = LightType::Points;
+    m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f);
 }
 
 GameRenderer::~GameRenderer() {
@@ -103,7 +104,169 @@ void GameRenderer::initOpenGLSettings() {
 
     std::cout << "OpenGL initialized with Fixed Pipeline" << std::endl;
 }
+void GameRenderer::toggleDebugNormals() {
+    m_debugNormalsEnabled = !m_debugNormalsEnabled;
+    std::cout << "Debug normals: " << (m_debugNormalsEnabled ? "ENABLED" : "DISABLED") << std::endl;
+}
 
+void GameRenderer::drawDebugNormals(const GameObjects& objects) {
+    if (!m_debugNormalsEnabled) return;
+
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
+    glLineWidth(1.5f);
+
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+    float normalLength = 0.15f;
+
+    // Рисуем нормали для змейки
+    for (size_t i = 0; i < objects.getSnake().size(); i++) {
+        const Point& segment = objects.getSnake()[i];
+        float x = segment.x * m_cellSize - offsetX;
+        float y = segment.y * m_cellSize + 0.1f;
+        float z = segment.z * m_cellSize - offsetZ;
+
+        float scale;
+        const Model* currentModel = nullptr;
+
+        if (i == 0) {
+            scale = m_cellSize * objects.getSnakeHeadScale();
+            currentModel = &m_snakeHeadModel;
+        }
+        else if (i == objects.getSnake().size() - 1) {
+            scale = m_cellSize * objects.getSnakeTailScale();
+            currentModel = &m_snakeTailModel;
+        }
+        else {
+            scale = m_cellSize * objects.getSnakeBodyScale();
+            currentModel = &m_snakeBodyModel;
+        }
+
+        float rotationAngle = calculateSegmentRotation(objects.getSnake(), i);
+
+        glm::mat4 transform = glm::mat4(1.0f);
+        transform = glm::translate(transform, glm::vec3(x, y, z));
+        transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+        transform = glm::scale(transform, glm::vec3(scale));
+
+        drawModelNormals(*currentModel, transform, normalLength);
+    }
+
+    // Рисуем нормали для еды (яблок)
+    for (const auto& apple : objects.getFood()) {
+        float x = apple.x * m_cellSize - offsetX;
+        float y = apple.y * m_cellSize + 0.1f;
+        float z = apple.z * m_cellSize - offsetZ;
+        float scale = m_cellSize * 0.6f;
+
+        glm::mat4 transform = glm::mat4(1.0f);
+        transform = glm::translate(transform, glm::vec3(x, y, z));
+        transform = glm::scale(transform, glm::vec3(scale));
+
+        drawModelNormals(m_appleModel, transform, normalLength);
+    }
+
+    // Рисуем нормали для деревьев (препятствий)
+    for (const auto& obstacle : objects.getObstacles()) {
+        for (const auto& block : obstacle.blocks) {
+            float x = block.x * m_cellSize - offsetX;
+            float y = block.y * m_cellSize;
+            float z = block.z * m_cellSize - offsetZ;
+            float scale = m_cellSize * 1.2f;
+
+            glm::mat4 transform = glm::mat4(1.0f);
+            transform = glm::translate(transform, glm::vec3(x, y, z));
+            transform = glm::scale(transform, glm::vec3(scale));
+
+            drawModelNormals(m_treeModel, transform, normalLength);
+        }
+    }
+
+    // Рисуем нормали для забора
+    for (const auto& fenceBlock : objects.getFenceBlocks()) {
+        float x = fenceBlock.x * m_cellSize - offsetX;
+        float z = fenceBlock.z * m_cellSize - offsetZ;
+        float y = 0.1f;
+        float scale = m_cellSize;
+
+        glm::mat4 transform = glm::mat4(1.0f);
+        transform = glm::translate(transform, glm::vec3(x, y, z));
+        transform = glm::scale(transform, glm::vec3(scale, scale * 0.5f, scale));
+
+        drawModelNormals(m_fenceModel, transform, normalLength);
+    }
+
+    // Рисуем нормали для облаков
+    for (const auto& cloud : objects.getCloudSprites()) {
+        float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
+        if (distanceToCenter < 8.0f) continue;
+
+        glm::mat4 transform = glm::mat4(1.0f);
+        transform = glm::translate(transform, cloud.position);
+        transform = glm::scale(transform, glm::vec3(cloud.size));
+
+        drawModelNormals(m_cloudModel, transform, normalLength);
+    }
+
+    // Рисуем нормали для птиц
+    for (const auto& bird : objects.getBirds()) {
+        glm::mat4 transform = glm::mat4(1.0f);
+        transform = glm::translate(transform, bird.position);
+
+        if (glm::length(bird.direction) > 0.1f) {
+            float angle = atan2f(bird.direction.x, bird.direction.z);
+            transform = glm::rotate(transform, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+            float pitch = atan2f(bird.direction.y,
+                glm::length(glm::vec2(bird.direction.x, bird.direction.z)));
+            transform = glm::rotate(transform, pitch, glm::vec3(1.0f, 0.0f, 0.0f));
+        }
+
+        transform = glm::scale(transform, glm::vec3(bird.size));
+        drawModelNormals(m_birdModel, transform, normalLength);
+    }
+
+    // Рисуем нормали для цветов
+    for (const auto& flower : objects.getFlowerSprites()) {
+        glm::mat4 transform = glm::mat4(1.0f);
+        transform = glm::translate(transform, glm::vec3(flower.position.x, flower.position.y + 0.05f, flower.position.z));
+        transform = glm::scale(transform, glm::vec3(flower.size));
+
+        drawModelNormals(m_flowerModel, transform, normalLength);
+    }
+
+    glPopAttrib();
+    glEnable(GL_DEPTH_TEST);
+}
+
+void GameRenderer::drawModelNormals(const Model& model, const glm::mat4& transform, float normalLength) {
+    if (model.vertices.empty()) return;
+
+    glColor3f(0.0f, 1.0f, 0.0f); // Зеленый цвет для нормалей
+
+    glBegin(GL_LINES);
+
+    for (const auto& vertex : model.vertices) {
+        // Преобразуем позицию вершины в мировые координаты
+        glm::vec4 posWorld = transform * glm::vec4(vertex.position, 1.0f);
+
+        // Преобразуем нормаль в мировые координаты (используем нормальную матрицу)
+        glm::mat3 normalMatrix = glm::mat3(transform);
+        // Для правильного преобразования нормалей нужно использовать обратную транспонированную матрицу
+        // но для равномерного масштаба и вращения можно использовать просто верхнюю левую часть
+        glm::vec3 normalWorld = glm::normalize(normalMatrix * vertex.normal);
+
+        glm::vec3 start = glm::vec3(posWorld);
+        glm::vec3 end = start + normalWorld * normalLength;
+
+        glVertex3f(start.x, start.y, start.z);
+        glVertex3f(end.x, end.y, end.z);
+    }
+
+    glEnd();
+}
 void GameRenderer::setupFixedPipelineLighting() {
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
@@ -512,7 +675,7 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     drawClouds(objects.getCloudSprites());
     drawBirds(objects.getBirds());
     drawLightSource();
-
+    drawDebugNormals(objects);
     if (m_debugRaysEnabled && m_shadowMapEnabled) {
         drawDebugRaysIfEnabled();
     }

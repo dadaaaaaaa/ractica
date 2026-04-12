@@ -46,7 +46,6 @@ public:
     void setGridEnabled(bool enabled) { gridEnabled = enabled; }
     void setRenderWireframe(bool enabled) { m_renderWireframe = enabled; }
 
-    // ДОБАВЛЕННЫЕ МЕТОДЫ
     void setSkyColor(const glm::vec3& color) { skyColor = color; }
     void setFloorColor(const glm::vec3& color) { floorColor = color; }
     void setGridColor(const glm::vec3& color) { gridColor = color; }
@@ -61,6 +60,10 @@ public:
     void markStaticShadowsDirty() { m_staticShadowsDirty = true; }
     void createPrimitives();
     void drawSnakeEyes();
+
+    // НОВЫЕ МЕТОДЫ ДЛЯ НОРМАЛЕЙ
+    void toggleDebugNormals();
+    bool isDebugNormalsEnabled() const { return m_debugNormalsEnabled; }
 
     // Геттеры
     bool isRayTracingEnabled() const { return m_rayTracingEnabled; }
@@ -77,22 +80,23 @@ public:
     static void initOpenGLSettings();
     static void checkGLError(const char* functionName);
 
-    // Вспомогательные методы
     void drawSphereImmediate(const glm::vec3& center, float radius);
 
-    // ========== МЕТОДЫ ТЕНЕЙ ==========
     void renderShadowMap();
     void toggleShadowMap();
     void toggleDebugRays();
     void setShowGroundRays(bool show) { m_showGroundRays = show; }
     void setMaterial(const glm::vec3& color, float shininess = 32.0f, float specularStrength = 0.3f);
 
-    // ========== МЕТОДЫ ДЛЯ FBX МОДЕЛЕЙ ==========
     bool loadFBXModelToModel(const std::string& filename, Model& outModel, const std::string& subFolder = "");
     void drawModelWithMaterial(const Model& model, float x, float y, float z, float scale, const glm::vec3& color = glm::vec3(1.0f));
-
+    void setLightType(LightType type);
+    void setLightPosition(const glm::vec3& pos);
+    void setLightDirection(const glm::vec3& dir);
+    void setLightColor(const glm::vec3& color);
+    void updateLighting();
 private:
-    // ========== ОСНОВНЫЕ МЕТОДЫ РЕНДЕРИНГА ==========
+
     void setupFixedPipelineLighting();
     void updateLightPosition();
     void setupTexture(GLuint textureID);
@@ -101,7 +105,6 @@ private:
     void computeShadowsIfNeeded(const GameObjects& objects);
     HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
 
-    // ========== МЕТОДЫ ОТРИСОВКИ ОБЪЕКТОВ ==========
     void drawFloor();
     void drawSnake(const std::vector<Point>& snake);
     void drawFood(const std::vector<Point>& food);
@@ -116,15 +119,12 @@ private:
         const glm::vec3& color, float rotationAngle);
     float calculateSegmentRotation(const std::vector<Point>& snake, size_t index);
 
-    // ========== ЗАГРУЗКА FBX МОДЕЛЕЙ ==========
     bool convertModelDataToModel(const ModelData& modelData, Model& outModel);
     void setupModelTexture(Model& model, GLuint textureID);
 
-    // ========== СОЗДАНИЕ ПРИМИТИВОВ ==========
     void createSnakePrimitives();
     void createFenceModels();
 
-    // ========== ПРИМИТИВЫ ДЛЯ ЗАБОРА ==========
     void createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
         float width, float height, const glm::vec3& color);
     void createFenceRailHorizontal(std::vector<Vertex>& vertices, float x, float y, float z,
@@ -134,7 +134,6 @@ private:
     void createFenceCorner(std::vector<Vertex>& vertices, float x, float y, float z,
         const glm::vec3& color);
 
-    // ========== МЕТОДЫ ТРАССИРОВКИ ЛУЧЕЙ ==========
     void initRayTracingResources();
     void cleanupRayTracingResources();
     void renderWithRayTracing(const GameObjects& objects);
@@ -143,12 +142,16 @@ private:
     bool rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius, float& tHit);
     glm::vec3 computeNormal(const glm::vec3& point, const glm::vec3& min, const glm::vec3& max);
 
-    // ========== МЕТОДЫ ОТЛАДКИ ==========
     void drawDebugRaysIfEnabled();
     void drawDebugRays(const std::vector<DebugRay>& rays, float lineWidth = 1.0f);
     void drawRay(const DebugRay& ray, const glm::vec3& color);
 
-    // ========== ПОЗИЦИОНИРОВАНИЕ ОБЪЕКТОВ ==========
+    // НОВЫЕ МЕТОДЫ ДЛЯ ОТЛАДКИ НОРМАЛЕЙ
+    void drawDebugNormals(const GameObjects& objects);
+    void drawModelNormals(const Model& model, const glm::mat4& transform, float normalLength = 0.15f);
+    void drawModelNormalsWithTransform(const Model& model, float x, float y, float z,
+        float scale, float rotationAngle, float normalLength = 0.15f);
+
     glm::vec3 getSnakeSegmentPosition(const Point& segment, size_t index);
     glm::vec3 getSnakeSegmentScale(const Point& segment, size_t index);
     glm::vec3 getFoodPosition(const Point& food);
@@ -159,7 +162,7 @@ private:
     void drawTiledFloor(const GameObjects& objects);
     void drawFallbackFloor();
     void drawFloorGrid();
-    // ========== МОДЕЛИ ==========
+
 private:
     // Основные модели примитивов
     Model m_snakeHeadModel;
@@ -175,12 +178,11 @@ private:
     Model m_cylinderModel;
     Model m_fenceModel;
     Model m_floorModel;
-    // Загруженные FBX модели (путь к файлу -> модель)
+
     std::map<std::string, Model> m_loadedFBXModels;
 
     void createTexturedFloorModel(Model& model);
 
-    // ========== НАСТРОЙКИ ОКРУЖЕНИЯ ==========
     glm::vec3 skyColor;
     glm::vec3 floorColor;
     glm::vec3 gridColor;
@@ -191,7 +193,6 @@ private:
     int m_gridDepth;
     float m_cellSize;
 
-    // ========== НАСТРОЙКИ ОСВЕЩЕНИЯ ==========
     glm::vec3 m_lightDir;
     glm::vec3 m_lightColor;
     LightType m_lightType;
@@ -206,7 +207,6 @@ private:
     bool m_staticShadowsDirty;
     bool m_dynamicShadowsDirty;
 
-    // ========== НАСТРОЙКИ ТРАССИРОВКИ ==========
     bool m_rayTracingEnabled;
     bool m_renderWireframe;
     int m_rayTracingStepSize;
@@ -218,9 +218,11 @@ private:
     GLuint m_rayTracingVBO;
     GLuint m_rayTracingShader;
 
-    // ========== НАСТРОЙКИ ОТЛАДКИ ==========
     bool m_debugRaysEnabled;
     bool m_showGroundRays;
+
+    // НОВЫЙ ФЛАГ ДЛЯ НОРМАЛЕЙ
+    bool m_debugNormalsEnabled;
 
     struct Texture {
         GLuint id = 0;

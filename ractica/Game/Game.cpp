@@ -385,6 +385,11 @@ void Game::handleKeyPress(int key) {
             renderer.toggleShadowMap();  // Включает/выключает тени
             std::cout << "Shadow map toggled" << std::endl;
             break;
+        case GLFW_KEY_F7:
+            renderer.toggleDebugNormals();
+            std::cout << "Debug normals toggled" << std::endl;
+            break;
+
         case GLFW_KEY_F6:
             renderer.toggleDebugRays();  // Включает/выключает лучи
             break;
