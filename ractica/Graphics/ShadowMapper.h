@@ -46,7 +46,8 @@ private:
     int m_gridDepth;
     float m_cellSize;
     float m_groundHeight;
-
+    int m_strideX;      // Шаг по X
+    int m_strideZ;      // Шаг по Z
     int m_totalCellsX;      // Всего клеток по X
     int m_totalCellsZ;      // Всего клеток по Z
 

@@ -1473,7 +1473,7 @@ void GameRenderer::resetShadows() {
         m_lightColor,
         m_lightType,
         m_lightPos,
-        1, 1
+         m_shadowStrideX, m_shadowStrideZ
     );
 
     m_dynamicShadow = ShadowMapper(
@@ -1482,7 +1482,7 @@ void GameRenderer::resetShadows() {
         m_lightColor,
         m_lightType,
         m_lightPos,
-        1, 1
+        m_shadowStrideX, m_shadowStrideZ
     );
 
     m_foodShadow = ShadowMapper(
@@ -1491,7 +1491,7 @@ void GameRenderer::resetShadows() {
         m_lightColor,
         m_lightType,
         m_lightPos,
-        1, 1
+        m_shadowStrideX, m_shadowStrideZ
     );
 
     m_staticShadow.setLightType(m_lightType);

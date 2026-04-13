@@ -11,6 +11,8 @@ ShadowMapper::ShadowMapper()
     , m_groundHeight(0.0f)
     , m_totalCellsX(0)
     , m_totalCellsZ(0)
+    , m_strideX(1)                    // ДОБАВЛЕНО
+    , m_strideZ(1)                    // ДОБАВЛЕНО
     , m_lightType(LightType::Directional)
     , m_lightPos(0.0f, 5.0f, 0.0f)
     , m_lightDirection(1.0f, 0.2f, 0.5f)
@@ -30,6 +32,8 @@ ShadowMapper::ShadowMapper(int width, int depth, float cellSize, float groundHei
     , m_gridDepth(depth)
     , m_cellSize(cellSize)
     , m_groundHeight(groundHeight)
+    , m_strideX(strideX > 0 ? strideX : 1)      // ДОБАВЛЕНО
+    , m_strideZ(strideZ > 0 ? strideZ : 1)      // ДОБАВЛЕНО
     , m_lightType(lightType)
     , m_lightPos(lightPos)
     , m_lightDirection(glm::normalize(lightDirection))
@@ -47,24 +51,36 @@ void ShadowMapper::setGrid(int width, int depth, float cellSize, float groundHei
     m_cellSize = cellSize;
     m_groundHeight = groundHeight;
 
-    m_totalCellsX = m_gridWidth;
-    m_totalCellsZ = m_gridDepth;
+    // Вычисляем реальный размер сетки теней с учётом stride
+    m_totalCellsX = m_gridWidth / m_strideX;
+    m_totalCellsZ = m_gridDepth / m_strideZ;
+
+    if (m_totalCellsX < 1) m_totalCellsX = 1;
+    if (m_totalCellsZ < 1) m_totalCellsZ = 1;
+
+    float shadowCellSize = m_cellSize * m_strideX;
 
     std::cout << "=== ShadowMapper Grid Setup ===" << std::endl;
-    std::cout << "Game grid cells: " << m_totalCellsX << " x " << m_totalCellsZ << std::endl;
-    std::cout << "Total cells: " << (m_totalCellsX * m_totalCellsZ) << std::endl;
+    std::cout << "Original grid cells: " << m_gridWidth << " x " << m_gridDepth << std::endl;
+    std::cout << "Stride: " << m_strideX << " x " << m_strideZ << std::endl;
+    std::cout << "Shadow grid cells: " << m_totalCellsX << " x " << m_totalCellsZ << std::endl;
+    std::cout << "Shadow cell size: " << shadowCellSize << std::endl;
+    std::cout << "Total shadow cells: " << (m_totalCellsX * m_totalCellsZ) << std::endl;
     std::cout << "===============================" << std::endl;
 
-    // Инициализируем сетку теней
+    // Инициализируем сетку теней (уменьшенного размера)
     m_shadowGrid.resize(m_totalCellsZ, std::vector<ShadowSample>(m_totalCellsX));
 
     for (int z = 0; z < m_totalCellsZ; z++) {
         for (int x = 0; x < m_totalCellsX; x++) {
             m_shadowGrid[z][x].cellX = x;
             m_shadowGrid[z][x].cellZ = z;
-            m_shadowGrid[z][x].position = getCellCenter(x, z);
+            // Позиция центра клетки в оригинальной сетке
+            int origX = x * m_strideX + m_strideX / 2;
+            int origZ = z * m_strideZ + m_strideZ / 2;
+            m_shadowGrid[z][x].position = getCellCenter(origX, origZ);
             m_shadowGrid[z][x].computed = false;
-            m_shadowGrid[z][x].value = 1.0f; // По умолчанию на свету
+            m_shadowGrid[z][x].value = 1.0f;
         }
     }
 }
@@ -111,7 +127,6 @@ bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance
     glm::vec3 closestPoint;
     bool hit = false;
 
-    // Проверка через bounding spheres
     for (const auto& sphere : m_objectSpheres) {
         glm::vec3 oc = ray.origin - sphere.center;
         float a = glm::dot(ray.direction, ray.direction);
@@ -124,7 +139,6 @@ bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance
             float t1 = (-b - sqrtD) / (2.0f * a);
             float t2 = (-b + sqrtD) / (2.0f * a);
 
-            // Проверяем, что попадание не в саму точку (epsilon = 0.05f)
             if (t1 > 0.05f && t1 < closestHit) {
                 closestHit = t1;
                 closestPoint = ray.pointAt(t1);
@@ -144,7 +158,6 @@ bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance
         return true;
     }
 
-    // Проверка через коллбек (для точных моделей)
     if (m_intersectCallback) {
         float exactHitDistance;
         glm::vec3 exactHitPoint;
@@ -198,12 +211,10 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
             return false;
         }
 
-        // Луч от ТОЧКИ к ИСТОЧНИКУ
         rayOrigin = point;
         rayDirection = glm::normalize(toLight);
         maxRayDistance = distanceToLight;
 
-        // Небольшое смещение, чтобы не считать саму точку
         float epsilon = 0.05f;
         rayOrigin += rayDirection * epsilon;
         maxRayDistance -= epsilon;
@@ -228,7 +239,6 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
         float cosAngle = glm::dot(toPointDir, lightDirNormalized);
         float spotCos = cos(glm::radians(45.0f));
 
-        // Вне конуса = тень
         if (cosAngle < spotCos) {
             hitDistance = distanceToPoint;
             hitCellX = -1;
@@ -236,7 +246,6 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
             return true;
         }
 
-        // Луч от ТОЧКИ к ИСТОЧНИКУ
         rayOrigin = point;
         rayDirection = -toPointDir;
         maxRayDistance = distanceToPoint;
@@ -268,6 +277,7 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
 
     return false;
 }
+
 void ShadowMapper::recordRay(const glm::vec3& origin, const glm::vec3& direction,
     const glm::vec3& hitPoint, float distance, bool hit, int cellX, int cellZ)
 {
@@ -308,7 +318,6 @@ void ShadowMapper::computeShadows()
     int shadowCount = 0;
     int totalCells = m_totalCellsX * m_totalCellsZ;
 
-    // Для каждой клетки пускаем луч
     for (int z = 0; z < m_totalCellsZ; z++) {
         for (int x = 0; x < m_totalCellsX; x++) {
             ShadowSample& sample = m_shadowGrid[z][x];
@@ -319,11 +328,11 @@ void ShadowMapper::computeShadows()
             bool inShadow = isPointInShadow(sample.position, hitCellX, hitCellZ, hitDistance);
 
             if (inShadow) {
-                sample.value = 0.0f;  // В тени
+                sample.value = 0.0f;
                 shadowCount++;
             }
             else {
-                sample.value = 1.0f;  // На свету
+                sample.value = 1.0f;
             }
 
             sample.computed = true;
@@ -344,15 +353,13 @@ void ShadowMapper::computeShadows()
                     maxDist = glm::length(m_lightPos - sample.position);
                     endPoint = m_lightPos;
                 }
-                else {  // LightType::Spot - ИСПРАВЛЕНО
-                    // Луч от источника к точке
+                else {
                     rayOrigin = m_lightPos;
                     rayDirection = glm::normalize(sample.position - m_lightPos);
                     maxDist = glm::length(sample.position - m_lightPos);
                     endPoint = sample.position;
                 }
 
-                // Если есть попадание, используем точку попадания
                 if (inShadow && hitCellX >= 0 && hitCellZ >= 0) {
                     endPoint = getCellCenter(hitCellX, hitCellZ);
                     endPoint.y += 0.1f;
@@ -381,25 +388,33 @@ void ShadowMapper::computeShadows()
 
 float ShadowMapper::getShadowAtCell(int cellX, int cellZ) const
 {
-    if (cellX < 0 || cellX >= m_totalCellsX || cellZ < 0 || cellZ >= m_totalCellsZ) {
+    int shadowX = cellX / m_strideX;
+    int shadowZ = cellZ / m_strideZ;
+
+    if (shadowX < 0 || shadowX >= m_totalCellsX || shadowZ < 0 || shadowZ >= m_totalCellsZ) {
         return 1.0f;
     }
-    return m_shadowGrid[cellZ][cellX].value;
+    return m_shadowGrid[shadowZ][shadowX].value;
 }
 
 float ShadowMapper::getShadowAtPoint(const glm::vec3& point) const
 {
-    // Определяем клетку по точке
     float halfWidth = m_gridWidth * m_cellSize / 2.0f;
     float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 
     int cellX = (int)((point.x + halfWidth) / m_cellSize);
     int cellZ = (int)((point.z + halfDepth) / m_cellSize);
 
-    cellX = std::max(0, std::min(cellX, m_totalCellsX - 1));
-    cellZ = std::max(0, std::min(cellZ, m_totalCellsZ - 1));
+    cellX = std::max(0, std::min(cellX, m_gridWidth - 1));
+    cellZ = std::max(0, std::min(cellZ, m_gridDepth - 1));
 
-    return m_shadowGrid[cellZ][cellX].value;
+    int shadowX = cellX / m_strideX;
+    int shadowZ = cellZ / m_strideZ;
+
+    if (shadowX < 0 || shadowX >= m_totalCellsX || shadowZ < 0 || shadowZ >= m_totalCellsZ) {
+        return 1.0f;
+    }
+    return m_shadowGrid[shadowZ][shadowX].value;
 }
 
 float ShadowMapper::getShadowAtWorldPos(float x, float z) const
