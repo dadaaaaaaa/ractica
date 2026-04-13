@@ -350,72 +350,75 @@ void Game::forceRedraw() {
 }
 
 void Game::handleKeyPress(int key) {
-    // Делегируем обработку ввода соответствующим компонентам
     switch (objects.getGameState()) {
     case PLAYING:
-
         switch (key) {
         case GLFW_KEY_W:
             if (objects.getCurrentDirection() != BACKWARD)
-                objects.setCurrentDirection (FORWARD);
+                objects.setCurrentDirection(FORWARD);
+            // Принудительное обновление теней при смене направления
+            renderer.markDynamicShadowsDirty();
             break;
 
         case GLFW_KEY_S:
             if (objects.getCurrentDirection() != FORWARD)
                 objects.setCurrentDirection(BACKWARD);
+            renderer.markDynamicShadowsDirty();
             break;
 
         case GLFW_KEY_A:
             if (objects.getCurrentDirection() != RIGHT)
                 objects.setCurrentDirection(LEFT);
+            renderer.markDynamicShadowsDirty();
             break;
 
         case GLFW_KEY_D:
             if (objects.getCurrentDirection() != LEFT)
                 objects.setCurrentDirection(RIGHT);
+            renderer.markDynamicShadowsDirty();
             break;
+
         case GLFW_KEY_R:
             objects.initGame();
             objects.setGameState(PLAYING);
-            // Добавьте здесь принудительный сброс теней
+            // Принудительный сброс всех теней
+            renderer.resetShadows();
             renderer.markStaticShadowsDirty();
             renderer.markDynamicShadowsDirty();
+            renderer.markFoodShadowsDirty();
             break;
+
         case GLFW_KEY_Y:
-            renderer.toggleShadowMap();  // Включает/выключает тени
+            renderer.toggleShadowMap();
             std::cout << "Shadow map toggled" << std::endl;
             break;
+
         case GLFW_KEY_F7:
             renderer.toggleDebugNormals();
-            std::cout << "Debug normals toggled" << std::endl;
             break;
 
         case GLFW_KEY_F6:
-            renderer.toggleDebugRays();  // Включает/выключает лучи
+            renderer.toggleDebugRays();
+            break;
+
+        case GLFW_KEY_F5:
+            objects.saveGame();
+            std::cout << "Game saved!" << std::endl;
             break;
         }
 
         objects.handleGameKeyPress(key);
-
-        if (key == GLFW_KEY_Y) {
-            renderer.toggleshadow_map();
-            renderer.renderGame(objects);
-            std::cout << " Game saved!" << std::endl;
-        }
-        // Сохранение по F5
-        if (key == GLFW_KEY_F5) {
-            objects.saveGame();
-            std::cout << " Game saved!" << std::endl;
-        }
         break;
+
     case SETTINGS:
         if (objects.isNameInputActive()) {
-            objects.handleNameInput(key); // Обрабатываем Backspace, Enter, Escape
+            objects.handleNameInput(key);
         }
         else {
             objects.handleSettingsKeyPress(key);
         }
         break;
+
     default:
         objects.handleMenuKeyPress(key);
         break;

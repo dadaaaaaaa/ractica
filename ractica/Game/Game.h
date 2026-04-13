@@ -11,11 +11,10 @@ extern std::string g_assetsPath;
 extern std::string g_modelsPath;
 extern std::string g_texturesPath;
 extern std::string g_configPath;
-
+extern GameRenderer renderer;
 class Game {
 private:
     GameObjects objects;
-    GameRenderer renderer;
     GameUI ui;
 
 public:

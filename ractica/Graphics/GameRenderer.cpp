@@ -52,42 +52,46 @@ GameRenderer::GameRenderer()
     , m_shadowMapEnabled(false)
     , m_debugRaysEnabled(false)
     , m_showGroundRays(true)
-    , m_shadowStrideX(1)
-    , m_shadowStrideZ(1)
+    , m_shadowStrideX(8)
+    , m_shadowStrideZ(8)
     , m_staticShadowsDirty(true)
     , m_dynamicShadowsDirty(true)
+    , m_foodShadowsDirty(true)
     , shadow_map(false)
     , m_debugNormalsEnabled(false)
+    , m_ambientEnabled(false)
+    , m_specularEnabled(false)
+    , m_showAllRays(false)
 {
-    // ========== НАСТРОЙКИ ОСВЕЩЕНИЯ ==========
-    // 1. Directional (направленный свет) - использует m_lightDir, позиция не важна
-    // 2. Points (точечный свет) - использует m_lightPos, светит во все стороны
-    // 3. Spot (прожектор) - использует m_lightPos (позиция) и m_lightDir (направление)
-
-    m_lightType = LightType::Spot;   // Текущий тип света
-
-    // Общие настройки
+    m_lightType = LightType::Points;
     m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
-
-    // Для Directional (направленный свет) - куда светит
-    m_lightDir = glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f));  // Светит сверху-сбоку
-
-    // Для Points и Spot (позиция источника)
-    m_lightPos = glm::vec3(0.0f, 2.0f, 0.0f);  // Высоко над центром поля
-
-    // Для Spot дополнительно - направление луча (светит строго вниз)
-    // НЕ ПЕРЕОПРЕДЕЛЯТЬ m_lightDir для Spot, т.к. он используется для направления!
-    // Если нужно чтобы прожектор светил вниз - m_lightDir = (0, -1, 0)
+    m_lightDir = glm::normalize(glm::vec3(-1, -1, 0.5f));
+    m_lightPos = glm::vec3(0.0f, 2.0f, 0.0f);
 }
 
 GameRenderer::~GameRenderer() {
-    // Очищаем загруженные FBX модели
     for (auto& pair : m_loadedFBXModels) {
         pair.second.cleanup();
     }
     m_loadedFBXModels.clear();
 }
 
+void GameRenderer::toggleAmbient() {
+    m_ambientEnabled = !m_ambientEnabled;
+    setupFixedPipelineLighting();  // Перезагружаем освещение
+    std::cout << "Ambient lighting: " << (m_ambientEnabled ? "ENABLED" : "DISABLED") << std::endl;
+}
+
+void GameRenderer::toggleSpecular() {
+    m_specularEnabled = !m_specularEnabled;
+    setupFixedPipelineLighting();  // Перезагружаем освещение
+    std::cout << "Specular lighting: " << (m_specularEnabled ? "ENABLED" : "DISABLED") << std::endl;
+}
+
+void GameRenderer::toggleShowAllRays() {
+    m_showAllRays = !m_showAllRays;
+    std::cout << "Show all rays: " << (m_showAllRays ? "YES (show all rays)" : "NO (show only hit rays)") << std::endl;
+}
 void GameRenderer::initialize() {
     initOpenGLSettings();
     setupFixedPipelineLighting();
@@ -286,9 +290,15 @@ void GameRenderer::setupFixedPipelineLighting() {
     glEnable(GL_LIGHTING);
     glEnable(GL_NORMALIZE);
 
-    // Глобальная ambient - оставляем как есть
-    GLfloat global_ambient[] = { 0.4f, 0.4f, 0.4f, 1.0f };
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
+    // Глобальная ambient - включаем/выключаем
+    if (m_ambientEnabled) {
+        GLfloat global_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
+    }
+    else {
+        GLfloat global_ambient[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
+    }
 
     // Включаем два источника света
     glEnable(GL_LIGHT0);
@@ -307,15 +317,31 @@ void GameRenderer::setupFixedPipelineLighting() {
         break;
     }
 
-    std::cout << "Fixed pipeline lighting configured, type: " << (int)m_lightType << std::endl;
+    std::cout << "Fixed pipeline lighting configured, type: " << (int)m_lightType
+        << ", Ambient: " << (m_ambientEnabled ? "ON" : "OFF")
+        << ", Specular: " << (m_specularEnabled ? "ON" : "OFF") << std::endl;
 }
 
 void GameRenderer::setupDirectionalLight() {
-    // LIGHT0 - направленный свет
-    GLfloat light0_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    // Ambient - включаем/выключаем
+    GLfloat light0_ambient[] = {
+        m_ambientEnabled ? 0.3f : 0.0f,
+        m_ambientEnabled ? 0.3f : 0.0f,
+        m_ambientEnabled ? 0.3f : 0.0f,
+        1.0f
+    };
+
     GLfloat light0_diffuse[] = { m_lightColor.r, m_lightColor.g, m_lightColor.b, 1.0f };
-    GLfloat light0_specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
-    GLfloat light0_position[] = { -m_lightDir.x, -m_lightDir.y, -m_lightDir.z, 0.0f }; // w=0 для направленного
+
+    // Specular - включаем/выключаем
+    GLfloat light0_specular[] = {
+        m_specularEnabled ? 0.5f : 0.0f,
+        m_specularEnabled ? 0.5f : 0.0f,
+        m_specularEnabled ? 0.5f : 0.0f,
+        1.0f
+    };
+
+    GLfloat light0_position[] = { -m_lightDir.x, -m_lightDir.y, -m_lightDir.z, 0.0f };
 
     glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
@@ -327,34 +353,24 @@ void GameRenderer::setupDirectionalLight() {
 }
 
 void GameRenderer::setupPointLight() {
-    // LIGHT0 - точечный источник (Point Light) - правильная реализация
-    GLfloat light0_ambient[] = { 0.15f, 0.15f, 0.15f, 1.0f };      // Небольшая ambient составляющая
-    GLfloat light0_diffuse[] = { m_lightColor.r, m_lightColor.g, m_lightColor.b, 1.0f };
-    GLfloat light0_specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
-    GLfloat light0_position[] = { m_lightPos.x, m_lightPos.y, m_lightPos.z, 1.0f }; // w=1 для позиционного света
+    // Ambient - включаем/выключаем
+    GLfloat light0_ambient[] = {
+        m_ambientEnabled ? 0.2f : 0.0f,
+        m_ambientEnabled ? 0.2f : 0.0f,
+        m_ambientEnabled ? 0.2f : 0.0f,
+        1.0f
+    };
 
-    glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
-    glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
-    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+    GLfloat light0_diffuse[] = { m_lightColor.r * 0.9f, m_lightColor.g * 0.9f, m_lightColor.b * 0.9f, 1.0f };
 
-    // Настройка затухания для точечного источника (реалистичное)
-    glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 1.0f);   // Постоянное затухание
-    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.09f);    // Линейное затухание
-    glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.032f); // Квадратичное затухание
+    // Specular - включаем/выключаем
+    GLfloat light0_specular[] = {
+        m_specularEnabled ? 0.4f : 0.0f,
+        m_specularEnabled ? 0.4f : 0.0f,
+        m_specularEnabled ? 0.4f : 0.0f,
+        1.0f
+    };
 
-    // Выключаем дополнительный свет, так как точечный должен быть один
-    glDisable(GL_LIGHT1);
-
-    std::cout << "Point Light configured at position: "
-        << m_lightPos.x << ", " << m_lightPos.y << ", " << m_lightPos.z << std::endl;
-}
-
-void GameRenderer::setupSpotLight() {
-    // LIGHT0 - прожектор (Spot Light) - УСИЛЕННЫЙ
-    GLfloat light0_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-    GLfloat light0_diffuse[] = { m_lightColor.r * 1.5f, m_lightColor.g * 1.5f, m_lightColor.b * 1.5f, 1.0f };
-    GLfloat light0_specular[] = { 0.9f, 0.9f, 0.9f, 1.0f };
     GLfloat light0_position[] = { m_lightPos.x, m_lightPos.y, m_lightPos.z, 1.0f };
 
     glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
@@ -362,27 +378,71 @@ void GameRenderer::setupSpotLight() {
     glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
     glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
 
-    // Направление прожектора (светит вниз)
+    // Мягкое затухание
+    glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.8f);
+    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.07f);
+    glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.02f);
+
+    // Выключаем LIGHT1 для чистоты
+    glDisable(GL_LIGHT1);
+
+    std::cout << "Soft Point Light configured at: "
+        << m_lightPos.x << ", " << m_lightPos.y << ", " << m_lightPos.z << std::endl;
+}
+
+void GameRenderer::setupSpotLight() {
+    // Ambient - включаем/выключаем
+    GLfloat light0_ambient[] = {
+        m_ambientEnabled ? 0.15f : 0.0f,
+        m_ambientEnabled ? 0.15f : 0.0f,
+        m_ambientEnabled ? 0.15f : 0.0f,
+        1.0f
+    };
+
+    GLfloat light0_diffuse[] = { m_lightColor.r * 1.5f, m_lightColor.g * 1.5f, m_lightColor.b * 1.5f, 1.0f };
+
+    // Specular - включаем/выключаем
+    GLfloat light0_specular[] = {
+        m_specularEnabled ? 0.7f : 0.0f,
+        m_specularEnabled ? 0.7f : 0.0f,
+        m_specularEnabled ? 0.7f : 0.0f,
+        1.0f
+    };
+
+    GLfloat light0_position[] = { m_lightPos.x, m_lightPos.y, m_lightPos.z, 1.0f };
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+    // НАПРАВЛЕНИЕ ПРОЖЕКТОРА - СТРОГО ВНИЗ
     GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
     glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
 
-    // Угол конуса прожектора (шире)
-    glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 60.0f);  // Увеличил до 60 градусов
-    glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 1.0f); // Мягче края
+    // Угол конуса (45 градусов)
+    glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 45.0f);
+    glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 2.0f);
 
-    // Затухание (меньше)
+    // Затухание
     glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.5f);
     glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.03f);
     glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.01f);
 
-    // Дополнительный заполняющий свет
-    GLfloat light1_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-    GLfloat light1_diffuse[] = { 0.4f, 0.4f, 0.4f, 1.0f };
+    // Заполняющий свет - ambient тоже зависит от переключателя
+    GLfloat light1_ambient[] = {
+        m_ambientEnabled ? 0.2f : 0.0f,
+        m_ambientEnabled ? 0.2f : 0.0f,
+        m_ambientEnabled ? 0.2f : 0.0f,
+        1.0f
+    };
+    GLfloat light1_diffuse[] = { 0.25f, 0.25f, 0.25f, 1.0f };
     GLfloat light1_position[] = { 0.0f, 5.0f, 0.0f, 1.0f };
-
     glLightfv(GL_LIGHT1, GL_AMBIENT, light1_ambient);
     glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_diffuse);
     glLightfv(GL_LIGHT1, GL_POSITION, light1_position);
+
+    std::cout << "Spot Light configured: cutoff=45°, direction=(0,-1,0)" << std::endl;
 }
 
 void GameRenderer::updateLightPosition() {
@@ -772,12 +832,10 @@ void GameRenderer::setFloorTexture(const std::string& texturePath) {
 //=============================================================================
 
 void GameRenderer::renderGame(const GameObjects& objects) {
-    // Используем цвет неба из параметра objects
     skyColor = objects.getSkyColor();
     glClearColor(skyColor.r, skyColor.g, skyColor.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    // Также обновляем другие цвета из конфига
     floorColor = objects.getFloorColor();
     gridColor = objects.getGridColor();
 
@@ -805,13 +863,13 @@ void GameRenderer::renderGame(const GameObjects& objects) {
         computeShadowsIfNeeded(objects);
     }
 
-    // В renderGame() замените drawFloor(); на:
     if (m_floorModel.vertices.empty() || objects.getFloorModel().empty()) {
-        drawFallbackFloor(); // Старый способ
+        drawFallbackFloor();
     }
     else {
-        drawTiledFloor(objects); // Новый тайловый способ
+        drawTiledFloor(objects);
     }
+    
     drawObstaclesAsTrees(objects.getObstacles());
     drawFence(objects.getFenceBlocks());
     drawFood(objects.getFood());
@@ -821,6 +879,7 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     drawBirds(objects.getBirds());
     drawLightSource();
     drawDebugNormals(objects);
+    
     if (m_debugRaysEnabled && m_shadowMapEnabled) {
         drawDebugRaysIfEnabled();
     }
@@ -834,8 +893,14 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     m_dynamicShadow.setLightType(m_lightType);
     m_dynamicShadow.setLightPos(m_lightPos);
     m_dynamicShadow.setLightDirection(m_lightDir);
+
+    m_foodShadow.setLightType(m_lightType);
+    m_foodShadow.setLightPos(m_lightPos);
+    m_foodShadow.setLightDirection(m_lightDir);
+
+    // ========== СТАТИЧЕСКИЕ ТЕНИ (деревья, забор) - только один раз ==========
     if (m_staticShadowsDirty) {
-        std::cout << "[STATIC SHADOWS] Computing..." << std::endl;
+        std::cout << "\n[STATIC SHADOWS] Computing..." << std::endl;
 
         m_staticShadow.clearObjectBounds();
         m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, 0.0f);
@@ -846,8 +911,9 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                 float x = block.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                 float z = block.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
                 float treeSize = m_cellSize * 1.5f;
-                float radius = treeSize * 0.4f;
-                staticSpheres.emplace_back(glm::vec3(x, treeSize / 2.0f, z), radius);
+                float radius = treeSize * 0.6f;
+                float y = treeSize / 2.0f;
+                staticSpheres.emplace_back(glm::vec3(x, y, z), radius);
             }
         }
 
@@ -871,28 +937,23 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         std::cout << "[STATIC SHADOWS] Completed" << std::endl;
     }
 
+    // ========== ДИНАМИЧЕСКИЕ ТЕНИ (змейка) - обновляем при движении ==========
     if (m_dynamicShadowsDirty) {
-        std::cout << "[DYNAMIC SHADOWS] Computing..." << std::endl;
+        std::cout << "\n[DYNAMIC SHADOWS - SNAKE] Computing..." << std::endl;
 
         m_dynamicShadow.clearObjectBounds();
-        std::vector<BoundingSphere> dynamicSpheres;
+        std::vector<BoundingSphere> snakeSpheres;
 
         for (size_t i = 0; i < objects.getSnake().size(); i++) {
             const auto& segment = objects.getSnake()[i];
             float x = segment.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
             float z = segment.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-            float radius = m_cellSize * 0.4f;
-            dynamicSpheres.emplace_back(glm::vec3(x, 0.15f, z), radius);
+            float radius = m_cellSize * 0.6f;
+            float y = 0.2f;
+            snakeSpheres.emplace_back(glm::vec3(x, y, z), radius);
         }
 
-        for (const auto& apple : objects.getFood()) {
-            float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
-            float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-            float radius = m_cellSize * 0.25f;
-            dynamicSpheres.emplace_back(glm::vec3(x, 0.1f, z), radius);
-        }
-
-        m_dynamicShadow.registerObjectBounds(dynamicSpheres);
+        m_dynamicShadow.registerObjectBounds(snakeSpheres);
         m_dynamicShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
@@ -909,10 +970,63 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
 
         m_dynamicShadow.computeShadows();
         m_dynamicShadowsDirty = false;
-        std::cout << "[DYNAMIC SHADOWS] Completed" << std::endl;
+        std::cout << "[DYNAMIC SHADOWS - SNAKE] Completed" << std::endl;
+    }
+
+    if (m_foodShadowsDirty) {
+        std::cout << "\n[FOOD SHADOWS] Computing with " << objects.getFood().size() << " apples..." << std::endl;
+
+        m_foodShadow.clearObjectBounds();
+        std::vector<BoundingSphere> foodSpheres;
+
+        for (const auto& apple : objects.getFood()) {
+            float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
+            float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
+            float radius = m_cellSize * 0.35f;
+            float y = 0.15f;
+            foodSpheres.emplace_back(glm::vec3(x, y, z), radius);
+        }
+
+        std::cout << "  Food spheres: " << foodSpheres.size() << std::endl;
+        m_foodShadow.registerObjectBounds(foodSpheres);
+        m_foodShadow.setIntersectCallback(
+            [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+                float offsetX = m_gridWidth * m_cellSize / 2.0f;
+                float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+                HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
+                if (hit.hit && hit.distance > 0.01f) {
+                    hitDist = hit.distance;
+                    hitPoint = hit.point;
+                    return true;
+                }
+                return false;
+            }
+        );
+
+        m_foodShadow.computeShadows();
+        m_foodShadowsDirty = false;
+        std::cout << "[FOOD SHADOWS] Completed" << std::endl;
     }
 }
+void GameRenderer::markFoodShadowsDirty() {
+    m_foodShadowsDirty = true;
+    std::cout << "Food shadows marked as DIRTY" << std::endl;
+}
+void GameRenderer::markDynamicShadowsDirty() {
+    m_dynamicShadowsDirty = true;
+    std::cout << "Dynamic shadows (snake) marked as DIRTY" << std::endl;
+}
+void GameRenderer::toggleShadowMap() {
+    m_shadowMapEnabled = !m_shadowMapEnabled;
+    std::cout << "Shadow mapping: " << (m_shadowMapEnabled ? "ENABLED" : "DISABLED") << std::endl;
 
+    if (m_shadowMapEnabled) {
+        resetShadows();
+        m_staticShadowsDirty = true;
+        m_dynamicShadowsDirty = true;
+        m_foodShadowsDirty = true;
+    }
+}
 //=============================================================================
 // ОТРИСОВКА ОБЪЕКТОВ
 //=============================================================================
@@ -1047,7 +1161,6 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
 
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-
     const GameObjects& gameObjects = g_game.getGameObjects();
 
     for (size_t i = 0; i < snake.size(); i++) {
@@ -1084,6 +1197,7 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
         glRotatef(rotationAngle, 0.0f, 1.0f, 0.0f);
         glScalef(scale, scale, scale);
 
+        // Нормальное освещение для всех сегментов (без принудительного затемнения)
         if (currentModel->hasTexture && currentModel->textureID != 0) {
             setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 64.0f, 0.2f);
             setupTexture(currentModel->textureID);
@@ -1092,10 +1206,7 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
             setMaterial(color, 64.0f, 0.2f);
             setupTexture(0);
         }
-
-        if (currentModel) {
-            currentModel->draw();
-        }
+        currentModel->draw();
 
         if (i == 0) {
             drawSnakeEyes();
@@ -1128,7 +1239,6 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
             setMaterial(glm::vec3(0.9f, 0.2f, 0.2f), 80.0f, 0.4f);
             setupTexture(0);
         }
-
         m_appleModel.draw();
         glPopMatrix();
     }
@@ -1158,7 +1268,6 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
                 setMaterial(glm::vec3(0.2f, 0.6f, 0.2f), 30.0f, 0.2f);
                 setupTexture(0);
             }
-
             m_treeModel.draw();
             glPopMatrix();
         }
@@ -1276,37 +1385,28 @@ void GameRenderer::drawLightSource() {
         glm::vec3 lightPos = -m_lightDir * 10.0f;
         glTranslatef(lightPos.x, lightPos.y, lightPos.z);
         GLUquadric* quad = gluNewQuadric();
-        gluSphere(quad, 0.4, 16, 16);
+        gluSphere(quad, 0.4f, 16, 16);
         gluDeleteQuadric(quad);
         break;
     }
     case LightType::Points: {
-        // Маленькая яркая сфера - источник света
         glTranslatef(m_lightPos.x, m_lightPos.y, m_lightPos.z);
-
-        // Внешнее свечение (полупрозрачное)
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-        glColor4f(1.0f, 0.7f, 0.3f, 0.3f);
-
         GLUquadric* quad = gluNewQuadric();
-        gluSphere(quad, 0.35, 16, 16);
-
-        // Внутренняя яркая сфера
-        glColor4f(1.0f, 0.9f, 0.5f, 0.8f);
-        gluSphere(quad, 0.2, 16, 16);
+        glColor3f(1.0f, 0.8f, 0.4f);
+        gluSphere(quad, 0.3f, 16, 16);
         gluDeleteQuadric(quad);
-
-        glDisable(GL_BLEND);
         break;
     }
     case LightType::Spot: {
-        glColor3f(1.0f, 0.7f, 0.2f);
+        // Прожектор: рисуем конус, указывающий НАПРАВЛЕНИЕ СВЕТА
+        // Если светит вниз - конус рисуем вниз
         glTranslatef(m_lightPos.x, m_lightPos.y, m_lightPos.z);
 
         GLUquadric* quad = gluNewQuadric();
-        glRotatef(-90, 1, 0, 0);
-        gluCylinder(quad, 0.2, 0.6, 0.8, 12, 2);
+        glColor3f(1.0f, 0.7f, 0.2f);
+
+        // Сфера на вершине
+        gluSphere(quad, 0.2f, 12, 12);
         gluDeleteQuadric(quad);
         break;
     }
@@ -1349,16 +1449,6 @@ void GameRenderer::drawModelWithRotation(const Model& model, float x, float y, f
 // ТЕНИ
 //=============================================================================
 
-void GameRenderer::toggleShadowMap() {
-    m_shadowMapEnabled = !m_shadowMapEnabled;
-    std::cout << "Shadow mapping: " << (m_shadowMapEnabled ? "ENABLED" : "DISABLED") << std::endl;
-
-    if (m_shadowMapEnabled) {
-        resetShadows();
-        m_staticShadowsDirty = true;
-        m_dynamicShadowsDirty = true;
-    }
-}
 
 void GameRenderer::toggleDebugRays() {
     m_debugRaysEnabled = !m_debugRaysEnabled;
@@ -1379,35 +1469,48 @@ void GameRenderer::toggleDebugRays() {
 void GameRenderer::resetShadows() {
     m_staticShadow = ShadowMapper(
         m_gridWidth, m_gridDepth, m_cellSize, 0.0f,
-        m_lightDir, m_lightColor, m_lightType, m_lightPos,
+        m_lightDir,
+        m_lightColor,
+        m_lightType,
+        m_lightPos,
         1, 1
     );
-
-    // Дополнительно устанавливаем тип и позицию
-    m_staticShadow.setLightType(m_lightType);
-    m_staticShadow.setLightPos(m_lightPos);
-    m_staticShadow.setLightDirection(m_lightDir);
 
     m_dynamicShadow = ShadowMapper(
         m_gridWidth, m_gridDepth, m_cellSize, 0.0f,
-        m_lightDir, m_lightColor, m_lightType, m_lightPos,
+        m_lightDir,
+        m_lightColor,
+        m_lightType,
+        m_lightPos,
         1, 1
     );
+
+    m_foodShadow = ShadowMapper(
+        m_gridWidth, m_gridDepth, m_cellSize, 0.0f,
+        m_lightDir,
+        m_lightColor,
+        m_lightType,
+        m_lightPos,
+        1, 1
+    );
+
+    m_staticShadow.setLightType(m_lightType);
+    m_staticShadow.setLightPos(m_lightPos);
+    m_staticShadow.setLightDirection(m_lightDir);
 
     m_dynamicShadow.setLightType(m_lightType);
     m_dynamicShadow.setLightPos(m_lightPos);
     m_dynamicShadow.setLightDirection(m_lightDir);
 
+    m_foodShadow.setLightType(m_lightType);
+    m_foodShadow.setLightPos(m_lightPos);
+    m_foodShadow.setLightDirection(m_lightDir);
+
     m_staticShadowsDirty = true;
     m_dynamicShadowsDirty = true;
-
-    std::cout << "Shadows reset. Light type: " << (int)m_lightType
-        << ", Light pos: " << m_lightPos.x << "," << m_lightPos.y << "," << m_lightPos.z << std::endl;
+    m_foodShadowsDirty = true;
 }
 
-void GameRenderer::markDynamicShadowsDirty() {
-    m_dynamicShadowsDirty = true;
-}
 
 void GameRenderer::renderShadowMap() {
     // Упрощённая версия теней для fixed pipeline
@@ -1431,65 +1534,89 @@ void GameRenderer::drawSphereImmediate(const glm::vec3& center, float radius) {
 void GameRenderer::drawDebugRaysIfEnabled() {
     if (!m_debugRaysEnabled || !m_shadowMapEnabled) return;
 
+    // Получаем позицию источника света в зависимости от типа
+    glm::vec3 lightWorldPos;
+    switch (m_lightType) {
+    case LightType::Directional:
+        lightWorldPos = -m_lightDir * 20.0f;
+        break;
+    case LightType::Points:
+    case LightType::Spot:
+        lightWorldPos = m_lightPos;
+        break;
+    }
+
     auto staticRays = m_staticShadow.getDebugRays();
     auto dynamicRays = m_dynamicShadow.getDebugRays();
-
-    if (staticRays.empty() && dynamicRays.empty()) return;
+    auto foodRays = m_foodShadow.getDebugRays();
 
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT);
 
     glDisable(GL_LIGHTING);
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_DEPTH_TEST);
-    glLineWidth(2.0f);
+    glLineWidth(1.5f);
 
+    // Рисуем лучи ОТ СОЛНЦА К ОБЪЕКТУ
+    // Статические лучи (деревья)
     for (const auto& ray : staticRays) {
+        if (!m_showAllRays && !ray.hit) continue;
+
+        // Луч от солнца к точке попадания (или к конечной точке)
+        glm::vec3 startPoint = lightWorldPos;
+        glm::vec3 endPoint = ray.hit ? ray.hitPoint : ray.origin;
+
         if (ray.hit) {
-            glColor3f(1.0f, 0.0f, 0.0f);
-        }
-        else if (m_showGroundRays) {
-            glColor3f(0.2f, 0.6f, 1.0f);
+            glColor3f(1.0f, 0.0f, 0.0f);  // Красный - попали в объект
         }
         else {
-            continue;
+            glColor3f(0.0f, 0.5f, 0.0f);  // Тёмно-зелёный - не попали
         }
 
         glBegin(GL_LINES);
-        glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
-        glVertex3f(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);
+        glVertex3f(startPoint.x, startPoint.y, startPoint.z);
+        glVertex3f(endPoint.x, endPoint.y, endPoint.z);
         glEnd();
-
-        if (ray.hit) {
-            glColor3f(1.0f, 0.0f, 0.0f);
-            drawSphereImmediate(ray.hitPoint, 0.08f);
-        }
     }
 
+    // Динамические лучи (змейка)
     for (const auto& ray : dynamicRays) {
+        if (!m_showAllRays && !ray.hit) continue;
+
+        glm::vec3 startPoint = lightWorldPos;
+        glm::vec3 endPoint = ray.hit ? ray.hitPoint : ray.origin;
+
         if (ray.hit) {
-            glColor3f(1.0f, 0.0f, 0.0f);
-        }
-        else if (m_showGroundRays) {
-            glColor3f(0.2f, 0.6f, 1.0f);
+            glColor3f(1.0f, 0.5f, 0.0f);  // Оранжевый - попали в змейку
         }
         else {
-            continue;
+            glColor3f(0.0f, 0.5f, 0.0f);  // Тёмно-зелёный - не попали
         }
 
         glBegin(GL_LINES);
-        glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
-        glVertex3f(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);
+        glVertex3f(startPoint.x, startPoint.y, startPoint.z);
+        glVertex3f(endPoint.x, endPoint.y, endPoint.z);
         glEnd();
-
-        if (ray.hit) {
-            glColor3f(1.0f, 0.0f, 0.0f);
-            drawSphereImmediate(ray.hitPoint, 0.08f);
-        }
     }
 
-    glColor3f(0.0f, 1.0f, 0.0f);
-    for (const auto& ray : staticRays) {
-        drawSphereImmediate(ray.origin, 0.05f);
+    // Лучи для еды
+    for (const auto& ray : foodRays) {
+        if (!m_showAllRays && !ray.hit) continue;
+
+        glm::vec3 startPoint = lightWorldPos;
+        glm::vec3 endPoint = ray.hit ? ray.hitPoint : ray.origin;
+
+        if (ray.hit) {
+            glColor3f(1.0f, 1.0f, 0.0f);  // Жёлтый - попали в еду
+        }
+        else {
+            glColor3f(0.0f, 0.5f, 0.0f);  // Тёмно-зелёный - не попали
+        }
+
+        glBegin(GL_LINES);
+        glVertex3f(startPoint.x, startPoint.y, startPoint.z);
+        glVertex3f(endPoint.x, endPoint.y, endPoint.z);
+        glEnd();
     }
 
     glPopAttrib();
@@ -2080,7 +2207,6 @@ void GameRenderer::drawFloorGrid() {
 }
 
 void GameRenderer::drawFallbackFloor() {
-    // Старый способ отрисовки пола (квадратами)
     float worldWidth = m_gridWidth * m_cellSize;
     float worldDepth = m_gridDepth * m_cellSize;
     float offsetX = worldWidth / 2.0f;
@@ -2111,9 +2237,10 @@ void GameRenderer::drawFallbackFloor() {
 
             float shadowValue = 1.0f;
             if (m_shadowMapEnabled) {
-                shadowValue = m_dynamicShadow.getShadowAtCell(x, z);
+                float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
+                float foodShadow = m_foodShadow.getShadowAtCell(x, z);
                 float staticShadow = m_staticShadow.getShadowAtCell(x, z);
-                shadowValue = std::min(shadowValue, staticShadow);
+                shadowValue = std::min({ snakeShadow, foodShadow, staticShadow });
             }
 
             glm::vec3 finalColor = floorColor * shadowValue;

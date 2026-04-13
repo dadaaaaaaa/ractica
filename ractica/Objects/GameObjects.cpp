@@ -1,6 +1,8 @@
 ﻿#include "../pch.h"
 #include "GameObjects.h"
 #include "../Graphics/Camera.h"
+#include "../Graphics/GameRenderer.h"
+
 #include "../Core/Constants.h"
 #include <algorithm>
 #include <chrono>
@@ -8,7 +10,7 @@
 #include <sstream>
 
 extern Camera g_camera;
-
+extern GameRenderer renderer;
 //=============================================================================
 // КОНСТРУКТОР - здесь только минимальные значения по умолчанию
 //=============================================================================
@@ -297,10 +299,11 @@ void GameObjects::initGame() {
     generateBirds();
     generateGroundSprites();
 
-    // УДАЛЕНЫ ВСЕ ВЫЗОВЫ renderer
-    // renderer.resetShadows();
-    // renderer.markStaticShadowsDirty();
-    // renderer.markDynamicShadowsDirty();
+    // Восстанавливаем вызовы для теней
+    renderer.resetShadows();
+    renderer.markStaticShadowsDirty();
+    renderer.markDynamicShadowsDirty();
+    renderer.markFoodShadowsDirty();
 
     currentDirection = FORWARD;
     verticalDirection = 0;
@@ -342,7 +345,6 @@ void GameObjects::update() {
 
     Point newHead = snake[0];
     switch (currentDirection) {
-
     case FORWARD: newHead.z++; break;
     case BACKWARD: newHead.z--; break;
     case RIGHT: newHead.x--; break;
@@ -350,7 +352,7 @@ void GameObjects::update() {
     }
     newHead.y = 0;
 
-    // Проверка столкновения со стенками (используем gridWidth и gridDepth из конфига)
+    // Проверка столкновения со стенками
     if (newHead.x <= 0 || newHead.x >= gridWidth - 1 ||
         newHead.z <= 0 || newHead.z >= gridDepth - 1) {
         gameOver = true;
@@ -386,17 +388,24 @@ void GameObjects::update() {
         score++;
         food.erase(foodIt);
         generateSingleFood();
-        // renderer.markDynamicShadowsDirty(); // УДАЛЕНО
+
+        // ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ТЕНЕЙ ЕДЫ
+        renderer.markFoodShadowsDirty();
+        renderer.markDynamicShadowsDirty();
+
+        // ДОПОЛНИТЕЛЬНО: принудительно пересчитываем тени в этом же кадре
+        renderer.forceFoodShadowsUpdate(*this);
     }
     else {
         snake.pop_back();
     }
-    // renderer.markDynamicShadowsDirty(); // УДАЛЕНО
+
+    // Тени змейки - грязные (змейка двинулась)
+    renderer.markDynamicShadowsDirty();
 
     updateClouds();
     updateBirds();
 }
-
 //=============================================================================
 // ГЕНЕРАЦИЯ ОБЪЕКТОВ
 //=============================================================================
@@ -671,8 +680,10 @@ void GameObjects::generateInitialFood() {
     food.clear();
     for (int i = 0; i < initialFoodCount; i++) {
         generateSingleFood();
-        // renderer.markDynamicShadowsDirty(); // УДАЛЕНО
+        renderer.markFoodShadowsDirty();
+
     }
+    renderer.markFoodShadowsDirty();
 }
 
 //=============================================================================
@@ -1106,6 +1117,12 @@ bool GameObjects::loadGame() {
             0.0f);
         flowerSprites.push_back(flower);
     }
+
+   
+    renderer.resetShadows();
+    renderer.markStaticShadowsDirty();
+    renderer.markDynamicShadowsDirty();
+    renderer.markFoodShadowsDirty();
 
     std::cout << " Game loaded successfully!" << std::endl;
     return true;

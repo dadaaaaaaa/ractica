@@ -87,7 +87,8 @@ public:
     void toggleDebugRays();
     void setShowGroundRays(bool show) { m_showGroundRays = show; }
     void setMaterial(const glm::vec3& color, float shininess = 32.0f, float specularStrength = 0.3f);
-
+    void drawModelWithShadow(const Model& model, float x, float y, float z,
+        float scale, const glm::vec3& color, bool inShadow);
     bool loadFBXModelToModel(const std::string& filename, Model& outModel, const std::string& subFolder = "");
     void drawModelWithMaterial(const Model& model, float x, float y, float z, float scale, const glm::vec3& color = glm::vec3(1.0f));
     void setLightType(LightType type);
@@ -110,7 +111,50 @@ private:
     void drawCube();
     void computeShadowsIfNeeded(const GameObjects& objects);
     HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
+public:
+    void toggleAmbient();
+    void toggleSpecular();
+    void toggleShowAllRays();
+public:
+    void markFoodShadowsDirty();
+    void forceFoodShadowsUpdate(const GameObjects& objects) {
+        m_foodShadowsDirty = true;
+        // Принудительно пересчитываем тени еды
+        m_foodShadow.clearObjectBounds();
+        std::vector<BoundingSphere> foodSpheres;
 
+        for (const auto& apple : objects.getFood()) {
+            float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
+            float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
+            float radius = m_cellSize * 0.35f;
+            float y = 0.15f;
+            foodSpheres.emplace_back(glm::vec3(x, y, z), radius);
+        }
+
+        m_foodShadow.registerObjectBounds(foodSpheres);
+        m_foodShadow.setIntersectCallback(
+            [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+                float offsetX = m_gridWidth * m_cellSize / 2.0f;
+                float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+                HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
+                if (hit.hit && hit.distance > 0.01f) {
+                    hitDist = hit.distance;
+                    hitPoint = hit.point;
+                    return true;
+                }
+                return false;
+            }
+        );
+        m_foodShadow.computeShadows();
+        m_foodShadowsDirty = false;
+    }
+private:
+    bool m_ambientEnabled;
+    bool m_specularEnabled;
+    bool m_showAllRays;
+    ShadowMapper m_foodShadow;     // Для еды (яблоки) - НОВОЕ
+
+    bool m_foodShadowsDirty;
     void drawFloor();
     void drawSnake(const std::vector<Point>& snake);
     void drawFood(const std::vector<Point>& food);

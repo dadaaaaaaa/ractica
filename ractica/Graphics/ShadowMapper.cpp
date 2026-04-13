@@ -111,20 +111,7 @@ bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance
     glm::vec3 closestPoint;
     bool hit = false;
 
-    // Проверка через коллбек (для точных моделей)
-    if (m_intersectCallback) {
-        float exactHitDistance;
-        glm::vec3 exactHitPoint;
-        if (m_intersectCallback(ray, exactHitDistance, exactHitPoint)) {
-            if (exactHitDistance > 0.01f && exactHitDistance < closestHit) {
-                closestHit = exactHitDistance;
-                closestPoint = exactHitPoint;
-                hit = true;
-            }
-        }
-    }
-
-    // Проверка через bounding spheres (быстрая)
+    // Проверка через bounding spheres
     for (const auto& sphere : m_objectSpheres) {
         glm::vec3 oc = ray.origin - sphere.center;
         float a = glm::dot(ray.direction, ray.direction);
@@ -137,12 +124,13 @@ bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance
             float t1 = (-b - sqrtD) / (2.0f * a);
             float t2 = (-b + sqrtD) / (2.0f * a);
 
-            if (t1 > 0.01f && t1 < closestHit) {
+            // Проверяем, что попадание не в саму точку (epsilon = 0.05f)
+            if (t1 > 0.05f && t1 < closestHit) {
                 closestHit = t1;
                 closestPoint = ray.pointAt(t1);
                 hit = true;
             }
-            if (t2 > 0.01f && t2 < closestHit) {
+            if (t2 > 0.05f && t2 < closestHit) {
                 closestHit = t2;
                 closestPoint = ray.pointAt(t2);
                 hit = true;
@@ -153,7 +141,27 @@ bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance
     if (hit) {
         hitDistance = closestHit;
         hitPoint = closestPoint;
+        return true;
     }
+
+    // Проверка через коллбек (для точных моделей)
+    if (m_intersectCallback) {
+        float exactHitDistance;
+        glm::vec3 exactHitPoint;
+        if (m_intersectCallback(ray, exactHitDistance, exactHitPoint)) {
+            if (exactHitDistance > 0.05f && exactHitDistance < closestHit) {
+                closestHit = exactHitDistance;
+                closestPoint = exactHitPoint;
+                hit = true;
+            }
+        }
+    }
+
+    if (hit) {
+        hitDistance = closestHit;
+        hitPoint = closestPoint;
+    }
+
     return hit;
 }
 
@@ -173,41 +181,78 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
 
     switch (m_lightType) {
     case LightType::Directional:
-        rayOrigin = point;
-        rayDirection = -m_lightDirection;
+        rayOrigin = point - m_lightDirection * 100.0f;
+        rayDirection = m_lightDirection;
         maxRayDistance = 100.0f;
         break;
 
     case LightType::Points:
-        // Точечный свет: луч от точки к источнику света
+    {
+        glm::vec3 toLight = m_lightPos - point;
+        float distanceToLight = glm::length(toLight);
+
+        if (distanceToLight < 0.01f) {
+            hitCellX = -1;
+            hitCellZ = -1;
+            hitDistance = 0;
+            return false;
+        }
+
+        // Луч от ТОЧКИ к ИСТОЧНИКУ
         rayOrigin = point;
-        rayDirection = glm::normalize(m_lightPos - point);
-        maxRayDistance = glm::length(m_lightPos - point);
-        break;
+        rayDirection = glm::normalize(toLight);
+        maxRayDistance = distanceToLight;
+
+        // Небольшое смещение, чтобы не считать саму точку
+        float epsilon = 0.05f;
+        rayOrigin += rayDirection * epsilon;
+        maxRayDistance -= epsilon;
+    }
+    break;
 
     case LightType::Spot:
-        rayOrigin = m_lightPos;
-        rayDirection = glm::normalize(point - m_lightPos);
-        maxRayDistance = glm::length(point - m_lightPos);
+    {
+        glm::vec3 toPoint = point - m_lightPos;
+        float distanceToPoint = glm::length(toPoint);
 
+        if (distanceToPoint < 0.01f) {
+            hitCellX = -1;
+            hitCellZ = -1;
+            hitDistance = 0;
+            return false;
+        }
+
+        glm::vec3 toPointDir = glm::normalize(toPoint);
         glm::vec3 lightDirNormalized = glm::normalize(m_lightDirection);
-        float cosAngle = glm::dot(rayDirection, lightDirNormalized);
-        float spotAngle = cos(glm::radians(45.0f));
 
-        if (cosAngle < spotAngle) {
-            hitDistance = maxRayDistance;
+        float cosAngle = glm::dot(toPointDir, lightDirNormalized);
+        float spotCos = cos(glm::radians(45.0f));
+
+        // Вне конуса = тень
+        if (cosAngle < spotCos) {
+            hitDistance = distanceToPoint;
             hitCellX = -1;
             hitCellZ = -1;
             return true;
         }
-        break;
+
+        // Луч от ТОЧКИ к ИСТОЧНИКУ
+        rayOrigin = point;
+        rayDirection = -toPointDir;
+        maxRayDistance = distanceToPoint;
+
+        float epsilon = 0.05f;
+        rayOrigin += rayDirection * epsilon;
+        maxRayDistance -= epsilon;
+    }
+    break;
     }
 
     float hitDist;
     glm::vec3 hitPt;
     bool hit = traceShadowRay(rayOrigin, rayDirection, maxRayDistance, hitDist, hitPt);
 
-    if (hit) {
+    if (hit && hitDist < maxRayDistance - 0.01f) {
         hitDistance = hitDist;
         float halfWidth = m_gridWidth * m_cellSize / 2.0f;
         float halfDepth = m_gridDepth * m_cellSize / 2.0f;
@@ -217,9 +262,11 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
 
         hitCellX = std::max(0, std::min(hitCellX, m_totalCellsX - 1));
         hitCellZ = std::max(0, std::min(hitCellZ, m_totalCellsZ - 1));
+
+        return true;
     }
 
-    return hit;
+    return false;
 }
 void ShadowMapper::recordRay(const glm::vec3& origin, const glm::vec3& direction,
     const glm::vec3& hitPoint, float distance, bool hit, int cellX, int cellZ)
@@ -281,7 +328,6 @@ void ShadowMapper::computeShadows()
 
             sample.computed = true;
 
-            // Запись луча для отладки (если включено)
             if (m_recordDebugRays) {
                 glm::vec3 rayOrigin, rayDirection, endPoint;
                 float maxDist;
@@ -292,11 +338,18 @@ void ShadowMapper::computeShadows()
                     maxDist = 50.0f;
                     endPoint = rayOrigin + rayDirection * maxDist;
                 }
-                else {
+                else if (m_lightType == LightType::Points) {
                     rayOrigin = sample.position;
                     rayDirection = glm::normalize(m_lightPos - sample.position);
                     maxDist = glm::length(m_lightPos - sample.position);
                     endPoint = m_lightPos;
+                }
+                else {  // LightType::Spot - ИСПРАВЛЕНО
+                    // Луч от источника к точке
+                    rayOrigin = m_lightPos;
+                    rayDirection = glm::normalize(sample.position - m_lightPos);
+                    maxDist = glm::length(sample.position - m_lightPos);
+                    endPoint = sample.position;
                 }
 
                 // Если есть попадание, используем точку попадания
