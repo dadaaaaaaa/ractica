@@ -115,6 +115,9 @@ public:
     void toggleAmbient();
     void toggleSpecular();
     void toggleShowAllRays();
+    void toggleShadowTraceMode();  // Переключение между режимами (F8)
+    void setShadowTraceMode(bool useCorners);  // true = углы, false = центр
+    bool isUsingCornerTrace() const { return m_useCornerTrace; }
 public:
     void markFoodShadowsDirty();
     void forceFoodShadowsUpdate(const GameObjects& objects) {
@@ -153,7 +156,7 @@ private:
     bool m_specularEnabled;
     bool m_showAllRays;
     ShadowMapper m_foodShadow;     // Для еды (яблоки) - НОВОЕ
-
+    bool m_useCornerTrace = false;
     bool m_foodShadowsDirty;
     void drawFloor();
     void drawSnake(const std::vector<Point>& snake);

@@ -51,9 +51,9 @@ GameRenderer::GameRenderer()
     , m_rayTracingUseAdaptive(true)
     , m_shadowMapEnabled(false)
     , m_debugRaysEnabled(false)
-    , m_showGroundRays(true)
-    , m_shadowStrideX(8)
-    , m_shadowStrideZ(8)
+    , m_showGroundRays(false)
+    , m_shadowStrideX(1)
+    , m_shadowStrideZ(1)
     , m_staticShadowsDirty(true)
     , m_dynamicShadowsDirty(true)
     , m_foodShadowsDirty(true)
@@ -75,7 +75,40 @@ GameRenderer::~GameRenderer() {
     }
     m_loadedFBXModels.clear();
 }
+// GameRenderer.cpp - полная реализация переключения режима
 
+void GameRenderer::toggleShadowTraceMode() {
+    m_useCornerTrace = !m_useCornerTrace;
+
+    // Устанавливаем режим для всех ShadowMapper
+    ShadowMapper::ShadowTraceMode mode = m_useCornerTrace ?
+        ShadowMapper::TRACE_CORNERS : ShadowMapper::TRACE_CENTER;
+
+    m_staticShadow.setShadowTraceMode(mode);
+    m_dynamicShadow.setShadowTraceMode(mode);
+    m_foodShadow.setShadowTraceMode(mode);
+
+    // Помечаем все тени как грязные для пересчёта
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+
+}
+
+void GameRenderer::setShadowTraceMode(bool useCorners) {
+    m_useCornerTrace = useCorners;
+
+    ShadowMapper::ShadowTraceMode mode = m_useCornerTrace ?
+        ShadowMapper::TRACE_CORNERS : ShadowMapper::TRACE_CENTER;
+
+    m_staticShadow.setShadowTraceMode(mode);
+    m_dynamicShadow.setShadowTraceMode(mode);
+    m_foodShadow.setShadowTraceMode(mode);
+
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
 void GameRenderer::toggleAmbient() {
     m_ambientEnabled = !m_ambientEnabled;
     setupFixedPipelineLighting();  // Перезагружаем освещение
@@ -885,7 +918,17 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     }
 }
 
+// GameRenderer.cpp - полная функция с синхронизацией режима
+
 void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
+    // Синхронизируем режим трассировки перед вычислением
+    ShadowMapper::ShadowTraceMode mode = m_useCornerTrace ?
+        ShadowMapper::TRACE_CORNERS : ShadowMapper::TRACE_CENTER;
+
+    m_staticShadow.setShadowTraceMode(mode);
+    m_dynamicShadow.setShadowTraceMode(mode);
+    m_foodShadow.setShadowTraceMode(mode);
+
     m_staticShadow.setLightType(m_lightType);
     m_staticShadow.setLightPos(m_lightPos);
     m_staticShadow.setLightDirection(m_lightDir);
@@ -973,6 +1016,7 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         std::cout << "[DYNAMIC SHADOWS - SNAKE] Completed" << std::endl;
     }
 
+    // ========== ТЕНИ ДЛЯ ЕДЫ ==========
     if (m_foodShadowsDirty) {
         std::cout << "\n[FOOD SHADOWS] Computing with " << objects.getFood().size() << " apples..." << std::endl;
 
@@ -1457,14 +1501,24 @@ void GameRenderer::toggleDebugRays() {
     if (m_debugRaysEnabled && m_shadowMapEnabled) {
         m_staticShadow.enableDebugRays(true);
         m_dynamicShadow.enableDebugRays(true);
+        m_foodShadow.enableDebugRays(true);
+        
+        // НЕ СБРАСЫВАЕМ m_showAllRays, сохраняем текущую настройку
+        std::cout << "Show all rays: " << (m_showAllRays ? "YES" : "NO (only hit rays)") << std::endl;
+        
+        // Пересчитываем тени для записи всех лучей
         m_staticShadowsDirty = true;
         m_dynamicShadowsDirty = true;
+        m_foodShadowsDirty = true;
     }
     else if (!m_debugRaysEnabled) {
         m_staticShadow.enableDebugRays(false);
         m_dynamicShadow.enableDebugRays(false);
+        m_foodShadow.enableDebugRays(false);
     }
 }
+
+// GameRenderer.cpp - полная функция с установкой режима
 
 void GameRenderer::resetShadows() {
     m_staticShadow = ShadowMapper(
@@ -1473,7 +1527,7 @@ void GameRenderer::resetShadows() {
         m_lightColor,
         m_lightType,
         m_lightPos,
-         m_shadowStrideX, m_shadowStrideZ
+        m_shadowStrideX, m_shadowStrideZ
     );
 
     m_dynamicShadow = ShadowMapper(
@@ -1494,6 +1548,14 @@ void GameRenderer::resetShadows() {
         m_shadowStrideX, m_shadowStrideZ
     );
 
+    // Устанавливаем режим трассировки
+    ShadowMapper::ShadowTraceMode mode = m_useCornerTrace ?
+        ShadowMapper::TRACE_CORNERS : ShadowMapper::TRACE_CENTER;
+
+    m_staticShadow.setShadowTraceMode(mode);
+    m_dynamicShadow.setShadowTraceMode(mode);
+    m_foodShadow.setShadowTraceMode(mode);
+
     m_staticShadow.setLightType(m_lightType);
     m_staticShadow.setLightPos(m_lightPos);
     m_staticShadow.setLightDirection(m_lightDir);
@@ -1509,6 +1571,8 @@ void GameRenderer::resetShadows() {
     m_staticShadowsDirty = true;
     m_dynamicShadowsDirty = true;
     m_foodShadowsDirty = true;
+
+    std::cout << "Shadows reset with mode: " << (m_useCornerTrace ? "CORNERS" : "CENTER") << std::endl;
 }
 
 
@@ -1534,7 +1598,7 @@ void GameRenderer::drawSphereImmediate(const glm::vec3& center, float radius) {
 void GameRenderer::drawDebugRaysIfEnabled() {
     if (!m_debugRaysEnabled || !m_shadowMapEnabled) return;
 
-    // Получаем позицию источника света в зависимости от типа
+    // Получаем позицию источника света
     glm::vec3 lightWorldPos;
     switch (m_lightType) {
     case LightType::Directional:
@@ -1546,9 +1610,34 @@ void GameRenderer::drawDebugRaysIfEnabled() {
         break;
     }
 
-    auto staticRays = m_staticShadow.getDebugRays();
-    auto dynamicRays = m_dynamicShadow.getDebugRays();
-    auto foodRays = m_foodShadow.getDebugRays();
+    // ВЫБИРАЕМ ТОЛЬКО ОДИН ТИП ЛУЧЕЙ ДЛЯ ОТРИСОВКИ (чтобы не было дублирования)
+    // Рисуем только статические лучи (деревья) - их достаточно для отладки
+    const auto& rays = m_staticShadow.getDebugRays();
+
+    // ИЛИ можно рисовать динамические:
+    // auto& rays = m_dynamicShadow.getDebugRays();
+
+    // ИЛИ комбинировать но без дублирования:
+    // auto staticRays = m_staticShadow.getDebugRays();
+    // auto dynamicRays = m_dynamicShadow.getDebugRays();
+    // auto foodRays = m_foodShadow.getDebugRays();
+    // rays.insert(rays.end(), dynamicRays.begin(), dynamicRays.end());
+    // rays.insert(rays.end(), foodRays.begin(), foodRays.end());
+
+    std::cout << "\n========== DEBUG RAYS DRAW ==========" << std::endl;
+    std::cout << "Total rays to draw: " << rays.size() << std::endl;
+
+    // Считаем лучи по типам
+    int centerRays = 0;
+    int cornerRays = 0;
+    for (const auto& ray : rays) {
+        if (ray.cornerIndex >= 0) cornerRays++;
+        else centerRays++;
+    }
+    std::cout << "Center rays (1 ray/cell): " << centerRays << std::endl;
+    std::cout << "Corner rays (4 rays/cell): " << cornerRays << std::endl;
+    std::cout << "Show all rays: " << (m_showAllRays ? "YES" : "NO (only hit rays)") << std::endl;
+    std::cout << "=====================================" << std::endl;
 
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT);
 
@@ -1557,67 +1646,45 @@ void GameRenderer::drawDebugRaysIfEnabled() {
     glDisable(GL_DEPTH_TEST);
     glLineWidth(1.5f);
 
-    // Рисуем лучи ОТ СОЛНЦА К ОБЪЕКТУ
-    // Статические лучи (деревья)
-    for (const auto& ray : staticRays) {
+    int drawnRays = 0;
+
+    for (const auto& ray : rays) {
+        // Фильтр: показывать только лучи, которые попали в объекты, если m_showAllRays = false
         if (!m_showAllRays && !ray.hit) continue;
 
-        // Луч от солнца к точке попадания (или к конечной точке)
         glm::vec3 startPoint = lightWorldPos;
         glm::vec3 endPoint = ray.hit ? ray.hitPoint : ray.origin;
 
-        if (ray.hit) {
-            glColor3f(1.0f, 0.0f, 0.0f);  // Красный - попали в объект
+        // Выбираем цвет в зависимости от типа луча
+        if (ray.cornerIndex >= 0) {
+            // Режим CORNERS - разные цвета для разных углов
+            switch (ray.cornerIndex % 4) {
+            case 0: glColor3f(1.0f, 0.2f, 0.2f); break;  // Ярко-красный - угол 0
+            case 1: glColor3f(1.0f, 0.5f, 0.2f); break;  // Оранжевый - угол 1
+            case 2: glColor3f(1.0f, 1.0f, 0.2f); break;  // Жёлтый - угол 2
+            case 3: glColor3f(0.2f, 1.0f, 0.2f); break;  // Зелёный - угол 3
+            default: glColor3f(1.0f, 0.0f, 0.0f); break;
+            }
         }
         else {
-            glColor3f(0.0f, 0.5f, 0.0f);  // Тёмно-зелёный - не попали
+            // Режим CENTER - красный если попал, зелёный если нет
+            if (ray.hit) {
+                glColor3f(1.0f, 0.0f, 0.0f);  // Красный - попал в объект
+            }
+            else {
+                glColor3f(0.0f, 0.5f, 0.0f);  // Тёмно-зелёный - не попал
+            }
         }
 
         glBegin(GL_LINES);
         glVertex3f(startPoint.x, startPoint.y, startPoint.z);
         glVertex3f(endPoint.x, endPoint.y, endPoint.z);
         glEnd();
+
+        drawnRays++;
     }
 
-    // Динамические лучи (змейка)
-    for (const auto& ray : dynamicRays) {
-        if (!m_showAllRays && !ray.hit) continue;
-
-        glm::vec3 startPoint = lightWorldPos;
-        glm::vec3 endPoint = ray.hit ? ray.hitPoint : ray.origin;
-
-        if (ray.hit) {
-            glColor3f(1.0f, 0.5f, 0.0f);  // Оранжевый - попали в змейку
-        }
-        else {
-            glColor3f(0.0f, 0.5f, 0.0f);  // Тёмно-зелёный - не попали
-        }
-
-        glBegin(GL_LINES);
-        glVertex3f(startPoint.x, startPoint.y, startPoint.z);
-        glVertex3f(endPoint.x, endPoint.y, endPoint.z);
-        glEnd();
-    }
-
-    // Лучи для еды
-    for (const auto& ray : foodRays) {
-        if (!m_showAllRays && !ray.hit) continue;
-
-        glm::vec3 startPoint = lightWorldPos;
-        glm::vec3 endPoint = ray.hit ? ray.hitPoint : ray.origin;
-
-        if (ray.hit) {
-            glColor3f(1.0f, 1.0f, 0.0f);  // Жёлтый - попали в еду
-        }
-        else {
-            glColor3f(0.0f, 0.5f, 0.0f);  // Тёмно-зелёный - не попали
-        }
-
-        glBegin(GL_LINES);
-        glVertex3f(startPoint.x, startPoint.y, startPoint.z);
-        glVertex3f(endPoint.x, endPoint.y, endPoint.z);
-        glEnd();
-    }
+    std::cout << "Actually drawn rays: " << drawnRays << std::endl;
 
     glPopAttrib();
     glEnable(GL_DEPTH_TEST);

@@ -396,6 +396,10 @@ void Game::handleKeyPress(int key) {
         case GLFW_KEY_F7:
             renderer.toggleDebugNormals();
             break;
+        case GLFW_KEY_F8:
+            renderer.toggleShadowTraceMode();
+            std::cout << "Shadow trace mode toggled (F8)" << std::endl;
+            break;
 
         case GLFW_KEY_F6:
             renderer.toggleDebugRays();
