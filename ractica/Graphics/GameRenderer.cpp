@@ -2296,21 +2296,45 @@ void GameRenderer::drawFallbackFloor() {
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
     float texRepeat = worldWidth / 2.0f;
+    bool useGradient = m_useCornerTrace;
+
+    // Тёмный цвет для теней (RGB / 10 от цвета пола)
+    glm::vec3 darkColor = floorColor / 10.0f;
+    // Светлый цвет - оригинальный цвет пола
+    glm::vec3 lightColor = floorColor;
 
     for (int z = 0; z < m_gridDepth; z++) {
         for (int x = 0; x < m_gridWidth; x++) {
             float posX = x * m_cellSize - offsetX;
             float posZ = z * m_cellSize - offsetZ;
 
-            float shadowValue = 1.0f;
-            if (m_shadowMapEnabled) {
-                float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
-                float foodShadow = m_foodShadow.getShadowAtCell(x, z);
-                float staticShadow = m_staticShadow.getShadowAtCell(x, z);
-                shadowValue = std::min({ snakeShadow, foodShadow, staticShadow });
+            glm::vec3 finalColor;
+
+            if (useGradient && m_shadowMapEnabled) {
+                // Получаем коэффициенты освещения от каждого ShadowMapper
+                float r1, g1, b1, r2, g2, b2, r3, g3, b3;
+                m_dynamicShadow.getShadowAtCellGradient(x, z, r1, g1, b1);
+                m_staticShadow.getShadowAtCellGradient(x, z, r2, g2, b2);
+                m_foodShadow.getShadowAtCellGradient(x, z, r3, g3, b3);
+
+                // Берём минимальный коэффициент освещения (самая тёмная тень)
+                float shadowFactor = std::min({ r1, r2, r3 });
+
+                // Смешиваем тёмный и светлый цвет пола на основе коэффициента
+                finalColor = glm::mix(darkColor, lightColor, shadowFactor);
+            }
+            else {
+                // Обычный режим
+                float shadowValue = 1.0f;
+                if (m_shadowMapEnabled) {
+                    float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
+                    float foodShadow = m_foodShadow.getShadowAtCell(x, z);
+                    float staticShadow = m_staticShadow.getShadowAtCell(x, z);
+                    shadowValue = std::min({ snakeShadow, foodShadow, staticShadow });
+                }
+                finalColor = floorColor * shadowValue;
             }
 
-            glm::vec3 finalColor = floorColor * shadowValue;
             glColor3f(finalColor.r, finalColor.g, finalColor.b);
 
             glBegin(GL_QUADS);

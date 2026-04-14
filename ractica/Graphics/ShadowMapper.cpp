@@ -326,8 +326,10 @@ float ShadowMapper::computeCornerShadow(const glm::vec3& cornerPos, int& hitCell
 
 void ShadowMapper::computeCellGradient(ShadowSample& sample, int cellX, int cellZ)
 {
-    // Собираем значения теней для 4 углов
+    // Собираем значения теней для 4 углов (0 = в тени, 1 = на свету)
     float shadowSum = 0.0f;
+    int hitCount = 0;  // Количество углов НА СВЕТУ (1)
+    int shadowCount = 0; // Количество углов В ТЕНИ (0)
 
     for (int corner = 0; corner < 4; corner++) {
         glm::vec3 cornerPos = getCornerWorldPosition(cellX, cellZ, corner);
@@ -336,8 +338,16 @@ void ShadowMapper::computeCellGradient(ShadowSample& sample, int cellX, int cell
 
         bool inShadow = isPointInShadow(cornerPos, hitCellX, hitCellZ, hitDistance);
 
+        // cornerShadows: 0 = тень, 1 = свет
         sample.cornerShadows[corner] = inShadow ? 0.0f : 1.0f;
         shadowSum += sample.cornerShadows[corner];
+
+        if (inShadow) {
+            shadowCount++;
+        }
+        else {
+            hitCount++;
+        }
 
         // Записываем отладочный луч для каждого угла
         if (m_recordDebugRays) {
@@ -363,8 +373,17 @@ void ShadowMapper::computeCellGradient(ShadowSample& sample, int cellX, int cell
         }
     }
 
-    // Среднее значение тени для клетки
-    sample.value = shadowSum / 4.0f;
+    // Логика градиента:
+    // - Если все 4 угла на свету (hitCount == 4) -> полностью светлая клетка (value = 1.0)
+    // - Если все 4 угла в тени (shadowCount == 4) -> полностью тёмная клетка (value = 0.0)
+    // - Иначе градиент: value = количество освещённых углов / 4
+    sample.value = (float)hitCount / 4.0f;
+
+    // Дополнительная информация для отладки
+    if (m_recordDebugRays && hitCount > 0 && hitCount < 4) {
+        std::cout << "Cell [" << cellX << "," << cellZ << "] - Gradient: "
+            << hitCount << "/4 corners lit, value = " << sample.value << std::endl;
+    }
 }
 
 void ShadowMapper::recordRay(const glm::vec3& origin, const glm::vec3& direction,
@@ -466,6 +485,7 @@ void ShadowMapper::computeShadows()
             {
                 // Режим 2: Четыре луча по углам клетки
                 float shadowSum = 0.0f;
+                int litCorners = 0;  // Считаем освещённые углы
 
                 for (int corner = 0; corner < 4; corner++) {
                     glm::vec3 cornerPos = getCornerWorldPosition(sx, sz, corner);
@@ -476,6 +496,10 @@ void ShadowMapper::computeShadows()
 
                     sample.cornerShadows[corner] = inShadow ? 0.0f : 1.0f;
                     shadowSum += sample.cornerShadows[corner];
+
+                    if (!inShadow) {
+                        litCorners++;
+                    }
 
                     if (m_recordDebugRays) {
                         glm::vec3 rayOrigin, rayDirection, endPoint;
@@ -501,15 +525,14 @@ void ShadowMapper::computeShadows()
                     }
                 }
 
-                sample.value = shadowSum / 4.0f;
+                // Значение тени = количество освещённых углов / 4
+                // 0.0 = все углы в тени, 0.25 = 1 угол освещён, 0.5 = 2 угла, 0.75 = 3 угла, 1.0 = все освещены
+                sample.value = (float)litCorners / 4.0f;
 
-                if (sample.value < 0.5f) {
+                if (litCorners < 2) {  // 0 или 1 угол освещён - считаем клетку в тени
                     shadowCount++;
                 }
             }
-
-            sample.computed = true;
-            sample.useGradient = (m_shadowTraceMode == TRACE_CORNERS);
         }
     }
 
@@ -558,15 +581,13 @@ float ShadowMapper::getShadowAtCellGradient(int cellX, int cellZ, float& outR, f
     const ShadowSample& sample = m_shadowGrid[shadowZ][shadowX];
 
     if (m_shadowTraceMode == TRACE_CORNERS && sample.useGradient) {
-        // Для режима градиента возвращаем цвет на основе затенения углов
-        glm::vec3 darkColor(0.05f, 0.05f, 0.03f);
-        glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
+        // НЕ ИСПОЛЬЗУЕМ floorColor ЗДЕСЬ!
+        // Вместо этого возвращаем ТОЛЬКО коэффициент освещения (sample.value)
+        // А цвет пола будет применён в GameRenderer
 
-        glm::vec3 result = glm::mix(darkColor, lightColor, sample.value);
-
-        outR = result.r;
-        outG = result.g;
-        outB = result.b;
+        outR = sample.value;
+        outG = sample.value;
+        outB = sample.value;
         return sample.value;
     }
 
