@@ -30,7 +30,7 @@ extern Camera g_camera;
 extern Game g_game;
 extern std::string g_modelsPath;
 extern std::string g_texturesPath;
-
+static const int DEFAULT_SHADOW_MODE = 3;
 //=============================================================================
 // КОНСТРУКТОР И ИНИЦИАЛИЗАЦИЯ
 //=============================================================================
@@ -62,13 +62,51 @@ GameRenderer::GameRenderer()
     , m_ambientEnabled(false)
     , m_specularEnabled(false)
     , m_showAllRays(false)
+    , m_useCornerTrace(DEFAULT_SHADOW_MODE != 0)
+    , m_currentShadowMode(ShadowMapper::TRACE_CENTER)  // Инициализация
 {
     m_lightType = LightType::Points;
     m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
     m_lightDir = glm::normalize(glm::vec3(-1, -1, 0.5f));
     m_lightPos = glm::vec3(0.0f, 2.0f, 0.0f);
-}
 
+    // Устанавливаем режим из константы
+    setShadowTraceModeByIndex(DEFAULT_SHADOW_MODE);
+}
+void GameRenderer::setShadowTraceModeByIndex(int modeIndex) {
+    switch (modeIndex) {
+    case 0:
+        m_currentShadowMode = ShadowMapper::TRACE_CENTER;
+        m_useCornerTrace = false;
+        break;
+    case 1:
+        m_currentShadowMode = ShadowMapper::TRACE_CORNERS;
+        m_useCornerTrace = true;
+        break;
+    case 2:
+        m_currentShadowMode = ShadowMapper::TRACE_CENTER_SUBDIVIDED;
+        m_useCornerTrace = false;
+        break;
+    case 3:
+        m_currentShadowMode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED;
+        m_useCornerTrace = true;
+        break;
+    default:
+        m_currentShadowMode = ShadowMapper::TRACE_CENTER;
+        m_useCornerTrace = false;
+    }
+
+    // Применяем режим ко всем ShadowMapper
+    m_staticShadow.setShadowTraceMode(m_currentShadowMode);
+    m_dynamicShadow.setShadowTraceMode(m_currentShadowMode);
+    m_foodShadow.setShadowTraceMode(m_currentShadowMode);
+
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+
+    std::cout << "Shadow trace mode set to: " << m_staticShadow.getCurrentModeName() << std::endl;
+}
 GameRenderer::~GameRenderer() {
     for (auto& pair : m_loadedFBXModels) {
         pair.second.cleanup();
@@ -78,21 +116,10 @@ GameRenderer::~GameRenderer() {
 // GameRenderer.cpp - полная реализация переключения режима
 
 void GameRenderer::toggleShadowTraceMode() {
-    m_useCornerTrace = !m_useCornerTrace;
-
-    // Устанавливаем режим для всех ShadowMapper
-    ShadowMapper::ShadowTraceMode mode = m_useCornerTrace ?
-        ShadowMapper::TRACE_CORNERS : ShadowMapper::TRACE_CENTER;
-
-    m_staticShadow.setShadowTraceMode(mode);
-    m_dynamicShadow.setShadowTraceMode(mode);
-    m_foodShadow.setShadowTraceMode(mode);
-
-    // Помечаем все тени как грязные для пересчёта
-    m_staticShadowsDirty = true;
-    m_dynamicShadowsDirty = true;
-    m_foodShadowsDirty = true;
-
+    // Циклическое переключение между 4 режимами
+    int currentIndex = static_cast<int>(m_currentShadowMode);
+    int nextIndex = (currentIndex + 1) % 4;
+    setShadowTraceModeByIndex(nextIndex);
 }
 
 void GameRenderer::setShadowTraceMode(bool useCorners) {
@@ -921,46 +948,27 @@ void GameRenderer::renderGame(const GameObjects& objects) {
 // GameRenderer.cpp - полная функция с синхронизацией режима
 
 void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
-    // Синхронизируем режим трассировки перед вычислением
-    ShadowMapper::ShadowTraceMode mode = m_useCornerTrace ?
-        ShadowMapper::TRACE_CORNERS : ShadowMapper::TRACE_CENTER;
-
-    m_staticShadow.setShadowTraceMode(mode);
-    m_dynamicShadow.setShadowTraceMode(mode);
-    m_foodShadow.setShadowTraceMode(mode);
-
+    // Синхронизируем свет
     m_staticShadow.setLightType(m_lightType);
     m_staticShadow.setLightPos(m_lightPos);
     m_staticShadow.setLightDirection(m_lightDir);
-
     m_dynamicShadow.setLightType(m_lightType);
     m_dynamicShadow.setLightPos(m_lightPos);
     m_dynamicShadow.setLightDirection(m_lightDir);
-
     m_foodShadow.setLightType(m_lightType);
     m_foodShadow.setLightPos(m_lightPos);
     m_foodShadow.setLightDirection(m_lightDir);
 
-    // ========== СТАТИЧЕСКИЕ ТЕНИ (деревья, забор) - только один раз ==========
+    // ========== СТАТИЧЕСКИЕ ТЕНИ (деревья, забор) ==========
     if (m_staticShadowsDirty) {
         std::cout << "\n[STATIC SHADOWS] Computing..." << std::endl;
 
         m_staticShadow.clearObjectBounds();
         m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, 0.0f);
-        std::vector<BoundingSphere> staticSpheres;
 
-        for (const auto& obstacle : objects.getObstacles()) {
-            for (const auto& block : obstacle.blocks) {
-                float x = block.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
-                float z = block.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-                float treeSize = m_cellSize * 1.5f;
-                float radius = treeSize * 0.6f;
-                float y = treeSize / 2.0f;
-                staticSpheres.emplace_back(glm::vec3(x, y, z), radius);
-            }
-        }
+        // НЕ ДОБАВЛЯЕМ СФЕРЫ! Используем только callback для точной геометрии
+        // m_staticShadow.registerObjectBounds(staticSpheres); <- УБИРАЕМ!
 
-        m_staticShadow.registerObjectBounds(staticSpheres);
         m_staticShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
@@ -977,26 +985,15 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
 
         m_staticShadow.computeShadows();
         m_staticShadowsDirty = false;
-        std::cout << "[STATIC SHADOWS] Completed" << std::endl;
     }
 
-    // ========== ДИНАМИЧЕСКИЕ ТЕНИ (змейка) - обновляем при движении ==========
+    // ========== ДИНАМИЧЕСКИЕ ТЕНИ (змейка) ==========
     if (m_dynamicShadowsDirty) {
         std::cout << "\n[DYNAMIC SHADOWS - SNAKE] Computing..." << std::endl;
 
         m_dynamicShadow.clearObjectBounds();
-        std::vector<BoundingSphere> snakeSpheres;
+        // НЕ ДОБАВЛЯЕМ СФЕРЫ!
 
-        for (size_t i = 0; i < objects.getSnake().size(); i++) {
-            const auto& segment = objects.getSnake()[i];
-            float x = segment.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
-            float z = segment.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-            float radius = m_cellSize * 0.6f;
-            float y = 0.2f;
-            snakeSpheres.emplace_back(glm::vec3(x, y, z), radius);
-        }
-
-        m_dynamicShadow.registerObjectBounds(snakeSpheres);
         m_dynamicShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
@@ -1013,26 +1010,15 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
 
         m_dynamicShadow.computeShadows();
         m_dynamicShadowsDirty = false;
-        std::cout << "[DYNAMIC SHADOWS - SNAKE] Completed" << std::endl;
     }
 
     // ========== ТЕНИ ДЛЯ ЕДЫ ==========
     if (m_foodShadowsDirty) {
-        std::cout << "\n[FOOD SHADOWS] Computing with " << objects.getFood().size() << " apples..." << std::endl;
+        std::cout << "\n[FOOD SHADOWS] Computing..." << std::endl;
 
         m_foodShadow.clearObjectBounds();
-        std::vector<BoundingSphere> foodSpheres;
+        // НЕ ДОБАВЛЯЕМ СФЕРЫ!
 
-        for (const auto& apple : objects.getFood()) {
-            float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
-            float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-            float radius = m_cellSize * 0.35f;
-            float y = 0.15f;
-            foodSpheres.emplace_back(glm::vec3(x, y, z), radius);
-        }
-
-        std::cout << "  Food spheres: " << foodSpheres.size() << std::endl;
-        m_foodShadow.registerObjectBounds(foodSpheres);
         m_foodShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
@@ -1049,7 +1035,6 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
 
         m_foodShadow.computeShadows();
         m_foodShadowsDirty = false;
-        std::cout << "[FOOD SHADOWS] Completed" << std::endl;
     }
 }
 void GameRenderer::markFoodShadowsDirty() {
@@ -1548,13 +1533,10 @@ void GameRenderer::resetShadows() {
         m_shadowStrideX, m_shadowStrideZ
     );
 
-    // Устанавливаем режим трассировки
-    ShadowMapper::ShadowTraceMode mode = m_useCornerTrace ?
-        ShadowMapper::TRACE_CORNERS : ShadowMapper::TRACE_CENTER;
-
-    m_staticShadow.setShadowTraceMode(mode);
-    m_dynamicShadow.setShadowTraceMode(mode);
-    m_foodShadow.setShadowTraceMode(mode);
+    // ВАЖНО: Устанавливаем сохранённый режим, а не из m_useCornerTrace
+    m_staticShadow.setShadowTraceMode(m_currentShadowMode);
+    m_dynamicShadow.setShadowTraceMode(m_currentShadowMode);
+    m_foodShadow.setShadowTraceMode(m_currentShadowMode);
 
     m_staticShadow.setLightType(m_lightType);
     m_staticShadow.setLightPos(m_lightPos);
@@ -1572,7 +1554,7 @@ void GameRenderer::resetShadows() {
     m_dynamicShadowsDirty = true;
     m_foodShadowsDirty = true;
 
-    std::cout << "Shadows reset with mode: " << (m_useCornerTrace ? "CORNERS" : "CENTER") << std::endl;
+    std::cout << "Shadows reset with mode: " << m_staticShadow.getCurrentModeName() << std::endl;
 }
 
 
@@ -1598,93 +1580,45 @@ void GameRenderer::drawSphereImmediate(const glm::vec3& center, float radius) {
 void GameRenderer::drawDebugRaysIfEnabled() {
     if (!m_debugRaysEnabled || !m_shadowMapEnabled) return;
 
-    // Получаем позицию источника света
-    glm::vec3 lightWorldPos;
-    switch (m_lightType) {
-    case LightType::Directional:
-        lightWorldPos = -m_lightDir * 20.0f;
-        break;
-    case LightType::Points:
-    case LightType::Spot:
-        lightWorldPos = m_lightPos;
-        break;
-    }
-
-    // ВЫБИРАЕМ ТОЛЬКО ОДИН ТИП ЛУЧЕЙ ДЛЯ ОТРИСОВКИ (чтобы не было дублирования)
-    // Рисуем только статические лучи (деревья) - их достаточно для отладки
     const auto& rays = m_staticShadow.getDebugRays();
 
-    // ИЛИ можно рисовать динамические:
-    // auto& rays = m_dynamicShadow.getDebugRays();
-
-    // ИЛИ комбинировать но без дублирования:
-    // auto staticRays = m_staticShadow.getDebugRays();
-    // auto dynamicRays = m_dynamicShadow.getDebugRays();
-    // auto foodRays = m_foodShadow.getDebugRays();
-    // rays.insert(rays.end(), dynamicRays.begin(), dynamicRays.end());
-    // rays.insert(rays.end(), foodRays.begin(), foodRays.end());
-
-    std::cout << "\n========== DEBUG RAYS DRAW ==========" << std::endl;
-    std::cout << "Total rays to draw: " << rays.size() << std::endl;
-
-    // Считаем лучи по типам
-    int centerRays = 0;
-    int cornerRays = 0;
-    for (const auto& ray : rays) {
-        if (ray.cornerIndex >= 0) cornerRays++;
-        else centerRays++;
-    }
-    std::cout << "Center rays (1 ray/cell): " << centerRays << std::endl;
-    std::cout << "Corner rays (4 rays/cell): " << cornerRays << std::endl;
-    std::cout << "Show all rays: " << (m_showAllRays ? "YES" : "NO (only hit rays)") << std::endl;
-    std::cout << "=====================================" << std::endl;
-
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT);
-
     glDisable(GL_LIGHTING);
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_DEPTH_TEST);
     glLineWidth(1.5f);
 
-    int drawnRays = 0;
-
     for (const auto& ray : rays) {
-        // Фильтр: показывать только лучи, которые попали в объекты, если m_showAllRays = false
+        // Фильтр по типу лучей (можно настроить)
         if (!m_showAllRays && !ray.hit) continue;
 
-        glm::vec3 startPoint = lightWorldPos;
-        glm::vec3 endPoint = ray.hit ? ray.hitPoint : ray.origin;
-
         // Выбираем цвет в зависимости от типа луча
-        if (ray.cornerIndex >= 0) {
-            // Режим CORNERS - разные цвета для разных углов
-            switch (ray.cornerIndex % 4) {
-            case 0: glColor3f(1.0f, 0.2f, 0.2f); break;  // Ярко-красный - угол 0
-            case 1: glColor3f(1.0f, 0.5f, 0.2f); break;  // Оранжевый - угол 1
-            case 2: glColor3f(1.0f, 1.0f, 0.2f); break;  // Жёлтый - угол 2
-            case 3: glColor3f(0.2f, 1.0f, 0.2f); break;  // Зелёный - угол 3
-            default: glColor3f(1.0f, 0.0f, 0.0f); break;
-            }
-        }
-        else {
-            // Режим CENTER - красный если попал, зелёный если нет
-            if (ray.hit) {
-                glColor3f(1.0f, 0.0f, 0.0f);  // Красный - попал в объект
-            }
-            else {
-                glColor3f(0.0f, 0.5f, 0.0f);  // Тёмно-зелёный - не попал
-            }
+        switch (ray.rayType) {
+        case DebugRay::RAY_CENTER:
+            glColor3f(1.0f, 1.0f, 0.0f);  // Жёлтый - центральные лучи
+            break;
+        case DebugRay::RAY_CORNER:
+            glColor3f(1.0f, 0.5f, 0.0f);  // Оранжевый - угловые лучи
+            break;
+        case DebugRay::RAY_SUB_CENTER:
+            glColor3f(0.0f, 1.0f, 0.0f);  // Зелёный - подклетки центр
+            break;
+        case DebugRay::RAY_SUB_CORNER:
+            glColor3f(0.0f, 0.5f, 1.0f);  // Голубой - подклетки углы
+            break;
         }
 
+        // Если луч попал в объект - красный цвет поверх
+        if (ray.hit) {
+            glColor3f(1.0f, 0.0f, 0.0f);
+        }
+
+        // Рисуем луч
         glBegin(GL_LINES);
-        glVertex3f(startPoint.x, startPoint.y, startPoint.z);
-        glVertex3f(endPoint.x, endPoint.y, endPoint.z);
+        glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
+        glVertex3f(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);
         glEnd();
-
-        drawnRays++;
     }
-
-    std::cout << "Actually drawn rays: " << drawnRays << std::endl;
 
     glPopAttrib();
     glEnable(GL_DEPTH_TEST);
@@ -2296,42 +2230,128 @@ void GameRenderer::drawFallbackFloor() {
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
     float texRepeat = worldWidth / 2.0f;
-    bool useGradient = m_useCornerTrace;
 
-    // Тёмный цвет для теней (RGB / 10 от цвета пола)
+    // Тёмный цвет для теней
     glm::vec3 darkColor = floorColor / 10.0f;
-    // Светлый цвет - оригинальный цвет пола
     glm::vec3 lightColor = floorColor;
+
+    // Проверяем, используем ли мы subdivided режим
+    ShadowMapper::ShadowTraceMode currentMode = m_staticShadow.getShadowTraceMode();
+    bool useSubdivided = (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED ||
+        currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED);
+
+    // Для TRACE_CENTER_SUBDIVIDED - БЕЗ ГРАДИЕНТА (только 0 или 1)
+    // Для TRACE_CORNERS_SUBDIVIDED - С ГРАДИЕНТОМ
+    bool useGradient = (currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED);
+
+    int subDivSize = SHADOW_SUBDIVISION_SIZE;  // = 10
 
     for (int z = 0; z < m_gridDepth; z++) {
         for (int x = 0; x < m_gridWidth; x++) {
+
+            // Вычисляем позицию клетки
             float posX = x * m_cellSize - offsetX;
             float posZ = z * m_cellSize - offsetZ;
 
+            if (useSubdivided && m_shadowMapEnabled) {
+                // ===== РИСУЕМ КАЖДУЮ ПОДКЛЕТКУ ОТДЕЛЬНО =====
+                float subCellSizeX = m_cellSize / subDivSize;
+                float subCellSizeZ = m_cellSize / subDivSize;
+
+                // Получаем индексы в сетке теней
+                int shadowX = x / m_shadowStrideX;
+                int shadowZ = z / m_shadowStrideZ;
+
+                if (shadowX >= 0 && shadowX < m_staticShadow.getTotalCellsX() &&
+                    shadowZ >= 0 && shadowZ < m_staticShadow.getTotalCellsZ()) {
+
+                    const auto& shadowGrid = m_staticShadow.getShadowGrid();
+                    const auto& sample = shadowGrid[shadowZ][shadowX];
+
+                    if (sample.hasSubCells()) {
+                        // Для каждой подклетки в этой оригинальной клетке
+                        for (int subZ = 0; subZ < subDivSize; subZ++) {
+                            for (int subX = 0; subX < subDivSize; subX++) {
+                                // Получаем значение тени для этой подклетки
+                                float shadowValue = sample.subCellValues[subZ][subX];
+
+                                // Для TRACE_CENTER_SUBDIVIDED значение должно быть ТОЛЬКО 0 или 1
+                                // Но на всякий случай округляем
+                                if (!useGradient) {
+                                    shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
+                                }
+
+                                // Комбинируем с другими типами теней
+                                float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
+                                float foodShadow = m_foodShadow.getShadowAtCell(x, z);
+                                shadowValue = std::min({ shadowValue, snakeShadow, foodShadow });
+
+                                // Для бинарного режима - снова округляем после комбинации
+                                if (!useGradient) {
+                                    shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
+                                }
+
+                                // Позиция подклетки в мире
+                                float subPosX = posX + subX * subCellSizeX;
+                                float subPosZ = posZ + subZ * subCellSizeZ;
+
+                                glm::vec3 finalColor;
+                                if (useGradient) {
+                                    // С ГРАДИЕНТОМ (для TRACE_CORNERS_SUBDIVIDED)
+                                    finalColor = glm::mix(darkColor, lightColor, shadowValue);
+                                }
+                                else {
+                                    // БЕЗ ГРАДИЕНТА (для TRACE_CENTER_SUBDIVIDED) - просто умножаем
+                                    finalColor = floorColor * shadowValue;
+                                }
+
+                                glColor3f(finalColor.r, finalColor.g, finalColor.b);
+
+                                glBegin(GL_QUADS);
+                                glNormal3f(0.0f, 1.0f, 0.0f);
+
+                                if (useFloorTexture && floorTexture.id != 0) {
+                                    float u1 = (float)(x * subDivSize + subX) / (texRepeat * subDivSize);
+                                    float v1 = (float)(z * subDivSize + subZ) / (texRepeat * subDivSize);
+                                    float u2 = (float)(x * subDivSize + subX + 1) / (texRepeat * subDivSize);
+                                    float v2 = (float)(z * subDivSize + subZ + 1) / (texRepeat * subDivSize);
+
+                                    glTexCoord2f(u1, v1); glVertex3f(subPosX, -0.02f, subPosZ);
+                                    glTexCoord2f(u2, v1); glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ);
+                                    glTexCoord2f(u2, v2); glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ + subCellSizeZ);
+                                    glTexCoord2f(u1, v2); glVertex3f(subPosX, -0.02f, subPosZ + subCellSizeZ);
+                                }
+                                else {
+                                    glVertex3f(subPosX, -0.02f, subPosZ);
+                                    glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ);
+                                    glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ + subCellSizeZ);
+                                    glVertex3f(subPosX, -0.02f, subPosZ + subCellSizeZ);
+                                }
+                                glEnd();
+                            }
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            // ===== ОБЫЧНЫЙ РЕЖИМ (без подразбиения) =====
+            float shadowValue = 1.0f;
+            if (m_shadowMapEnabled) {
+                float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
+                float foodShadow = m_foodShadow.getShadowAtCell(x, z);
+                float staticShadow = m_staticShadow.getShadowAtCell(x, z);
+                shadowValue = std::min({ snakeShadow, foodShadow, staticShadow });
+            }
+
             glm::vec3 finalColor;
-
-            if (useGradient && m_shadowMapEnabled) {
-                // Получаем коэффициенты освещения от каждого ShadowMapper
-                float r1, g1, b1, r2, g2, b2, r3, g3, b3;
-                m_dynamicShadow.getShadowAtCellGradient(x, z, r1, g1, b1);
-                m_staticShadow.getShadowAtCellGradient(x, z, r2, g2, b2);
-                m_foodShadow.getShadowAtCellGradient(x, z, r3, g3, b3);
-
-                // Берём минимальный коэффициент освещения (самая тёмная тень)
-                float shadowFactor = std::min({ r1, r2, r3 });
-
-                // Смешиваем тёмный и светлый цвет пола на основе коэффициента
-                finalColor = glm::mix(darkColor, lightColor, shadowFactor);
+            if (useGradient) {
+                // Для TRACE_CORNERS - с градиентом
+                finalColor = glm::mix(darkColor, lightColor, shadowValue);
             }
             else {
-                // Обычный режим
-                float shadowValue = 1.0f;
-                if (m_shadowMapEnabled) {
-                    float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
-                    float foodShadow = m_foodShadow.getShadowAtCell(x, z);
-                    float staticShadow = m_staticShadow.getShadowAtCell(x, z);
-                    shadowValue = std::min({ snakeShadow, foodShadow, staticShadow });
-                }
+                // Для TRACE_CENTER - бинарно
+                shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
                 finalColor = floorColor * shadowValue;
             }
 
@@ -2339,13 +2359,11 @@ void GameRenderer::drawFallbackFloor() {
 
             glBegin(GL_QUADS);
             glNormal3f(0.0f, 1.0f, 0.0f);
-
             if (useFloorTexture && floorTexture.id != 0) {
                 float u1 = (float)x / texRepeat;
                 float v1 = (float)z / texRepeat;
                 float u2 = (float)(x + 1) / texRepeat;
                 float v2 = (float)(z + 1) / texRepeat;
-
                 glTexCoord2f(u1, v1); glVertex3f(posX, -0.02f, posZ);
                 glTexCoord2f(u2, v1); glVertex3f(posX + m_cellSize, -0.02f, posZ);
                 glTexCoord2f(u2, v2); glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);

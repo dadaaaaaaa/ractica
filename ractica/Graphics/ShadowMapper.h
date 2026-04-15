@@ -1,3 +1,4 @@
+// ShadowMapper.h
 #pragma once
 #include "RayTracer.h"
 #include <glm/glm.hpp>
@@ -8,19 +9,35 @@
 struct Ray;
 struct HitInfo;
 
+// Константа для размера подразбиения
+const int SHADOW_SUBDIVISION_SIZE = 10;
+
 // Структура для хранения информации о луче для отладки
 struct DebugRay {
     glm::vec3 origin;
     glm::vec3 direction;
     glm::vec3 hitPoint;
     float distance;
-    bool hit;           // true = пересек объект (красный), false = только пол (синий)
+    bool hit;           // true = пересек объект (тень), false = достиг пола/света
     int rayId;
     int cellX, cellZ;   // Координаты клетки, для которой пускался луч
     int cornerIndex;    // Индекс угла (-1 для центра, 0-3 для углов)
+    int subCellX, subCellZ; // Координаты подклетки (-1 если не subdivided)
+    bool isSubdivided;  // Является ли луч частью подразбиения
+    bool centerCheckPassed; // Для адаптивных режимов: прошел ли проверку центра
+
+    // Тип луча для отладки
+    enum RayType {
+        RAY_CENTER = 0,         // Центральный луч клетки
+        RAY_CORNER = 1,         // Угловой луч клетки
+        RAY_SUB_CENTER = 2,     // Центральный луч подклетки
+        RAY_SUB_CORNER = 3      // Угловой луч подклетки
+    } rayType;
 
     DebugRay() : origin(0.0f), direction(0.0f), hitPoint(0.0f),
-        distance(0.0f), hit(false), rayId(-1), cellX(0), cellZ(0), cornerIndex(-1) {
+        distance(0.0f), hit(false), rayId(-1), cellX(0), cellZ(0),
+        cornerIndex(-1), subCellX(-1), subCellZ(-1), isSubdivided(false),
+        centerCheckPassed(false), rayType(RAY_CENTER) {
     }
 };
 
@@ -34,8 +51,42 @@ struct ShadowSample {
     float cornerShadows[4]; // Тени для 4 углов
     bool useGradient;       // Использовать ли градиент
 
-    ShadowSample() : computed(false), value(1.0f), position(0.0f), cellX(0), cellZ(0), useGradient(false) {
+    // Для subdivided режимов - хранение значений подклеток
+    std::vector<std::vector<float>> subCellValues; // 10x10 сетка значений теней
+
+    // Для адаптивных режимов: был ли центр освещён
+    bool centerWasLit;
+
+    ShadowSample() : computed(false), value(1.0f), position(0.0f), cellX(0), cellZ(0),
+        useGradient(false), centerWasLit(false) {
         for (int i = 0; i < 4; i++) cornerShadows[i] = 1.0f;
+    }
+
+    // Безопасный доступ к подклеткам
+    bool hasSubCells() const { return !subCellValues.empty(); }
+
+    void initSubCells() {
+        if (subCellValues.empty()) {
+            subCellValues.resize(SHADOW_SUBDIVISION_SIZE,
+                std::vector<float>(SHADOW_SUBDIVISION_SIZE, 1.0f));
+        }
+    }
+
+    float getSubCellValue(int subX, int subZ) const {
+        if (subX >= 0 && subX < SHADOW_SUBDIVISION_SIZE &&
+            subZ >= 0 && subZ < SHADOW_SUBDIVISION_SIZE &&
+            !subCellValues.empty()) {
+            return subCellValues[subZ][subX];
+        }
+        return 1.0f;
+    }
+
+    void setSubCellValue(int subX, int subZ, float val) {
+        if (subX >= 0 && subX < SHADOW_SUBDIVISION_SIZE &&
+            subZ >= 0 && subZ < SHADOW_SUBDIVISION_SIZE &&
+            !subCellValues.empty()) {
+            subCellValues[subZ][subX] = val;
+        }
     }
 };
 
@@ -51,8 +102,10 @@ class ShadowMapper {
 public:
     // Режимы трассировки теней
     enum ShadowTraceMode {
-        TRACE_CENTER = 0,    // Один луч в центр клетки
-        TRACE_CORNERS = 1    // Четыре луча по углам клетки + градиент
+        TRACE_CENTER = 0,           // 1 луч в центр клетки (бинарный результат)
+        TRACE_CORNERS = 1,          // 4 луча по углам клетки + градиент
+        TRACE_CENTER_SUBDIVIDED = 2, // Адаптивный: центр освещён? -> вся клетка свет, иначе разбиение 10x10 с лучами в центры (бинарно)
+        TRACE_CORNERS_SUBDIVIDED = 3 // Адаптивный: центр освещён? -> вся клетка свет, иначе разбиение 10x10 с 4 лучами по углам (градиент)
     };
 
 private:
@@ -86,11 +139,20 @@ private:
     // Вспомогательные методы
     glm::vec3 getCellCenter(int cellX, int cellZ) const;
     glm::vec3 getCornerWorldPosition(int cellX, int cellZ, int cornerIndex) const;
+    glm::vec3 getSubCellCenter(int cellX, int cellZ, int subX, int subZ) const;
+    glm::vec3 getSubCellCorner(int cellX, int cellZ, int subX, int subZ, int cornerIndex) const;
     bool isPointInShadow(const glm::vec3& point, int& hitCellX, int& hitCellZ, float& hitDistance);
     bool traceShadowRay(const glm::vec3& start, const glm::vec3& direction,
         float maxDistance, float& hitDistance, glm::vec3& hitPoint);
     float computeCornerShadow(const glm::vec3& cornerPos, int& hitCellX, int& hitCellZ, float& hitDistance);
     void computeCellGradient(ShadowSample& sample, int cellX, int cellZ);
+
+    // Методы для subdivided режимов (адаптивные)
+    void computeCellCenterSubdivided(ShadowSample& sample, int cellX, int cellZ);
+    void computeCellCornersSubdivided(ShadowSample& sample, int cellX, int cellZ);
+
+    // Инициализация подклеток для всех клеток
+    void initAllSubCells();
 
 public:
     ShadowMapper();
@@ -109,16 +171,20 @@ public:
     void setIntersectCallback(std::function<bool(const struct Ray&, float&, glm::vec3&)> callback);
 
     // Управление режимом трассировки
-    void setShadowTraceMode(ShadowTraceMode mode) { m_shadowTraceMode = mode; }
+    void setShadowTraceMode(ShadowTraceMode mode);
     ShadowTraceMode getShadowTraceMode() const { return m_shadowTraceMode; }
+
+    // Получить строковое имя режима
+    static const char* getModeName(ShadowTraceMode mode);
+    const char* getCurrentModeName() const { return getModeName(m_shadowTraceMode); }
 
     // Главный метод - вычисляет тени для всех клеток
     void computeShadows();
 
-    // Получить значение тени для клетки по координатам (обычный режим)
+    // Получить значение тени для клетки по координатам
     float getShadowAtCell(int cellX, int cellZ) const;
 
-    // Получить значение тени с градиентом (для режима CORNERS)
+    // Получить значение тени с градиентом (для режимов с градиентом)
     float getShadowAtCellGradient(int cellX, int cellZ, float& outR, float& outG, float& outB) const;
     glm::vec3 getShadowColorAtCell(int cellX, int cellZ) const;
 
@@ -145,8 +211,23 @@ public:
     const std::vector<DebugRay>& getDebugRays() const { return m_debugRays; }
     std::vector<DebugRay> getDebugRays() { return m_debugRays; }
 
+    // Получить лучи по типу
+    std::vector<DebugRay> getRaysByType(DebugRay::RayType type) const;
+    std::vector<DebugRay> getHitRays() const;      // Лучи, которые попали в объекты
+    std::vector<DebugRay> getMissRays() const;     // Лучи, которые достигли света
+
 private:
     bool intersectsAnyObject(const struct Ray& ray, float& hitDistance, glm::vec3& hitPoint);
     void recordRay(const glm::vec3& origin, const glm::vec3& direction,
-        const glm::vec3& hitPoint, float distance, bool hit, int cellX, int cellZ, int cornerIndex = -1);
+        const glm::vec3& hitPoint, float distance, bool hit,
+        int cellX, int cellZ, int cornerIndex, int subCellX, int subCellZ,
+        bool isSubdivided, bool centerCheckPassed, DebugRay::RayType rayType);
+
+    // Перегруженный метод для удобства
+    void recordRay(const glm::vec3& origin, const glm::vec3& direction,
+        const glm::vec3& hitPoint, float distance, bool hit,
+        int cellX, int cellZ, int cornerIndex = -1, int subCellX = -1, int subCellZ = -1) {
+        recordRay(origin, direction, hitPoint, distance, hit, cellX, cellZ,
+            cornerIndex, subCellX, subCellZ, false, false, DebugRay::RAY_CENTER);
+    }
 };

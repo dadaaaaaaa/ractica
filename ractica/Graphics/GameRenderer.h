@@ -111,6 +111,7 @@ private:
     void drawCube();
     void computeShadowsIfNeeded(const GameObjects& objects);
     HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
+    ShadowMapper::ShadowTraceMode m_currentShadowMode;
 public:
     void toggleAmbient();
     void toggleSpecular();
@@ -119,22 +120,16 @@ public:
     void setShadowTraceMode(bool useCorners);  // true = углы, false = центр
     bool isUsingCornerTrace() const { return m_useCornerTrace; }
 public:
+    ShadowMapper::ShadowTraceMode getCurrentShadowMode() const { return m_currentShadowMode; }
+    const char* getCurrentShadowModeName() const { return ShadowMapper::getModeName(m_currentShadowMode); }
+public:
+    void setShadowTraceModeByIndex(int modeIndex);
     void markFoodShadowsDirty();
     void forceFoodShadowsUpdate(const GameObjects& objects) {
         m_foodShadowsDirty = true;
-        // Принудительно пересчитываем тени еды
-        m_foodShadow.clearObjectBounds();
-        std::vector<BoundingSphere> foodSpheres;
+        m_foodShadow.clearObjectBounds();  // Убираем сферы
+        // НЕ ДОБАВЛЯЕМ foodSpheres!
 
-        for (const auto& apple : objects.getFood()) {
-            float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
-            float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-            float radius = m_cellSize * 0.35f;
-            float y = 0.15f;
-            foodSpheres.emplace_back(glm::vec3(x, y, z), radius);
-        }
-
-        m_foodShadow.registerObjectBounds(foodSpheres);
         m_foodShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
