@@ -215,8 +215,10 @@ public:
     std::vector<DebugRay> getRaysByType(DebugRay::RayType type) const;
     std::vector<DebugRay> getHitRays() const;      // Лучи, которые попали в объекты
     std::vector<DebugRay> getMissRays() const;     // Лучи, которые достигли света
-
+    void setUseSpheres(bool use) { m_useSpheres = use; }
+    bool getUseSpheres() const { return m_useSpheres; }
 private:
+    bool m_useSpheres;
     bool intersectsAnyObject(const struct Ray& ray, float& hitDistance, glm::vec3& hitPoint);
     void recordRay(const glm::vec3& origin, const glm::vec3& direction,
         const glm::vec3& hitPoint, float distance, bool hit,

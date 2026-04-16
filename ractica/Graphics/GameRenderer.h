@@ -127,8 +127,7 @@ public:
     void markFoodShadowsDirty();
     void forceFoodShadowsUpdate(const GameObjects& objects) {
         m_foodShadowsDirty = true;
-        m_foodShadow.clearObjectBounds();  // Убираем сферы
-        // НЕ ДОБАВЛЯЕМ foodSpheres!
+        m_foodShadow.clearObjectBounds();  // ОЧИЩАЕМ СФЕРЫ!
 
         m_foodShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
