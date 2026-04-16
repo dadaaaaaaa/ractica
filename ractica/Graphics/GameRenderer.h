@@ -32,7 +32,7 @@ class GameRenderer {
 public:
     GameRenderer();
     ~GameRenderer();
-
+    float getFloorHeight() const { return m_floorHeight; }
     void initialize();
     void renderGame(const GameObjects& objects);
     void loadModelsFromConfig(const GameObjects& objects);
@@ -101,6 +101,7 @@ public:
     glm::vec3 getLightPosition() const { return m_lightPos; }
     glm::vec3 getLightDirection() const { return m_lightDir; }
 private:
+    float m_floorHeight = 0.0f;
     void setupPointLight();
     void setupSpotLight();
     void setupDirectionalLight();

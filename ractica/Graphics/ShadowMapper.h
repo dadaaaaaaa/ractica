@@ -217,6 +217,7 @@ public:
     std::vector<DebugRay> getMissRays() const;     // Лучи, которые достигли света
     void setUseSpheres(bool use) { m_useSpheres = use; }
     bool getUseSpheres() const { return m_useSpheres; }
+    void setGroundHeight(float height) { m_groundHeight = height; }
 private:
     bool m_useSpheres;
     bool intersectsAnyObject(const struct Ray& ray, float& hitDistance, glm::vec3& hitPoint);

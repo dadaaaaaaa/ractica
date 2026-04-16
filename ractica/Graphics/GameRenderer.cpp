@@ -952,6 +952,11 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     m_staticShadow.setShadowTraceMode(m_currentShadowMode);
     m_dynamicShadow.setShadowTraceMode(m_currentShadowMode);
     m_foodShadow.setShadowTraceMode(m_currentShadowMode);
+    float groundHeight = m_floorHeight;
+
+    m_staticShadow.setGroundHeight(groundHeight);
+    m_dynamicShadow.setGroundHeight(groundHeight);
+    m_foodShadow.setGroundHeight(groundHeight);
 
     m_staticShadow.setLightType(m_lightType);
     m_staticShadow.setLightPos(m_lightPos);
@@ -1313,7 +1318,7 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
 
     for (const auto& apple : food) {
         float x = apple.x * m_cellSize - offsetX;
-        float y = apple.y * m_cellSize + 0.1f;
+        float y = apple.y + m_floorHeight;
         float z = apple.z * m_cellSize - offsetZ;
 
         glPushMatrix();
@@ -1338,11 +1343,11 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
 
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-
+    
     for (const auto& obstacle : obstacles) {
         for (const auto& block : obstacle.blocks) {
             float x = block.x * m_cellSize - offsetX;
-            float y = block.y * m_cellSize;
+            float y = m_floorHeight;
             float z = block.z * m_cellSize - offsetZ;
 
             glPushMatrix();
@@ -1444,7 +1449,7 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
     for (const auto& fenceBlock : fenceBlocks) {
         float x = fenceBlock.x * m_cellSize - offsetX;
         float z = fenceBlock.z * m_cellSize - offsetZ;
-        float y = 0.1f;
+        float y = m_floorHeight;
 
         glPushMatrix();
         glTranslatef(x, y, z);
@@ -2104,20 +2109,6 @@ void GameRenderer::setupCallbacks(GLFWwindow* window) {
     glfwSetWindowSizeCallback(window, windowSizeCallback);
 }
 //=============================================================================
-// ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ
-//=============================================================================
-//=============================================================================
-// ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ
-//=============================================================================
-
-//=============================================================================
-// ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ (ОПТИМИЗИРОВАННАЯ ВЕРСИЯ)
-//=============================================================================
-
-//=============================================================================
-// ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ (СТЫК В СТЫК)
-//=============================================================================
-//=============================================================================
 // ОТРИСОВКА ТАЙЛОВОГО ПОЛА ИЗ FBX МОДЕЛЕЙ (С ПРИНУДИТЕЛЬНЫМ ПОДЪЁМОМ)
 //=============================================================================
 void GameRenderer::drawTiledFloor(const GameObjects& objects) {
@@ -2188,7 +2179,7 @@ void GameRenderer::drawTiledFloor(const GameObjects& objects) {
     float manualRaise = 0.5f;  // <-- МЕНЯЙТЕ ЭТО ЗНАЧЕНИЕ
 
     float baseY = manualRaise;
-
+    m_floorHeight = baseY;
     bool hasTexture = (m_floorModel.hasTexture && m_floorModel.textureID != 0);
     glm::vec3 floorColorObj = objects.getFloorColor();
 
@@ -2278,6 +2269,7 @@ void GameRenderer::drawFallbackFloor() {
     float worldDepth = m_gridDepth * m_cellSize;
     float offsetX = worldWidth / 2.0f;
     float offsetZ = worldDepth / 2.0f;
+    m_floorHeight = 0.0f;
 
     if (gridEnabled) {
         drawFloorGrid();

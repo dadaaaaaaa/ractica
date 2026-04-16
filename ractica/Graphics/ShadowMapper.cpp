@@ -376,22 +376,22 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
         glm::vec3 toLight = m_lightPos - point;
         float distanceToLight = glm::length(toLight);
 
-        if (distanceToLight < 0.001f) {
+        if (distanceToLight < 0.01f) {
             hitCellX = -1;
             hitCellZ = -1;
             hitDistance = 0;
             return false;
         }
 
-        // Луч ОТ источника света К точке
-        rayOrigin = m_lightPos;
+        // Луч ОТ точки К свету (обратная трассировка, но физически корректная)
+        rayOrigin = point;
         rayDirection = glm::normalize(toLight);
         maxRayDistance = distanceToLight;
 
-        // Динамический epsilon в зависимости от расстояния
-        float epsilon = std::max(0.001f, maxRayDistance * 0.001f);
-        rayOrigin += rayDirection * epsilon;
-        maxRayDistance -= epsilon;
+        // Смещаем начало луча на VERY_SMALL_OFFSET вперёд, чтобы не пересечь саму точку
+        const float EPSILON = 0.001f;
+        rayOrigin += rayDirection * EPSILON;
+        maxRayDistance -= EPSILON;
     }
     break;
 
@@ -400,7 +400,7 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
         glm::vec3 toLight = m_lightPos - point;
         float distanceToLight = glm::length(toLight);
 
-        if (distanceToLight < 0.001f) {
+        if (distanceToLight < 0.01f) {
             hitCellX = -1;
             hitCellZ = -1;
             hitDistance = 0;
@@ -420,13 +420,13 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
             return true;
         }
 
-        rayOrigin = m_lightPos;
+        rayOrigin = point;
         rayDirection = toLightDir;
         maxRayDistance = distanceToLight;
 
-        float epsilon = std::max(0.001f, maxRayDistance * 0.001f);
-        rayOrigin += rayDirection * epsilon;
-        maxRayDistance -= epsilon;
+        const float EPSILON = 0.001f;
+        rayOrigin += rayDirection * EPSILON;
+        maxRayDistance -= EPSILON;
     }
     break;
     }
