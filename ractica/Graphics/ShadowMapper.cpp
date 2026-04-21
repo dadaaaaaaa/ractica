@@ -366,77 +366,95 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
 
     switch (m_lightType) {
     case LightType::Directional:
+    {
+        // Для направленного света: лучи параллельны, идут ПРОТИВ направления света
+        // Луч стартует далеко за точкой и идёт к точке
         rayOrigin = point - m_lightDirection * 100.0f;
         rayDirection = m_lightDirection;
         maxRayDistance = 100.0f;
+
+        // Небольшое смещение, чтобы не пересечь саму точку
+        const float EPSILON = 0.001f;
+        rayOrigin += rayDirection * EPSILON;
         break;
+    }
 
     case LightType::Points:
     {
-        glm::vec3 toLight = m_lightPos - point;
-        float distanceToLight = glm::length(toLight);
+        // ПРАВИЛЬНО: луч ИЗ ИСТОЧНИКА В ТОЧКУ
+        glm::vec3 toPoint = point - m_lightPos;
+        float distanceToPoint = glm::length(toPoint);
 
-        if (distanceToLight < 0.01f) {
+        if (distanceToPoint < 0.001f) {
             hitCellX = -1;
             hitCellZ = -1;
             hitDistance = 0;
             return false;
         }
 
-        // Луч ОТ точки К свету (обратная трассировка, но физически корректная)
-        rayOrigin = point;
-        rayDirection = glm::normalize(toLight);
-        maxRayDistance = distanceToLight;
+        rayOrigin = m_lightPos;
+        rayDirection = glm::normalize(toPoint);
+        maxRayDistance = distanceToPoint;
 
-        // Смещаем начало луча на VERY_SMALL_OFFSET вперёд, чтобы не пересечь саму точку
-        const float EPSILON = 0.001f;
+        // Смещаем от источника, чтобы не пересечь сам источник
+        const float EPSILON = 0.01f;
         rayOrigin += rayDirection * EPSILON;
         maxRayDistance -= EPSILON;
+        break;
     }
-    break;
 
     case LightType::Spot:
     {
-        glm::vec3 toLight = m_lightPos - point;
-        float distanceToLight = glm::length(toLight);
+        // Для прожектора: сначала проверяем, попадает ли точка в конус
+        glm::vec3 toPoint = point - m_lightPos;
+        float distanceToPoint = glm::length(toPoint);
 
-        if (distanceToLight < 0.01f) {
+        if (distanceToPoint < 0.001f) {
             hitCellX = -1;
             hitCellZ = -1;
             hitDistance = 0;
             return false;
         }
 
-        glm::vec3 toLightDir = glm::normalize(toLight);
+        glm::vec3 toPointDir = glm::normalize(toPoint);
         glm::vec3 lightDirNormalized = glm::normalize(m_lightDirection);
 
-        float cosAngle = glm::dot(toLightDir, lightDirNormalized);
-        float spotCos = cos(glm::radians(45.0f));
+        // Угол конуса прожектора (45 градусов)
+        float spotCutoff = 45.0f;
+        float spotCos = cos(glm::radians(spotCutoff));
+        float cosAngle = glm::dot(toPointDir, lightDirNormalized);
 
+        // Если точка вне конуса прожектора - она в тени
         if (cosAngle < spotCos) {
-            hitDistance = distanceToLight;
+            hitDistance = distanceToPoint;
             hitCellX = -1;
             hitCellZ = -1;
             return true;
         }
 
-        rayOrigin = point;
-        rayDirection = toLightDir;
-        maxRayDistance = distanceToLight;
+        // Точка внутри конуса - проверяем, нет ли препятствий
+        rayOrigin = m_lightPos;
+        rayDirection = toPointDir;
+        maxRayDistance = distanceToPoint;
 
-        const float EPSILON = 0.001f;
+        // Смещаем от источника
+        const float EPSILON = 0.01f;
         rayOrigin += rayDirection * EPSILON;
         maxRayDistance -= EPSILON;
+        break;
     }
-    break;
     }
 
+    // Трассируем луч
     float hitDist;
     glm::vec3 hitPt;
     bool hit = traceShadowRay(rayOrigin, rayDirection, maxRayDistance, hitDist, hitPt);
 
+    // Если луч попал в препятствие ДО того, как достиг точки - точка в тени
     if (hit && hitDist < maxRayDistance - 0.001f) {
         hitDistance = hitDist;
+
+        // Вычисляем, в какую клетку пола попал луч (для отладки)
         float halfWidth = m_gridWidth * m_cellSize / 2.0f;
         float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 
@@ -446,9 +464,10 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
         hitCellX = std::max(0, std::min(hitCellX, m_gridWidth - 1));
         hitCellZ = std::max(0, std::min(hitCellZ, m_gridDepth - 1));
 
-        return true;
+        return true;  // В тени
     }
 
+    // Луч достиг точки без препятствий - точка освещена
     hitCellX = -1;
     hitCellZ = -1;
     hitDistance = maxRayDistance;
