@@ -409,7 +409,9 @@ void Game::handleKeyPress(int key) {
             objects.saveGame();
             std::cout << "Game saved!" << std::endl;
             break;
-
+        case GLFW_KEY_M:  // Клавиша M для переключения точных моделей
+            renderer.toggleUseExactModels();
+            break;
         }
 
         objects.handleGameKeyPress(key);

@@ -146,6 +146,9 @@ public:
         m_foodShadow.computeShadows();
         m_foodShadowsDirty = false;
     }
+
+    void toggleUseExactModels();  // НОВЫЙ МЕТОД
+    bool isUsingExactModels() const { return m_useExactModels; }
 private:
     bool m_ambientEnabled;
     bool m_specularEnabled;
@@ -170,17 +173,6 @@ private:
     bool convertModelDataToModel(const ModelData& modelData, Model& outModel);
     void setupModelTexture(Model& model, GLuint textureID);
 
-    void createSnakePrimitives();
-    void createFenceModels();
-
-    void createFencePost(std::vector<Vertex>& vertices, float x, float y, float z,
-        float width, float height, const glm::vec3& color);
-    void createFenceRailHorizontal(std::vector<Vertex>& vertices, float x, float y, float z,
-        float length, float thickness, const glm::vec3& color);
-    void createFenceRailVertical(std::vector<Vertex>& vertices, float x, float y, float z,
-        float length, float thickness, const glm::vec3& color);
-    void createFenceCorner(std::vector<Vertex>& vertices, float x, float y, float z,
-        const glm::vec3& color);
 
     void initRayTracingResources();
     void cleanupRayTracingResources();
@@ -199,7 +191,6 @@ private:
     void drawModelNormals(const Model& model, const glm::mat4& transform, float normalLength = 0.15f);
     void drawModelNormalsWithTransform(const Model& model, float x, float y, float z,
         float scale, float rotationAngle, float normalLength = 0.15f);
-
     glm::vec3 getSnakeSegmentPosition(const Point& segment, size_t index);
     glm::vec3 getSnakeSegmentScale(const Point& segment, size_t index);
     glm::vec3 getFoodPosition(const Point& food);
@@ -210,8 +201,9 @@ private:
     void drawTiledFloor(const GameObjects& objects);
     void drawFallbackFloor();
     void drawFloorGrid();
-
 private:
+    bool m_useExactModels = false;
+    bool rayIntersectsModel(const Ray& ray, const Model& model, const glm::mat4& transform, float& hitDistance, glm::vec3& hitPoint);
     // Основные модели примитивов
     Model m_snakeHeadModel;
     Model m_snakeBodyModel;

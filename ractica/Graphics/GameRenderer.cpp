@@ -73,6 +73,92 @@ GameRenderer::GameRenderer()
     // Устанавливаем режим из константы
     setShadowTraceModeByIndex(DEFAULT_SHADOW_MODE);
 }
+void GameRenderer::toggleUseExactModels() {
+    m_useExactModels = !m_useExactModels;
+    std::cout << "Exact models collision: " << (m_useExactModels ? "ENABLED (using mesh geometry)" : "DISABLED (using AABB/spheres)") << std::endl;
+
+    // Помечаем тени как грязные для пересчёта
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
+// Добавьте эту функцию в GameRenderer.cpp
+bool GameRenderer::rayIntersectsModel(const Ray& ray, const Model& model, const glm::mat4& transform, float& hitDistance, glm::vec3& hitPoint) {
+    if (model.vertices.empty()) return false;
+
+    // Быстрая проверка bounding box модели
+    float minX = 999999.0f, maxX = -999999.0f;
+    float minY = 999999.0f, maxY = -999999.0f;
+    float minZ = 999999.0f, maxZ = -999999.0f;
+
+    for (const auto& vert : model.vertices) {
+        glm::vec3 worldPos = glm::vec3(transform * glm::vec4(vert.position, 1.0f));
+        minX = std::min(minX, worldPos.x);
+        maxX = std::max(maxX, worldPos.x);
+        minY = std::min(minY, worldPos.y);
+        maxY = std::max(maxY, worldPos.y);
+        minZ = std::min(minZ, worldPos.z);
+        maxZ = std::max(maxZ, worldPos.z);
+    }
+
+    glm::vec3 boxMin(minX, minY, minZ);
+    glm::vec3 boxMax(maxX, maxY, maxZ);
+
+    float tMinBox, tMaxBox;
+    if (!rayIntersectsAABB(ray, boxMin, boxMax, tMinBox, tMaxBox)) {
+        return false; // Луч не попадает в bounding box модели
+    }
+
+    // Если попал - проверяем треугольники
+    float closestHit = tMinBox;
+    glm::vec3 closestPoint;
+    bool hit = false;
+
+    const float EPSILON = 0.000001f;
+
+    for (size_t i = 0; i < model.vertices.size(); i += 3) {
+        glm::vec3 v0_local = model.vertices[i].position;
+        glm::vec3 v1_local = model.vertices[i + 1].position;
+        glm::vec3 v2_local = model.vertices[i + 2].position;
+
+        glm::vec3 v0 = glm::vec3(transform * glm::vec4(v0_local, 1.0f));
+        glm::vec3 v1 = glm::vec3(transform * glm::vec4(v1_local, 1.0f));
+        glm::vec3 v2 = glm::vec3(transform * glm::vec4(v2_local, 1.0f));
+
+        glm::vec3 edge1 = v1 - v0;
+        glm::vec3 edge2 = v2 - v0;
+        glm::vec3 h = glm::cross(ray.direction, edge2);
+        float a = glm::dot(edge1, h);
+
+        if (a > -EPSILON && a < EPSILON) continue;
+
+        float f = 1.0f / a;
+        glm::vec3 s = ray.origin - v0;
+        float u = f * glm::dot(s, h);
+
+        if (u < 0.0f || u > 1.0f) continue;
+
+        glm::vec3 q = glm::cross(s, edge1);
+        float v = f * glm::dot(ray.direction, q);
+
+        if (v < 0.0f || u + v > 1.0f) continue;
+
+        float t = f * glm::dot(edge2, q);
+
+        if (t > EPSILON && t < closestHit) {
+            closestHit = t;
+            closestPoint = ray.pointAt(t);
+            hit = true;
+        }
+    }
+
+    if (hit) {
+        hitDistance = closestHit;
+        hitPoint = closestPoint;
+    }
+
+    return hit;
+}
 void GameRenderer::setShadowTraceModeByIndex(int modeIndex) {
     switch (modeIndex) {
     case 0:
@@ -1709,16 +1795,13 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
     closestHit.distance = 1000.0f;
 
     float maxDistance = 100.0f;
-    float treeSize = m_cellSize * 1.5f;
-    float treeHalf = treeSize / 2.0f;
+    float halfWidth = m_gridWidth * m_cellSize / 2.0f;
+    float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 
-    // Пол
+    // Пол (всегда проверяем)
     float tGround = -ray.origin.y / ray.direction.y;
     if (tGround > 0.01f && tGround < maxDistance && tGround < closestHit.distance) {
         glm::vec3 hitPoint = ray.pointAt(tGround);
-        float halfWidth = m_gridWidth * m_cellSize / 2.0f;
-        float halfDepth = m_gridDepth * m_cellSize / 2.0f;
-
         if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
             closestHit.hit = true;
             closestHit.distance = tGround;
@@ -1727,70 +1810,221 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // ДЕРЕВЬЯ - увеличенный bounding box для лучшего покрытия
+    // ===== ДЕРЕВЬЯ - сферы =====
     for (const auto& obstacle : objects.getObstacles()) {
         for (const auto& block : obstacle.blocks) {
             float x = block.x * m_cellSize - offsetX;
             float z = block.z * m_cellSize - offsetZ;
             float y = block.y * m_cellSize;
 
-            // Увеличенные размеры для дерева
-            float treeWidth = m_cellSize * 1.2f;
-            float treeHeight = m_cellSize * 2.0f;
+            if (m_useExactModels && !m_treeModel.vertices.empty()) {
+                // Точная модель (медленно, но точно)
+                glm::mat4 transform = glm::mat4(1.0f);
+                transform = glm::translate(transform, glm::vec3(x, y, z));
+                transform = glm::scale(transform, glm::vec3(m_cellSize * 1.2f));
 
-            glm::vec3 boxMin(x - treeWidth / 2, y, z - treeWidth / 2);
-            glm::vec3 boxMax(x + treeWidth / 2, y + treeHeight, z + treeWidth / 2);
+                float hitDist;
+                glm::vec3 hitPt;
+                if (rayIntersectsModel(ray, m_treeModel, transform, hitDist, hitPt)) {
+                    if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                        closestHit.hit = true;
+                        closestHit.distance = hitDist;
+                        closestHit.point = hitPt;
+                        closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                    }
+                }
+            }
+            else {
+                // Сфера для кроны дерева (основная тень)
+                float foliageRadius = m_cellSize * 0.6f;
+                float foliageY = y + m_cellSize * 0.8f;
+                glm::vec3 foliageCenter(x, foliageY, z);
 
-            float tMin, tMax;
-            if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
-                if (tMin > 0.01f && tMin < closestHit.distance) {
-                    closestHit.hit = true;
-                    closestHit.distance = tMin;
-                    closestHit.point = ray.pointAt(tMin);
-                    closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
+                float tFoliage;
+                if (rayIntersectsSphere(ray, foliageCenter, foliageRadius, tFoliage)) {
+                    if (tFoliage > 0.01f && tFoliage < closestHit.distance) {
+                        closestHit.hit = true;
+                        closestHit.distance = tFoliage;
+                        closestHit.point = ray.pointAt(tFoliage);
+                        closestHit.normal = glm::normalize(closestHit.point - foliageCenter);
+                    }
+                }
+
+                // Маленькая сфера для ствола (у основания)
+                float trunkRadius = m_cellSize * 0.15f;
+                float trunkY = y + m_cellSize * 0.3f;
+                glm::vec3 trunkCenter(x, trunkY, z);
+
+                float tTrunk;
+                if (rayIntersectsSphere(ray, trunkCenter, trunkRadius, tTrunk)) {
+                    if (tTrunk > 0.01f && tTrunk < closestHit.distance) {
+                        closestHit.hit = true;
+                        closestHit.distance = tTrunk;
+                        closestHit.point = ray.pointAt(tTrunk);
+                        closestHit.normal = glm::normalize(closestHit.point - trunkCenter);
+                    }
                 }
             }
         }
     }
 
-    // ЗМЕЙКА
+    // ===== ЗМЕЙКА - сферы для каждого сегмента =====
     const auto& snake = objects.getSnake();
-    float snakeSize = m_cellSize * 0.8f;
-    float snakeHalf = snakeSize / 2.0f;
+    float segmentRadius = m_cellSize * 0.35f;
 
     for (size_t i = 0; i < snake.size(); i++) {
         float x = snake[i].x * m_cellSize - offsetX;
         float z = snake[i].z * m_cellSize - offsetZ;
-        float y = snake[i].y * m_cellSize + 0.1f;
+        float y = snake[i].y * m_cellSize + 0.15f;
 
-        glm::vec3 boxMin(x - snakeHalf, y - snakeHalf, z - snakeHalf);
-        glm::vec3 boxMax(x + snakeHalf, y + snakeHalf, z + snakeHalf);
+        if (m_useExactModels) {
+            const Model* snakeModel = nullptr;
+            float scale = m_cellSize * 0.8f;
 
-        float tMin, tMax;
-        if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
-            if (tMin > 0.01f && tMin < closestHit.distance) {
-                closestHit.hit = true;
-                closestHit.distance = tMin;
-                closestHit.point = ray.pointAt(tMin);
-                closestHit.normal = computeNormal(closestHit.point, boxMin, boxMax);
+            if (i == 0) {
+                snakeModel = &m_snakeHeadModel;
+                scale *= objects.getSnakeHeadScale();
+            }
+            else if (i == snake.size() - 1) {
+                snakeModel = &m_snakeTailModel;
+                scale *= objects.getSnakeTailScale();
+            }
+            else {
+                snakeModel = &m_snakeBodyModel;
+                scale *= objects.getSnakeBodyScale();
+            }
+
+            if (snakeModel && !snakeModel->vertices.empty()) {
+                float rotationAngle = calculateSegmentRotation(snake, i);
+                glm::mat4 transform = glm::mat4(1.0f);
+                transform = glm::translate(transform, glm::vec3(x, y, z));
+                transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+                transform = glm::scale(transform, glm::vec3(scale));
+
+                float hitDist;
+                glm::vec3 hitPt;
+                if (rayIntersectsModel(ray, *snakeModel, transform, hitDist, hitPt)) {
+                    if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                        closestHit.hit = true;
+                        closestHit.distance = hitDist;
+                        closestHit.point = hitPt;
+                        closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                    }
+                }
+            }
+        }
+        else {
+            // Сфера для сегмента змейки
+            glm::vec3 segmentCenter(x, y, z);
+            float tSegment;
+            if (rayIntersectsSphere(ray, segmentCenter, segmentRadius, tSegment)) {
+                if (tSegment > 0.01f && tSegment < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = tSegment;
+                    closestHit.point = ray.pointAt(tSegment);
+                    closestHit.normal = glm::normalize(closestHit.point - segmentCenter);
+                }
             }
         }
     }
 
-    // ЕДА (яблоки)
-    float foodRadius = m_cellSize * 0.4f;
+    // ===== ЗАБОР - сферы для столбов =====
+    float fenceRadius = m_cellSize * 0.2f;
+    for (const auto& fenceBlock : objects.getFenceBlocks()) {
+        float x = fenceBlock.x * m_cellSize - offsetX;
+        float z = fenceBlock.z * m_cellSize - offsetZ;
+        float y = m_floorHeight + m_cellSize * 0.25f;
+
+        glm::vec3 fenceCenter(x, y, z);
+        float tFence;
+        if (rayIntersectsSphere(ray, fenceCenter, fenceRadius, tFence)) {
+            if (tFence > 0.01f && tFence < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tFence;
+                closestHit.point = ray.pointAt(tFence);
+                closestHit.normal = glm::normalize(closestHit.point - fenceCenter);
+            }
+        }
+    }
+
+    // ===== ЕДА (яблоки) - сферы =====
+    float foodRadius = m_cellSize * 0.35f;
     for (const auto& apple : objects.getFood()) {
         float x = apple.x * m_cellSize - offsetX;
         float z = apple.z * m_cellSize - offsetZ;
         float y = apple.y * m_cellSize + 0.1f;
 
-        float tHit;
-        if (rayIntersectsSphere(ray, glm::vec3(x, y, z), foodRadius, tHit)) {
-            if (tHit > 0.01f && tHit < closestHit.distance) {
+        if (m_useExactModels && !m_appleModel.vertices.empty()) {
+            glm::mat4 transform = glm::mat4(1.0f);
+            transform = glm::translate(transform, glm::vec3(x, y, z));
+            transform = glm::scale(transform, glm::vec3(m_cellSize * 0.6f));
+
+            float hitDist;
+            glm::vec3 hitPt;
+            if (rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPt)) {
+                if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = hitDist;
+                    closestHit.point = hitPt;
+                    closestHit.normal = glm::normalize(hitPt - glm::vec3(x, y, z));
+                }
+            }
+        }
+        else {
+            float tHit;
+            if (rayIntersectsSphere(ray, glm::vec3(x, y, z), foodRadius, tHit)) {
+                if (tHit > 0.01f && tHit < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = tHit;
+                    closestHit.point = ray.pointAt(tHit);
+                    closestHit.normal = glm::normalize(closestHit.point - glm::vec3(x, y, z));
+                }
+            }
+        }
+    }
+
+    // ===== ЦВЕТЫ - маленькие сферы =====
+    float flowerRadius = m_cellSize * 0.12f;
+    for (const auto& flower : objects.getFlowerSprites()) {
+        glm::vec3 flowerPos = flower.position;
+        float tFlower;
+        if (rayIntersectsSphere(ray, flowerPos, flowerRadius, tFlower)) {
+            if (tFlower > 0.01f && tFlower < closestHit.distance) {
                 closestHit.hit = true;
-                closestHit.distance = tHit;
-                closestHit.point = ray.pointAt(tHit);
-                closestHit.normal = glm::normalize(closestHit.point - glm::vec3(x, y, z));
+                closestHit.distance = tFlower;
+                closestHit.point = ray.pointAt(tFlower);
+                closestHit.normal = glm::normalize(closestHit.point - flowerPos);
+            }
+        }
+    }
+
+    // ===== ПТИЦЫ - сферы (опционально) =====
+    float birdRadius = m_cellSize * 0.2f;
+    for (const auto& bird : objects.getBirds()) {
+        float tBird;
+        if (rayIntersectsSphere(ray, bird.position, birdRadius, tBird)) {
+            if (tBird > 0.01f && tBird < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tBird;
+                closestHit.point = ray.pointAt(tBird);
+                closestHit.normal = glm::normalize(closestHit.point - bird.position);
+            }
+        }
+    }
+
+    // ===== ОБЛАКА - большие сферы =====
+    float cloudRadius = m_cellSize * 0.8f;
+    for (const auto& cloud : objects.getCloudSprites()) {
+        float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
+        if (distanceToCenter < 8.0f) continue;
+
+        float tCloud;
+        if (rayIntersectsSphere(ray, cloud.position, cloudRadius, tCloud)) {
+            if (tCloud > 0.01f && tCloud < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tCloud;
+                closestHit.point = ray.pointAt(tCloud);
+                closestHit.normal = glm::normalize(closestHit.point - cloud.position);
             }
         }
     }
@@ -2354,11 +2588,12 @@ void GameRenderer::drawFallbackFloor() {
     bool isSubdividedMode = (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED ||
         currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED);
 
-    // Градиент для CORNERS (не subdivided) и CORNERS_SUBDIVIDED
+    // TRACE_CORNERS и TRACE_CORNERS_SUBDIVIDED - плавный градиент
+    // TRACE_CENTER и TRACE_CENTER_SUBDIVIDED - бинарный
     bool useGradient = (currentMode == ShadowMapper::TRACE_CORNERS ||
         currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED);
 
-    int subDivSize = SHADOW_SUBDIVISION_SIZE;  // = 10
+    int subDivSize = SHADOW_SUBDIVISION_SIZE;
 
     for (int z = 0; z < m_gridDepth; z++) {
         for (int x = 0; x < m_gridWidth; x++) {
@@ -2366,7 +2601,6 @@ void GameRenderer::drawFallbackFloor() {
             float posX = x * m_cellSize - offsetX;
             float posZ = z * m_cellSize - offsetZ;
 
-            // Для subdivided режимов
             if (isSubdividedMode && m_shadowMapEnabled) {
                 float subCellSizeX = m_cellSize / subDivSize;
                 float subCellSizeZ = m_cellSize / subDivSize;
@@ -2386,27 +2620,20 @@ void GameRenderer::drawFallbackFloor() {
 
                                 float shadowValue = sample.subCellValues[subZ][subX];
 
-                                // ✅ ПЛАВНЫЙ ГРАДИЕНТ для CORNERS_SUBDIVIDED
-                                // ✅ БИНАРНЫЙ для CENTER_SUBDIVIDED (но с плавной границей)
+                                // ✅ Для CENTER_SUBDIVIDED - бинарно
                                 if (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED) {
-                                    // Центр-субдивайдед: бинарно, но с плавной границей
-                                    // Используем smoothstep для смягчения границ
-                                    shadowValue = glm::smoothstep(0.3f, 0.7f, shadowValue);
-                                    shadowValue = shadowValue > 0.5f ? 1.0f : 0.0f;
+                                    shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
                                 }
-                                else {
-                                    // CORNERS_SUBDIVIDED: плавный градиент
-                                    // Уже shadowValue от 0 до 1, просто используем как есть
-                                }
+                                // Для CORNERS_SUBDIVIDED - оставляем плавным
 
                                 // Комбинируем с другими тенями
                                 float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
                                 float foodShadow = m_foodShadow.getShadowAtCell(x, z);
 
-                                // Для snake и food тоже применяем правильную интерполяцию
+                                // Для CENTER_SUBDIVIDED - бинарно и для snake/food
                                 if (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED) {
-                                    snakeShadow = snakeShadow > 0.5f ? 1.0f : 0.0f;
-                                    foodShadow = foodShadow > 0.5f ? 1.0f : 0.0f;
+                                    snakeShadow = (snakeShadow >= 0.5f) ? 1.0f : 0.0f;
+                                    foodShadow = (foodShadow >= 0.5f) ? 1.0f : 0.0f;
                                 }
 
                                 shadowValue = std::min({ shadowValue, snakeShadow, foodShadow });
@@ -2415,7 +2642,20 @@ void GameRenderer::drawFallbackFloor() {
                                 float subPosZ = posZ + subZ * subCellSizeZ;
 
                                 // Выбираем цвет
-                                glm::vec3 finalColor = glm::mix(darkColor, lightColor, shadowValue);
+                                glm::vec3 finalColor;
+                                if (useGradient) {
+                                    // Плавный градиент
+                                    finalColor = glm::mix(darkColor, lightColor, shadowValue);
+                                }
+                                else {
+                                    // Бинарный - чёткая граница
+                                    if (shadowValue >= 0.5f) {
+                                        finalColor = lightColor;
+                                    }
+                                    else {
+                                        finalColor = darkColor;
+                                    }
+                                }
 
                                 glColor3f(finalColor.r, finalColor.g, finalColor.b);
 
@@ -2447,7 +2687,13 @@ void GameRenderer::drawFallbackFloor() {
 
                 // Fallback: если нет подклеток (клетка полностью освещена)
                 float shadowValue = 1.0f;
-                glm::vec3 finalColor = glm::mix(darkColor, lightColor, shadowValue);
+                glm::vec3 finalColor;
+                if (useGradient) {
+                    finalColor = glm::mix(darkColor, lightColor, shadowValue);
+                }
+                else {
+                    finalColor = lightColor;
+                }
                 glColor3f(finalColor.r, finalColor.g, finalColor.b);
 
                 glBegin(GL_QUADS);
@@ -2471,7 +2717,7 @@ void GameRenderer::drawFallbackFloor() {
                 glEnd();
             }
             else {
-                // ===== НЕ-subdivided режимы (TRACE_CENTER, TRACE_CORNERS) =====
+                // ===== НЕ-subdivided режимы =====
                 float shadowValue = 1.0f;
                 if (m_shadowMapEnabled) {
                     float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
@@ -2482,11 +2728,11 @@ void GameRenderer::drawFallbackFloor() {
 
                 glm::vec3 finalColor;
                 if (useGradient) {
-                    // Для CORNERS - плавный градиент
+                    // TRACE_CORNERS - плавный градиент
                     finalColor = glm::mix(darkColor, lightColor, shadowValue);
                 }
                 else {
-                    // Для CENTER - бинарный
+                    // TRACE_CENTER - бинарный
                     shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
                     finalColor = floorColor * shadowValue;
                 }
