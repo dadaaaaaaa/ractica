@@ -409,6 +409,7 @@ void Game::handleKeyPress(int key) {
             objects.saveGame();
             std::cout << "Game saved!" << std::endl;
             break;
+
         }
 
         objects.handleGameKeyPress(key);

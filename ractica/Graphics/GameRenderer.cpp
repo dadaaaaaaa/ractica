@@ -975,10 +975,9 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         std::cout << "\n[STATIC SHADOWS] Computing..." << std::endl;
 
         m_staticShadow.clearObjectBounds();
-        m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, 0.0f);
+        m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
 
-        // Для TRACE_CENTER и TRACE_CORNERS используем сферы
-        // Для TRACE_CENTER_SUBDIVIDED и TRACE_CORNERS_SUBDIVIDED используем только точную геометрию
+        // Сферы ТОЛЬКО для CENTER и CORNERS режимов
         bool useSpheres = (m_currentShadowMode == ShadowMapper::TRACE_CENTER ||
             m_currentShadowMode == ShadowMapper::TRACE_CORNERS);
 
@@ -992,7 +991,7 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                     float x = block.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                     float z = block.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
                     float treeSize = m_cellSize * 1.5f;
-                    float radius = treeSize * 0.6f;
+                    float radius = treeSize * 0.7f;
                     float y = treeSize / 2.0f;
                     staticSpheres.emplace_back(glm::vec3(x, y, z), radius);
                 }
@@ -1000,7 +999,8 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             m_staticShadow.registerObjectBounds(staticSpheres);
         }
 
-        // Всегда добавляем callback для точной геометрии
+        // ВСЕГДА добавляем callback для точной геометрии
+        // Это нужно для subdivided режимов, где сферы отключены
         m_staticShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
@@ -1708,12 +1708,13 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
     closestHit.hit = false;
     closestHit.distance = 1000.0f;
 
-    float maxDistance = 50.0f;
+    float maxDistance = 100.0f;
     float treeSize = m_cellSize * 1.5f;
     float treeHalf = treeSize / 2.0f;
 
+    // Пол
     float tGround = -ray.origin.y / ray.direction.y;
-    if (tGround > 0 && tGround < maxDistance && tGround < closestHit.distance) {
+    if (tGround > 0.01f && tGround < maxDistance && tGround < closestHit.distance) {
         glm::vec3 hitPoint = ray.pointAt(tGround);
         float halfWidth = m_gridWidth * m_cellSize / 2.0f;
         float halfDepth = m_gridDepth * m_cellSize / 2.0f;
@@ -1726,14 +1727,19 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
+    // ДЕРЕВЬЯ - увеличенный bounding box для лучшего покрытия
     for (const auto& obstacle : objects.getObstacles()) {
         for (const auto& block : obstacle.blocks) {
             float x = block.x * m_cellSize - offsetX;
             float z = block.z * m_cellSize - offsetZ;
             float y = block.y * m_cellSize;
 
-            glm::vec3 boxMin(x - treeHalf, y, z - treeHalf);
-            glm::vec3 boxMax(x + treeHalf, y + treeSize, z + treeHalf);
+            // Увеличенные размеры для дерева
+            float treeWidth = m_cellSize * 1.2f;
+            float treeHeight = m_cellSize * 2.0f;
+
+            glm::vec3 boxMin(x - treeWidth / 2, y, z - treeWidth / 2);
+            glm::vec3 boxMax(x + treeWidth / 2, y + treeHeight, z + treeWidth / 2);
 
             float tMin, tMax;
             if (rayIntersectsAABB(ray, boxMin, boxMax, tMin, tMax)) {
@@ -1747,6 +1753,7 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
+    // ЗМЕЙКА
     const auto& snake = objects.getSnake();
     float snakeSize = m_cellSize * 0.8f;
     float snakeHalf = snakeSize / 2.0f;
@@ -1770,6 +1777,7 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
+    // ЕДА (яблоки)
     float foodRadius = m_cellSize * 0.4f;
     for (const auto& apple : objects.getFood()) {
         float x = apple.x * m_cellSize - offsetX;
@@ -2131,11 +2139,10 @@ void GameRenderer::drawTiledFloor(const GameObjects& objects) {
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(5.0f, 10.0f);
 
-    // Размер игрового поля
     float worldWidth = m_gridWidth * m_cellSize;
     float worldDepth = m_gridDepth * m_cellSize;
 
-    // ВЫЧИСЛЯЕМ РЕАЛЬНЫЕ ГАБАРИТЫ МОДЕЛИ
+    // Вычисляем реальные габариты модели
     float modelMinX = 999999.0f, modelMaxX = -999999.0f;
     float modelMinY = 999999.0f, modelMaxY = -999999.0f;
     float modelMinZ = 999999.0f, modelMaxZ = -999999.0f;
@@ -2157,64 +2164,117 @@ void GameRenderer::drawTiledFloor(const GameObjects& objects) {
     float modelSizeY = modelMaxY - modelMinY;
     float modelSizeZ = modelMaxZ - modelMinZ;
 
-    // Количество тайлов
     int tilesX = 8;
     int tilesZ = 8;
 
     float tileWidth = worldWidth / tilesX;
     float tileDepth = worldDepth / tilesZ;
 
-    // Масштаб
     float scaleX = tileWidth / modelSizeX;
     float scaleZ = tileDepth / modelSizeZ;
     float scale = std::min(scaleX, scaleZ);
 
-    // Стартовая позиция
     float startX = -worldWidth / 2.0f;
     float startZ = -worldDepth / 2.0f;
 
-    // ========== ПРИНУДИТЕЛЬНЫЙ ПОДЪЁМ ==========
-    // ПОДБЕРИТЕ ЭТО ЗНАЧЕНИЕ ВИЗУАЛЬНО!
-    // Попробуйте: 0.0f, 0.2f, 0.5f, 0.8f, 1.0f, 1.5f
-    float manualRaise = 0.5f;  // <-- МЕНЯЙТЕ ЭТО ЗНАЧЕНИЕ
-
+    float manualRaise = 0.5f;
     float baseY = manualRaise;
     m_floorHeight = baseY;
+
     bool hasTexture = (m_floorModel.hasTexture && m_floorModel.textureID != 0);
     glm::vec3 floorColorObj = objects.getFloorColor();
 
-    std::cout << "\n========== FLOOR TILING DEBUG ==========" << std::endl;
-    std::cout << "World size: " << worldWidth << " x " << worldDepth << std::endl;
-    std::cout << "Tiles: " << tilesX << " x " << tilesZ << " = " << (tilesX * tilesZ) << std::endl;
-    std::cout << "Scale: " << scale << std::endl;
-    std::cout << "Manual raise: " << manualRaise << std::endl;
-    std::cout << "Base Y: " << baseY << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    glm::vec3 darkColor = floorColorObj * 0.15f;
+    glm::vec3 lightColor = floorColorObj;
 
-    // Рисуем сетку
+    ShadowMapper::ShadowTraceMode currentMode = m_staticShadow.getShadowTraceMode();
+    bool isSubdividedMode = (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED ||
+        currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED);
+    bool useGradient = (currentMode == ShadowMapper::TRACE_CORNERS ||
+        currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED);
+
+    int subDivSize = SHADOW_SUBDIVISION_SIZE;
+
     if (gridEnabled) {
         drawFloorGrid();
     }
 
-    int drawnTiles = 0;
+    for (int z = 0; z < m_gridDepth; z++) {
+        for (int x = 0; x < m_gridWidth; x++) {
 
-    for (int i = 0; i < tilesX; i++) {
-        for (int j = 0; j < tilesZ; j++) {
-            float posX = startX + i * tileWidth + tileWidth / 2.0f;
-            float posZ = startZ + j * tileDepth + tileDepth / 2.0f;
+            float posX = startX + x * m_cellSize;
+            float posZ = startZ + z * m_cellSize;
 
+            float shadowValue = 1.0f;
+            if (m_shadowMapEnabled) {
+                if (isSubdividedMode) {
+                    // Для subdivided режимов - более сложная логика
+                    int shadowX = x / m_shadowStrideX;
+                    int shadowZ = z / m_shadowStrideZ;
+
+                    if (shadowX >= 0 && shadowX < m_staticShadow.getTotalCellsX() &&
+                        shadowZ >= 0 && shadowZ < m_staticShadow.getTotalCellsZ()) {
+
+                        const auto& shadowGrid = m_staticShadow.getShadowGrid();
+                        const auto& sample = shadowGrid[shadowZ][shadowX];
+
+                        if (sample.hasSubCells()) {
+                            // Для каждого тайла нужно усреднить значения подклеток
+                            float sum = 0.0f;
+                            int count = 0;
+
+                            int subCellPerTileX = subDivSize / tilesX;
+                            int subCellPerTileZ = subDivSize / tilesZ;
+                            if (subCellPerTileX < 1) subCellPerTileX = 1;
+                            if (subCellPerTileZ < 1) subCellPerTileZ = 1;
+
+                            int startSubX = (x % m_shadowStrideX) * subDivSize / m_shadowStrideX;
+                            int startSubZ = (z % m_shadowStrideZ) * subDivSize / m_shadowStrideZ;
+                            int endSubX = startSubX + subDivSize / m_shadowStrideX;
+                            int endSubZ = startSubZ + subDivSize / m_shadowStrideZ;
+
+                            for (int subZ = startSubZ; subZ < endSubZ && subZ < subDivSize; subZ++) {
+                                for (int subX = startSubX; subX < endSubX && subX < subDivSize; subX++) {
+                                    sum += sample.subCellValues[subZ][subX];
+                                    count++;
+                                }
+                            }
+
+                            if (count > 0) {
+                                shadowValue = sum / count;
+                            }
+                        }
+                        else {
+                            shadowValue = sample.value;
+                        }
+                    }
+                }
+                else {
+                    float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
+                    float foodShadow = m_foodShadow.getShadowAtCell(x, z);
+                    float staticShadow = m_staticShadow.getShadowAtCell(x, z);
+                    shadowValue = std::min({ snakeShadow, foodShadow, staticShadow });
+                }
+            }
+
+            if (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED) {
+                shadowValue = glm::smoothstep(0.3f, 0.7f, shadowValue);
+            }
+
+            glm::vec3 finalColor;
+            if (useGradient) {
+                finalColor = glm::mix(darkColor, lightColor, shadowValue);
+            }
+            else {
+                shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
+                finalColor = floorColorObj * shadowValue;
+            }
+
+            // Рисуем тайл
             glPushMatrix();
-
-            // Перемещаем на позицию с принудительным подъёмом
-            glTranslatef(posX, baseY, posZ);
-
-            // Поворот (если нужен)
+            glTranslatef(posX + tileWidth / 2, baseY, posZ + tileDepth / 2);
             glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
-
-            // Смещаем центр
             glTranslatef(-modelCenterX, -modelCenterY, -modelCenterZ);
-
-            // Масштабируем
             glScalef(scale, scale, scale);
 
             if (hasTexture) {
@@ -2222,18 +2282,14 @@ void GameRenderer::drawTiledFloor(const GameObjects& objects) {
                 setupTexture(m_floorModel.textureID);
             }
             else {
-                setMaterial(floorColorObj, 32.0f, 0.3f);
+                setMaterial(finalColor, 32.0f, 0.3f);
                 setupTexture(0);
             }
 
             m_floorModel.draw();
             glPopMatrix();
-            drawnTiles++;
         }
     }
-
-    std::cout << "Drew " << drawnTiles << " floor tiles" << std::endl;
-    std::cout << "Adjust 'manualRaise' value (current: " << manualRaise << ") until floor looks correct" << std::endl;
 
     glDisable(GL_POLYGON_OFFSET_FILL);
 }
@@ -2290,7 +2346,7 @@ void GameRenderer::drawFallbackFloor() {
     float texRepeat = worldWidth / 2.0f;
 
     // Тёмный цвет для теней
-    glm::vec3 darkColor = floorColor / 10.0f;
+    glm::vec3 darkColor = floorColor * 0.15f;
     glm::vec3 lightColor = floorColor;
 
     // Проверяем режимы
@@ -2298,8 +2354,9 @@ void GameRenderer::drawFallbackFloor() {
     bool isSubdividedMode = (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED ||
         currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED);
 
-    // Градиент ТОЛЬКО для TRACE_CORNERS (не subdivided!)
-    bool useGradient = (currentMode == ShadowMapper::TRACE_CORNERS);
+    // Градиент для CORNERS (не subdivided) и CORNERS_SUBDIVIDED
+    bool useGradient = (currentMode == ShadowMapper::TRACE_CORNERS ||
+        currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED);
 
     int subDivSize = SHADOW_SUBDIVISION_SIZE;  // = 10
 
@@ -2329,39 +2386,36 @@ void GameRenderer::drawFallbackFloor() {
 
                                 float shadowValue = sample.subCellValues[subZ][subX];
 
-                                // Для TRACE_CENTER_SUBDIVIDED - ЖЁСТКАЯ БИНАРНОСТЬ (без интерполяции!)
+                                // ✅ ПЛАВНЫЙ ГРАДИЕНТ для CORNERS_SUBDIVIDED
+                                // ✅ БИНАРНЫЙ для CENTER_SUBDIVIDED (но с плавной границей)
                                 if (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED) {
-                                    shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
+                                    // Центр-субдивайдед: бинарно, но с плавной границей
+                                    // Используем smoothstep для смягчения границ
+                                    shadowValue = glm::smoothstep(0.3f, 0.7f, shadowValue);
+                                    shadowValue = shadowValue > 0.5f ? 1.0f : 0.0f;
+                                }
+                                else {
+                                    // CORNERS_SUBDIVIDED: плавный градиент
+                                    // Уже shadowValue от 0 до 1, просто используем как есть
                                 }
 
                                 // Комбинируем с другими тенями
                                 float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
                                 float foodShadow = m_foodShadow.getShadowAtCell(x, z);
-                                shadowValue = std::min({ shadowValue, snakeShadow, foodShadow });
 
-                                // Ещё раз бинарно после комбинации
+                                // Для snake и food тоже применяем правильную интерполяцию
                                 if (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED) {
-                                    shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
+                                    snakeShadow = snakeShadow > 0.5f ? 1.0f : 0.0f;
+                                    foodShadow = foodShadow > 0.5f ? 1.0f : 0.0f;
                                 }
+
+                                shadowValue = std::min({ shadowValue, snakeShadow, foodShadow });
 
                                 float subPosX = posX + subX * subCellSizeX;
                                 float subPosZ = posZ + subZ * subCellSizeZ;
 
-                                // Выбираем цвет без интерполяции - каждый квад одним цветом
-                                glm::vec3 finalColor;
-                                if (currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED) {
-                                    // Для градиентного режима - плавно
-                                    finalColor = glm::mix(darkColor, lightColor, shadowValue);
-                                }
-                                else {
-                                    // Для бинарного режима - жёстко
-                                    if (shadowValue >= 0.5f) {
-                                        finalColor = lightColor;
-                                    }
-                                    else {
-                                        finalColor = darkColor;
-                                    }
-                                }
+                                // Выбираем цвет
+                                glm::vec3 finalColor = glm::mix(darkColor, lightColor, shadowValue);
 
                                 glColor3f(finalColor.r, finalColor.g, finalColor.b);
 
@@ -2392,7 +2446,10 @@ void GameRenderer::drawFallbackFloor() {
                 }
 
                 // Fallback: если нет подклеток (клетка полностью освещена)
-                glColor3f(lightColor.r, lightColor.g, lightColor.b);
+                float shadowValue = 1.0f;
+                glm::vec3 finalColor = glm::mix(darkColor, lightColor, shadowValue);
+                glColor3f(finalColor.r, finalColor.g, finalColor.b);
+
                 glBegin(GL_QUADS);
                 glNormal3f(0.0f, 1.0f, 0.0f);
                 if (useFloorTexture && floorTexture.id != 0) {
@@ -2425,11 +2482,11 @@ void GameRenderer::drawFallbackFloor() {
 
                 glm::vec3 finalColor;
                 if (useGradient) {
-                    // Для TRACE_CORNERS - плавный градиент
+                    // Для CORNERS - плавный градиент
                     finalColor = glm::mix(darkColor, lightColor, shadowValue);
                 }
                 else {
-                    // Для TRACE_CENTER - жёсткая бинарность
+                    // Для CENTER - бинарный
                     shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
                     finalColor = floorColor * shadowValue;
                 }
