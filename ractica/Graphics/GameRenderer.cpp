@@ -2271,9 +2271,12 @@ void GameRenderer::drawFallbackFloor() {
     float offsetZ = worldDepth / 2.0f;
     m_floorHeight = 0.0f;
 
-    if (gridEnabled) {
-        drawFloorGrid();
-    }
+    // Количество полигонов (прямоугольников) по каждой оси
+    const int polygonsX = 150;
+    const int polygonsZ = 150;
+
+    float polygonWidth = worldWidth / polygonsX;
+    float polygonDepth = worldDepth / polygonsZ;
 
     if (useFloorTexture && floorTexture.id != 0) {
         glEnable(GL_TEXTURE_2D);
@@ -2287,177 +2290,81 @@ void GameRenderer::drawFallbackFloor() {
     glEnable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
-    float texRepeat = worldWidth / 2.0f;
+    // Проходим по всем полигонам
+    for (int z = 0; z < polygonsZ; z++) {
+        for (int x = 0; x < polygonsX; x++) {
 
-    // Тёмный цвет для теней
-    glm::vec3 darkColor = floorColor / 10.0f;
-    glm::vec3 lightColor = floorColor;
+            float posX = -offsetX + x * polygonWidth;
+            float posZ = -offsetZ + z * polygonDepth;
 
-    // Проверяем режимы
-    ShadowMapper::ShadowTraceMode currentMode = m_staticShadow.getShadowTraceMode();
-    bool isSubdividedMode = (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED ||
-        currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED);
+            // Вычисляем тень для этого полигона (по его центру)
+            float shadowValue = 1.0f;
+            if (m_shadowMapEnabled) {
+                // Находим клетку в игровой сетке, соответствующую центру полигона
+                float centerX = posX + polygonWidth / 2.0f;
+                float centerZ = posZ + polygonDepth / 2.0f;
 
-    // Градиент ТОЛЬКО для TRACE_CORNERS (не subdivided!)
-    bool useGradient = (currentMode == ShadowMapper::TRACE_CORNERS);
+                int cellX = (int)((centerX + offsetX) / m_cellSize);
+                int cellZ = (int)((centerZ + offsetZ) / m_cellSize);
 
-    int subDivSize = SHADOW_SUBDIVISION_SIZE;  // = 10
+                cellX = std::max(0, std::min(cellX, m_gridWidth - 1));
+                cellZ = std::max(0, std::min(cellZ, m_gridDepth - 1));
 
-    for (int z = 0; z < m_gridDepth; z++) {
-        for (int x = 0; x < m_gridWidth; x++) {
+                float snakeShadow = m_dynamicShadow.getShadowAtCell(cellX, cellZ);
+                float foodShadow = m_foodShadow.getShadowAtCell(cellX, cellZ);
+                float staticShadow = m_staticShadow.getShadowAtCell(cellX, cellZ);
+                shadowValue = std::min({ snakeShadow, foodShadow, staticShadow });
+            }
 
-            float posX = x * m_cellSize - offsetX;
-            float posZ = z * m_cellSize - offsetZ;
+            // Для TRACE_CENTER - жёсткая бинарность
+            ShadowMapper::ShadowTraceMode currentMode = m_staticShadow.getShadowTraceMode();
+            bool useGradient = (currentMode == ShadowMapper::TRACE_CORNERS);
 
-            // Для subdivided режимов
-            if (isSubdividedMode && m_shadowMapEnabled) {
-                float subCellSizeX = m_cellSize / subDivSize;
-                float subCellSizeZ = m_cellSize / subDivSize;
+            glm::vec3 darkColor = floorColor / 10.0f;
+            glm::vec3 lightColor = floorColor;
+            glm::vec3 finalColor;
 
-                int shadowX = x / m_shadowStrideX;
-                int shadowZ = z / m_shadowStrideZ;
-
-                if (shadowX >= 0 && shadowX < m_staticShadow.getTotalCellsX() &&
-                    shadowZ >= 0 && shadowZ < m_staticShadow.getTotalCellsZ()) {
-
-                    const auto& shadowGrid = m_staticShadow.getShadowGrid();
-                    const auto& sample = shadowGrid[shadowZ][shadowX];
-
-                    if (sample.hasSubCells()) {
-                        for (int subZ = 0; subZ < subDivSize; subZ++) {
-                            for (int subX = 0; subX < subDivSize; subX++) {
-
-                                float shadowValue = sample.subCellValues[subZ][subX];
-
-                                // Для TRACE_CENTER_SUBDIVIDED - ЖЁСТКАЯ БИНАРНОСТЬ (без интерполяции!)
-                                if (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED) {
-                                    shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
-                                }
-
-                                // Комбинируем с другими тенями
-                                float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
-                                float foodShadow = m_foodShadow.getShadowAtCell(x, z);
-                                shadowValue = std::min({ shadowValue, snakeShadow, foodShadow });
-
-                                // Ещё раз бинарно после комбинации
-                                if (currentMode == ShadowMapper::TRACE_CENTER_SUBDIVIDED) {
-                                    shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
-                                }
-
-                                float subPosX = posX + subX * subCellSizeX;
-                                float subPosZ = posZ + subZ * subCellSizeZ;
-
-                                // Выбираем цвет без интерполяции - каждый квад одним цветом
-                                glm::vec3 finalColor;
-                                if (currentMode == ShadowMapper::TRACE_CORNERS_SUBDIVIDED) {
-                                    // Для градиентного режима - плавно
-                                    finalColor = glm::mix(darkColor, lightColor, shadowValue);
-                                }
-                                else {
-                                    // Для бинарного режима - жёстко
-                                    if (shadowValue >= 0.5f) {
-                                        finalColor = lightColor;
-                                    }
-                                    else {
-                                        finalColor = darkColor;
-                                    }
-                                }
-
-                                glColor3f(finalColor.r, finalColor.g, finalColor.b);
-
-                                glBegin(GL_QUADS);
-                                glNormal3f(0.0f, 1.0f, 0.0f);
-
-                                if (useFloorTexture && floorTexture.id != 0) {
-                                    float u = (float)(x * subDivSize + subX) / (texRepeat * subDivSize);
-                                    float v = (float)(z * subDivSize + subZ) / (texRepeat * subDivSize);
-                                    float u2 = (float)(x * subDivSize + subX + 1) / (texRepeat * subDivSize);
-                                    float v2 = (float)(z * subDivSize + subZ + 1) / (texRepeat * subDivSize);
-                                    glTexCoord2f(u, v); glVertex3f(subPosX, -0.02f, subPosZ);
-                                    glTexCoord2f(u2, v); glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ);
-                                    glTexCoord2f(u2, v2); glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ + subCellSizeZ);
-                                    glTexCoord2f(u, v2); glVertex3f(subPosX, -0.02f, subPosZ + subCellSizeZ);
-                                }
-                                else {
-                                    glVertex3f(subPosX, -0.02f, subPosZ);
-                                    glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ);
-                                    glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ + subCellSizeZ);
-                                    glVertex3f(subPosX, -0.02f, subPosZ + subCellSizeZ);
-                                }
-                                glEnd();
-                            }
-                        }
-                        continue;
-                    }
-                }
-
-                // Fallback: если нет подклеток (клетка полностью освещена)
-                glColor3f(lightColor.r, lightColor.g, lightColor.b);
-                glBegin(GL_QUADS);
-                glNormal3f(0.0f, 1.0f, 0.0f);
-                if (useFloorTexture && floorTexture.id != 0) {
-                    float u1 = (float)x / texRepeat;
-                    float v1 = (float)z / texRepeat;
-                    float u2 = (float)(x + 1) / texRepeat;
-                    float v2 = (float)(z + 1) / texRepeat;
-                    glTexCoord2f(u1, v1); glVertex3f(posX, -0.02f, posZ);
-                    glTexCoord2f(u2, v1); glVertex3f(posX + m_cellSize, -0.02f, posZ);
-                    glTexCoord2f(u2, v2); glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
-                    glTexCoord2f(u1, v2); glVertex3f(posX, -0.02f, posZ + m_cellSize);
-                }
-                else {
-                    glVertex3f(posX, -0.02f, posZ);
-                    glVertex3f(posX + m_cellSize, -0.02f, posZ);
-                    glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
-                    glVertex3f(posX, -0.02f, posZ + m_cellSize);
-                }
-                glEnd();
+            if (useGradient) {
+                finalColor = glm::mix(darkColor, lightColor, shadowValue);
             }
             else {
-                // ===== НЕ-subdivided режимы (TRACE_CENTER, TRACE_CORNERS) =====
-                float shadowValue = 1.0f;
-                if (m_shadowMapEnabled) {
-                    float snakeShadow = m_dynamicShadow.getShadowAtCell(x, z);
-                    float foodShadow = m_foodShadow.getShadowAtCell(x, z);
-                    float staticShadow = m_staticShadow.getShadowAtCell(x, z);
-                    shadowValue = std::min({ snakeShadow, foodShadow, staticShadow });
-                }
-
-                glm::vec3 finalColor;
-                if (useGradient) {
-                    // Для TRACE_CORNERS - плавный градиент
-                    finalColor = glm::mix(darkColor, lightColor, shadowValue);
-                }
-                else {
-                    // Для TRACE_CENTER - жёсткая бинарность
-                    shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
-                    finalColor = floorColor * shadowValue;
-                }
-
-                glColor3f(finalColor.r, finalColor.g, finalColor.b);
-
-                glBegin(GL_QUADS);
-                glNormal3f(0.0f, 1.0f, 0.0f);
-                if (useFloorTexture && floorTexture.id != 0) {
-                    float u1 = (float)x / texRepeat;
-                    float v1 = (float)z / texRepeat;
-                    float u2 = (float)(x + 1) / texRepeat;
-                    float v2 = (float)(z + 1) / texRepeat;
-                    glTexCoord2f(u1, v1); glVertex3f(posX, -0.02f, posZ);
-                    glTexCoord2f(u2, v1); glVertex3f(posX + m_cellSize, -0.02f, posZ);
-                    glTexCoord2f(u2, v2); glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
-                    glTexCoord2f(u1, v2); glVertex3f(posX, -0.02f, posZ + m_cellSize);
-                }
-                else {
-                    glVertex3f(posX, -0.02f, posZ);
-                    glVertex3f(posX + m_cellSize, -0.02f, posZ);
-                    glVertex3f(posX + m_cellSize, -0.02f, posZ + m_cellSize);
-                    glVertex3f(posX, -0.02f, posZ + m_cellSize);
-                }
-                glEnd();
+                shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
+                finalColor = floorColor * shadowValue;
             }
+
+            glColor3f(finalColor.r, finalColor.g, finalColor.b);
+
+            // Рисуем один прямоугольник (полигон)
+            glBegin(GL_QUADS);
+            glNormal3f(0.0f, 1.0f, 0.0f);
+
+            if (useFloorTexture && floorTexture.id != 0) {
+                float texRepeatX = (float)polygonsX / 4.0f;  // Текстура повторяется 4 раза по ширине
+                float texRepeatZ = (float)polygonsZ / 4.0f;  // Текстура повторяется 4 раза по глубине
+                float u1 = (float)x / texRepeatX;
+                float v1 = (float)z / texRepeatZ;
+                float u2 = (float)(x + 1) / texRepeatX;
+                float v2 = (float)(z + 1) / texRepeatZ;
+
+                glTexCoord2f(u1, v1); glVertex3f(posX, -0.02f, posZ);
+                glTexCoord2f(u2, v1); glVertex3f(posX + polygonWidth, -0.02f, posZ);
+                glTexCoord2f(u2, v2); glVertex3f(posX + polygonWidth, -0.02f, posZ + polygonDepth);
+                glTexCoord2f(u1, v2); glVertex3f(posX, -0.02f, posZ + polygonDepth);
+            }
+            else {
+                glVertex3f(posX, -0.02f, posZ);
+                glVertex3f(posX + polygonWidth, -0.02f, posZ);
+                glVertex3f(posX + polygonWidth, -0.02f, posZ + polygonDepth);
+                glVertex3f(posX, -0.02f, posZ + polygonDepth);
+            }
+            glEnd();
         }
     }
 
     glDisable(GL_TEXTURE_2D);
+
+    // ========== ОТДЕЛЬНАЯ ОТРИСОВКА СЕТКИ (если включена) ==========
+    if (gridEnabled) {
+        drawFloorGrid();
+    }
 }
