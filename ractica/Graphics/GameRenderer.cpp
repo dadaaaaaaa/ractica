@@ -62,6 +62,12 @@ GameRenderer::GameRenderer()
     , m_ambientEnabled(false)
     , m_specularEnabled(false)
     , m_showAllRays(false)
+    , m_floorTilesX(120)
+    , m_floorTilesZ(120)
+    , m_floorTileSizeX(0.1f)
+    , m_floorTileSizeZ(0.1f)
+    , m_floorUseSubdivision(false)
+    , m_floorSubdivisionLevel(10)
     , m_useCornerTrace(DEFAULT_SHADOW_MODE == 1 || DEFAULT_SHADOW_MODE == 3)  // CORNERS или CORNERS_SUBDIVIDED
     , m_currentShadowMode(static_cast<ShadowMapper::ShadowTraceMode>(DEFAULT_SHADOW_MODE))
 {
@@ -1746,7 +1752,7 @@ void GameRenderer::drawDebugRaysIfEnabled() {
     glLineWidth(1.5f);
 
     for (const auto& ray : rays) {
-        // Фильтр по типу лучей (можно настроить)
+        // Фильтр по типу лучей
         if (!m_showAllRays && !ray.hit) continue;
 
         // Выбираем цвет в зависимости от типа луча
@@ -1770,7 +1776,7 @@ void GameRenderer::drawDebugRaysIfEnabled() {
             glColor3f(1.0f, 0.0f, 0.0f);
         }
 
-        // Рисуем луч
+        // Рисуем луч (от источника к точке)
         glBegin(GL_LINES);
         glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
         glVertex3f(ray.hitPoint.x, ray.hitPoint.y, ray.hitPoint.z);

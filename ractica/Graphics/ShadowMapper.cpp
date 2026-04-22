@@ -355,9 +355,60 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
     float maxDistance, float& hitDistance, glm::vec3& hitPoint)
 {
     Ray shadowRay(start, direction);
-    return intersectsAnyObject(shadowRay, hitDistance, hitPoint);
-}
 
+    float closestHit = maxDistance;
+    glm::vec3 closestPoint;
+    bool hit = false;
+
+    // Проверяем сферы (только для CENTER и CORNERS режимов)
+    if (m_useSpheres) {
+        for (const auto& sphere : m_objectSpheres) {
+            glm::vec3 oc = shadowRay.origin - sphere.center;
+            float a = glm::dot(shadowRay.direction, shadowRay.direction);
+            float b = 2.0f * glm::dot(oc, shadowRay.direction);
+            float c = glm::dot(oc, oc) - sphere.radius * sphere.radius;
+            float discriminant = b * b - 4 * a * c;
+
+            if (discriminant >= 0) {
+                float sqrtD = sqrt(discriminant);
+                float t1 = (-b - sqrtD) / (2.0f * a);
+                float t2 = (-b + sqrtD) / (2.0f * a);
+
+                // t должен быть между источником и точкой
+                if (t1 > 0.001f && t1 < closestHit) {
+                    closestHit = t1;
+                    closestPoint = shadowRay.pointAt(t1);
+                    hit = true;
+                }
+                if (t2 > 0.001f && t2 < closestHit) {
+                    closestHit = t2;
+                    closestPoint = shadowRay.pointAt(t2);
+                    hit = true;
+                }
+            }
+        }
+    }
+
+    // ВСЕГДА проверяем callback для точной геометрии (деревья, змейка, еда)
+    if (m_intersectCallback) {
+        float exactHitDistance;
+        glm::vec3 exactHitPoint;
+        if (m_intersectCallback(shadowRay, exactHitDistance, exactHitPoint)) {
+            if (exactHitDistance > 0.001f && exactHitDistance < closestHit) {
+                closestHit = exactHitDistance;
+                closestPoint = exactHitPoint;
+                hit = true;
+            }
+        }
+    }
+
+    if (hit) {
+        hitDistance = closestHit;
+        hitPoint = closestPoint;
+    }
+
+    return hit;
+}
 bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& hitCellZ, float& hitDistance)
 {
     glm::vec3 rayOrigin;
@@ -367,64 +418,31 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
 
     switch (m_lightType) {
     case LightType::Directional:
+        // Для направленного света: луч от источника (далеко) к точке
         rayOrigin = point - m_lightDirection * 100.0f;
         rayDirection = m_lightDirection;
         maxRayDistance = 100.0f;
         break;
 
     case LightType::Points:
-    {
-        glm::vec3 toLight = m_lightPos - point;
-        float distanceToLight = glm::length(toLight);
-
-        if (distanceToLight < 0.01f) {
-            hitCellX = -1;
-            hitCellZ = -1;
-            hitDistance = 0;
-            return false;
-        }
-
-        // Луч ОТ точки К свету (обратная трассировка, но физически корректная)
-        rayOrigin = point;
-        rayDirection = glm::normalize(toLight);
-        maxRayDistance = distanceToLight;
-
-        // Смещаем начало луча на VERY_SMALL_OFFSET вперёд, чтобы не пересечь саму точку
-        const float EPSILON = 0.001f;
-        rayOrigin += rayDirection * EPSILON;
-        maxRayDistance -= EPSILON;
-    }
-    break;
-
     case LightType::Spot:
     {
-        glm::vec3 toLight = m_lightPos - point;
-        float distanceToLight = glm::length(toLight);
+        glm::vec3 toPoint = point - m_lightPos;
+        float distanceToPoint = glm::length(toPoint);
 
-        if (distanceToLight < 0.01f) {
+        if (distanceToPoint < 0.01f) {
             hitCellX = -1;
             hitCellZ = -1;
             hitDistance = 0;
             return false;
         }
 
-        glm::vec3 toLightDir = glm::normalize(toLight);
-        glm::vec3 lightDirNormalized = glm::normalize(m_lightDirection);
+        // Луч ОТ источника К точке (исправлено!)
+        rayOrigin = m_lightPos;
+        rayDirection = glm::normalize(toPoint);
+        maxRayDistance = distanceToPoint;
 
-        float cosAngle = glm::dot(toLightDir, lightDirNormalized);
-        float spotCos = cos(glm::radians(45.0f));
-
-        if (cosAngle < spotCos) {
-            hitDistance = distanceToLight;
-            hitCellX = -1;
-            hitCellZ = -1;
-            return true;
-        }
-
-        rayOrigin = point;
-        rayDirection = toLightDir;
-        maxRayDistance = distanceToLight;
-
+        // Небольшое смещение от источника, чтобы избежать self-intersection
         const float EPSILON = 0.001f;
         rayOrigin += rayDirection * EPSILON;
         maxRayDistance -= EPSILON;
@@ -508,41 +526,17 @@ void ShadowMapper::computeCellGradient(ShadowSample& sample, int cellX, int cell
 
 void ShadowMapper::computeCellCenterSubdivided(ShadowSample& sample, int cellX, int cellZ)
 {
-    // Проверяем несколько точек для принятия решения о разбиении
-    bool anyCornerInShadow = false;
-    bool centerInShadow = false;
-
-    // Проверяем центр
+    // Проверяем центр - есть ли попадание в сферу с моделькой
     int origCenterX = cellX * m_strideX + m_strideX / 2;
     int origCenterZ = cellZ * m_strideZ + m_strideZ / 2;
     glm::vec3 centerPos = getCellCenter(origCenterX, origCenterZ);
 
     int hitCellX, hitCellZ;
     float hitDistance;
-    centerInShadow = isPointInShadow(centerPos, hitCellX, hitCellZ, hitDistance);
+    bool centerInShadow = isPointInShadow(centerPos, hitCellX, hitCellZ, hitDistance);
 
-    // Записываем центральный луч для отладки
-    if (m_recordDebugRays) {
-        glm::vec3 rayOrigin, rayDirection, endPoint;
-        if (m_lightType == LightType::Directional) {
-            rayOrigin = centerPos - m_lightDirection * 50.0f;
-            rayDirection = m_lightDirection;
-            endPoint = centerPos;
-        }
-        else {
-            rayOrigin = centerPos;
-            rayDirection = glm::normalize(m_lightPos - centerPos);
-            endPoint = m_lightPos;
-        }
-        if (centerInShadow && hitCellX >= 0 && hitCellZ >= 0) {
-            endPoint = getCellCenter(hitCellX, hitCellZ);
-            endPoint.y += 0.1f;
-        }
-        recordRay(rayOrigin, rayDirection, endPoint, 50.0f, centerInShadow, cellX, cellZ, -1, -1, -1,
-            false, false, DebugRay::RAY_CENTER);
-    }
-
-    // Проверяем 4 угла клетки
+    // Проверяем углы для принятия решения о разбиении
+    bool anyCornerInShadow = false;
     for (int corner = 0; corner < 4; corner++) {
         glm::vec3 cornerPos = getCornerWorldPosition(cellX, cellZ, corner);
         bool cornerInShadow = isPointInShadow(cornerPos, hitCellX, hitCellZ, hitDistance);
@@ -551,7 +545,7 @@ void ShadowMapper::computeCellCenterSubdivided(ShadowSample& sample, int cellX, 
         }
     }
 
-    // Если вся клетка полностью освещена - НЕ разбиваем
+    // Если центр и все углы НЕ в тени - вся клетка освещена, НЕ разбиваем
     if (!centerInShadow && !anyCornerInShadow) {
         sample.value = 1.0f;
         sample.centerWasLit = true;
@@ -574,6 +568,7 @@ void ShadowMapper::computeCellCenterSubdivided(ShadowSample& sample, int cellX, 
 
             bool inShadow = isPointInShadow(subCenter, subHitCellX, subHitCellZ, subHitDistance);
 
+            // Бинарное значение для CENTER_SUBDIVIDED
             float subValue = inShadow ? 0.0f : 1.0f;
             sample.subCellValues[subZ][subX] = subValue;
 
@@ -581,6 +576,7 @@ void ShadowMapper::computeCellCenterSubdivided(ShadowSample& sample, int cellX, 
                 litCount++;
             }
 
+            // Запись отладочных лучей
             if (m_recordDebugRays) {
                 glm::vec3 rayOrigin, rayDirection, endPoint;
                 if (m_lightType == LightType::Directional) {
@@ -589,9 +585,9 @@ void ShadowMapper::computeCellCenterSubdivided(ShadowSample& sample, int cellX, 
                     endPoint = subCenter;
                 }
                 else {
-                    rayOrigin = subCenter;
-                    rayDirection = glm::normalize(m_lightPos - subCenter);
-                    endPoint = m_lightPos;
+                    rayOrigin = m_lightPos;  // От источника к точке
+                    rayDirection = glm::normalize(subCenter - m_lightPos);
+                    endPoint = subCenter;
                 }
                 if (inShadow && subHitCellX >= 0 && subHitCellZ >= 0) {
                     endPoint = getCellCenter(subHitCellX, subHitCellZ);
@@ -620,27 +616,6 @@ void ShadowMapper::computeCellCornersSubdivided(ShadowSample& sample, int cellX,
     int hitCellX, hitCellZ;
     float hitDistance;
     centerInShadow = isPointInShadow(centerPos, hitCellX, hitCellZ, hitDistance);
-
-    // Записываем центральный луч для отладки
-    if (m_recordDebugRays) {
-        glm::vec3 rayOrigin, rayDirection, endPoint;
-        if (m_lightType == LightType::Directional) {
-            rayOrigin = centerPos - m_lightDirection * 50.0f;
-            rayDirection = m_lightDirection;
-            endPoint = centerPos;
-        }
-        else {
-            rayOrigin = centerPos;
-            rayDirection = glm::normalize(m_lightPos - centerPos);
-            endPoint = m_lightPos;
-        }
-        if (centerInShadow && hitCellX >= 0 && hitCellZ >= 0) {
-            endPoint = getCellCenter(hitCellX, hitCellZ);
-            endPoint.y += 0.1f;
-        }
-        recordRay(rayOrigin, rayDirection, endPoint, 50.0f, centerInShadow, cellX, cellZ, -1, -1, -1,
-            false, false, DebugRay::RAY_CENTER);
-    }
 
     // Проверяем 4 угла клетки
     for (int corner = 0; corner < 4; corner++) {
@@ -675,12 +650,14 @@ void ShadowMapper::computeCellCornersSubdivided(ShadowSample& sample, int cellX,
                 int subHitCellX, subHitCellZ;
                 float subHitDistance;
 
+                // Луч от источника к углу подполигона
                 bool inShadow = isPointInShadow(cornerPos, subHitCellX, subHitCellZ, subHitDistance);
 
                 if (!inShadow) {
                     litCorners++;
                 }
 
+                // Запись отладочных лучей
                 if (m_recordDebugRays) {
                     glm::vec3 rayOrigin, rayDirection, endPoint;
                     if (m_lightType == LightType::Directional) {
@@ -689,9 +666,9 @@ void ShadowMapper::computeCellCornersSubdivided(ShadowSample& sample, int cellX,
                         endPoint = cornerPos;
                     }
                     else {
-                        rayOrigin = cornerPos;
-                        rayDirection = glm::normalize(m_lightPos - cornerPos);
-                        endPoint = m_lightPos;
+                        rayOrigin = m_lightPos;  // От источника к точке
+                        rayDirection = glm::normalize(cornerPos - m_lightPos);
+                        endPoint = cornerPos;
                     }
                     if (inShadow && subHitCellX >= 0 && subHitCellZ >= 0) {
                         endPoint = getCellCenter(subHitCellX, subHitCellZ);
@@ -702,6 +679,7 @@ void ShadowMapper::computeCellCornersSubdivided(ShadowSample& sample, int cellX,
                 }
             }
 
+            // Плавное значение для подклетки (градиент)
             float subCellValue = (float)litCorners / 4.0f;
             sample.subCellValues[subZ][subX] = subCellValue;
             sum += subCellValue;

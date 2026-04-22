@@ -149,6 +149,20 @@ public:
 
     void toggleUseExactModels();  // НОВЫЙ МЕТОД
     bool isUsingExactModels() const { return m_useExactModels; }
+    // Добавить в секцию public:
+
+    void setFloorTiles(int tilesX, int tilesZ) {
+        m_floorTilesX = tilesX;
+        m_floorTilesZ = tilesZ;
+        m_floorTileSizeX = (m_gridWidth * m_cellSize) / tilesX;
+        m_floorTileSizeZ = (m_gridDepth * m_cellSize) / tilesZ;
+        m_staticShadowsDirty = true;
+    }
+
+    int getFloorTilesX() const { return m_floorTilesX; }
+    int getFloorTilesZ() const { return m_floorTilesZ; }
+    float getFloorTileSizeX() const { return m_floorTileSizeX; }
+    float getFloorTileSizeZ() const { return m_floorTileSizeZ; }
 private:
     bool m_ambientEnabled;
     bool m_specularEnabled;
@@ -202,6 +216,12 @@ private:
     void drawFallbackFloor();
     void drawFloorGrid();
 private:
+    int m_floorTilesX;           // Количество полигонов по X
+    int m_floorTilesZ;           // Количество полигонов по Z
+    float m_floorTileSizeX;      // Размер одного полигона по X
+    float m_floorTileSizeZ;      // Размер одного полигона по Z
+    bool m_floorUseSubdivision;  // Использовать ли подразбиение для пола
+    int m_floorSubdivisionLevel; // Уровень подразбиения (для subdivided режимов)
     bool m_useExactModels = false;
     bool rayIntersectsModel(const Ray& ray, const Model& model, const glm::mat4& transform, float& hitDistance, glm::vec3& hitPoint);
     // Основные модели примитивов

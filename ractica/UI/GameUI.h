@@ -14,9 +14,6 @@
 #include "../Objects/GameObjects.h"
 #include "MenuButton.h"  // <-- ДОБАВИТЬ ЭТУ СТРОКУ
 
-// УДАЛИТЬ определение MenuButton отсюда (оно теперь в MenuButton.h)
-// struct MenuButton { ... };
-// Структура символа (как в рабочем проекте)
 struct Character {
     unsigned int TextureID;
     glm::ivec2 Size;
