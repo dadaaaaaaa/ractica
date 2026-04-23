@@ -302,13 +302,13 @@ bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance
     glm::vec3 closestPoint;
     bool hit = false;
 
-    // Проверяем сферы ТОЛЬКО для CENTER и CORNERS режимов
+    // Проверяем сферы с currentRadius (а не baseRadius)
     if (m_useSpheres) {
         for (const auto& sphere : m_objectSpheres) {
             glm::vec3 oc = ray.origin - sphere.center;
             float a = glm::dot(ray.direction, ray.direction);
             float b = 2.0f * glm::dot(oc, ray.direction);
-            float c = glm::dot(oc, oc) - sphere.radius * sphere.radius;
+            float c = glm::dot(oc, oc) - sphere.currentRadius * sphere.currentRadius;  // ← ИСПОЛЬЗУЕМ currentRadius
             float discriminant = b * b - 4 * a * c;
 
             if (discriminant >= 0) {
@@ -330,8 +330,7 @@ bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance
         }
     }
 
-    // ВСЕГДА проверяем callback для точной геометрии (деревья, змейка, еда)
-    // Это нужно для subdivided режимов, где сферы отключены
+    // ВСЕГДА проверяем callback для точной геометрии
     if (m_intersectCallback) {
         float exactHitDistance;
         glm::vec3 exactHitPoint;
@@ -360,13 +359,13 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
     glm::vec3 closestPoint;
     bool hit = false;
 
-    // Проверяем сферы (только для CENTER и CORNERS режимов)
+    // Проверяем сферы с currentRadius
     if (m_useSpheres) {
         for (const auto& sphere : m_objectSpheres) {
             glm::vec3 oc = shadowRay.origin - sphere.center;
             float a = glm::dot(shadowRay.direction, shadowRay.direction);
             float b = 2.0f * glm::dot(oc, shadowRay.direction);
-            float c = glm::dot(oc, oc) - sphere.radius * sphere.radius;
+            float c = glm::dot(oc, oc) - sphere.currentRadius * sphere.currentRadius;  // ← ИСПОЛЬЗУЕМ currentRadius
             float discriminant = b * b - 4 * a * c;
 
             if (discriminant >= 0) {
@@ -374,7 +373,6 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
                 float t1 = (-b - sqrtD) / (2.0f * a);
                 float t2 = (-b + sqrtD) / (2.0f * a);
 
-                // t должен быть между источником и точкой
                 if (t1 > 0.001f && t1 < closestHit) {
                     closestHit = t1;
                     closestPoint = shadowRay.pointAt(t1);
@@ -389,7 +387,7 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
         }
     }
 
-    // ВСЕГДА проверяем callback для точной геометрии (деревья, змейка, еда)
+    // ВСЕГДА проверяем callback для точной геометрии
     if (m_intersectCallback) {
         float exactHitDistance;
         glm::vec3 exactHitPoint;

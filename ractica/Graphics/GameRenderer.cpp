@@ -625,6 +625,18 @@ void GameRenderer::updateLightPosition() {
 void GameRenderer::setLightType(LightType type) {
     m_lightType = type;
     setupFixedPipelineLighting();
+
+    // Обновляем радиусы сфер для всех ShadowMapper
+    if (m_shadowMapEnabled) {
+        m_staticShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
+        m_dynamicShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
+        m_foodShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
+
+        m_staticShadowsDirty = true;
+        m_dynamicShadowsDirty = true;
+        m_foodShadowsDirty = true;
+    }
+
     std::cout << "Light type changed to: " << (type == LightType::Directional ? "Directional" :
         (type == LightType::Points ? "Points" : "Spot")) << std::endl;
 }
@@ -633,6 +645,16 @@ void GameRenderer::setLightPosition(const glm::vec3& pos) {
     m_lightPos = pos;
     if (m_lightType != LightType::Directional) {
         updateLightPosition();
+
+        if (m_shadowMapEnabled) {
+            m_staticShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
+            m_dynamicShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
+            m_foodShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
+
+            m_staticShadowsDirty = true;
+            m_dynamicShadowsDirty = true;
+            m_foodShadowsDirty = true;
+        }
     }
 }
 
@@ -640,6 +662,16 @@ void GameRenderer::setLightDirection(const glm::vec3& dir) {
     m_lightDir = glm::normalize(dir);
     if (m_lightType == LightType::Directional) {
         updateLightPosition();
+
+        if (m_shadowMapEnabled) {
+            m_staticShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
+            m_dynamicShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
+            m_foodShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
+
+            m_staticShadowsDirty = true;
+            m_dynamicShadowsDirty = true;
+            m_foodShadowsDirty = true;
+        }
     }
 }
 
@@ -1069,30 +1101,31 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         m_staticShadow.clearObjectBounds();
         m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
 
-        // Сферы ТОЛЬКО для CENTER и CORNERS режимов
+        // Для subdivided режимов - НЕ используем сферы
         bool useSpheres = (m_currentShadowMode == ShadowMapper::TRACE_CENTER ||
             m_currentShadowMode == ShadowMapper::TRACE_CORNERS);
 
         m_staticShadow.setUseSpheres(useSpheres);
 
         if (useSpheres) {
-            // Добавляем сферы для деревьев
+            // Добавляем сферы для деревьев с БАЗОВЫМ радиусом
             std::vector<BoundingSphere> staticSpheres;
             for (const auto& obstacle : objects.getObstacles()) {
                 for (const auto& block : obstacle.blocks) {
                     float x = block.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                     float z = block.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
                     float treeSize = m_cellSize * 1.5f;
-                    float radius = treeSize * 0.7f;
+                    float baseRadius = treeSize * 0.7f;  // Базовый радиус
                     float y = treeSize / 2.0f;
-                    staticSpheres.emplace_back(glm::vec3(x, y, z), radius);
+                    staticSpheres.emplace_back(glm::vec3(x, y, z), baseRadius);
                 }
             }
             m_staticShadow.registerObjectBounds(staticSpheres);
+
+            // ОБНОВЛЯЕМ РАДИУСЫ С УЧЁТОМ ИСТОЧНИКА СВЕТА
+            m_staticShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
         }
 
-        // ВСЕГДА добавляем callback для точной геометрии
-        // Это нужно для subdivided режимов, где сферы отключены
         m_staticShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
@@ -1128,11 +1161,14 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                 const auto& segment = objects.getSnake()[i];
                 float x = segment.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                 float z = segment.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-                float radius = m_cellSize * 0.6f;
+                float baseRadius = m_cellSize * 0.6f;  // Базовый радиус
                 float y = 0.2f;
-                snakeSpheres.emplace_back(glm::vec3(x, y, z), radius);
+                snakeSpheres.emplace_back(glm::vec3(x, y, z), baseRadius);
             }
             m_dynamicShadow.registerObjectBounds(snakeSpheres);
+
+            // ОБНОВЛЯЕМ РАДИУСЫ С УЧЁТОМ ИСТОЧНИКА СВЕТА
+            m_dynamicShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
         }
 
         m_dynamicShadow.setIntersectCallback(
@@ -1169,11 +1205,14 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             for (const auto& apple : objects.getFood()) {
                 float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                 float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-                float radius = m_cellSize * 0.35f;
+                float baseRadius = m_cellSize * 0.35f;  // Базовый радиус
                 float y = 0.15f;
-                foodSpheres.emplace_back(glm::vec3(x, y, z), radius);
+                foodSpheres.emplace_back(glm::vec3(x, y, z), baseRadius);
             }
             m_foodShadow.registerObjectBounds(foodSpheres);
+
+            // ОБНОВЛЯЕМ РАДИУСЫ С УЧЁТОМ ИСТОЧНИКА СВЕТА
+            m_foodShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
         }
 
         m_foodShadow.setIntersectCallback(

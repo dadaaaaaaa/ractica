@@ -1,4 +1,4 @@
-// ShadowMapper.h
+п»ї// ShadowMapper.h
 #pragma once
 #include "RayTracer.h"
 #include <glm/glm.hpp>
@@ -9,29 +9,29 @@
 struct Ray;
 struct HitInfo;
 
-// Константа для размера подразбиения
+// РљРѕРЅСЃС‚Р°РЅС‚Р° РґР»СЏ СЂР°Р·РјРµСЂР° РїРѕРґСЂР°Р·Р±РёРµРЅРёСЏ
 const int SHADOW_SUBDIVISION_SIZE = 10;
 
-// Структура для хранения информации о луче для отладки
+// РЎС‚СЂСѓРєС‚СѓСЂР° РґР»СЏ С…СЂР°РЅРµРЅРёСЏ РёРЅС„РѕСЂРјР°С†РёРё Рѕ Р»СѓС‡Рµ РґР»СЏ РѕС‚Р»Р°РґРєРё
 struct DebugRay {
     glm::vec3 origin;
     glm::vec3 direction;
     glm::vec3 hitPoint;
     float distance;
-    bool hit;           // true = пересек объект (тень), false = достиг пола/света
+    bool hit;           // true = РїРµСЂРµСЃРµРє РѕР±СЉРµРєС‚ (С‚РµРЅСЊ), false = РґРѕСЃС‚РёРі РїРѕР»Р°/СЃРІРµС‚Р°
     int rayId;
-    int cellX, cellZ;   // Координаты клетки, для которой пускался луч
-    int cornerIndex;    // Индекс угла (-1 для центра, 0-3 для углов)
-    int subCellX, subCellZ; // Координаты подклетки (-1 если не subdivided)
-    bool isSubdivided;  // Является ли луч частью подразбиения
-    bool centerCheckPassed; // Для адаптивных режимов: прошел ли проверку центра
+    int cellX, cellZ;   // РљРѕРѕСЂРґРёРЅР°С‚С‹ РєР»РµС‚РєРё, РґР»СЏ РєРѕС‚РѕСЂРѕР№ РїСѓСЃРєР°Р»СЃСЏ Р»СѓС‡
+    int cornerIndex;    // РРЅРґРµРєСЃ СѓРіР»Р° (-1 РґР»СЏ С†РµРЅС‚СЂР°, 0-3 РґР»СЏ СѓРіР»РѕРІ)
+    int subCellX, subCellZ; // РљРѕРѕСЂРґРёРЅР°С‚С‹ РїРѕРґРєР»РµС‚РєРё (-1 РµСЃР»Рё РЅРµ subdivided)
+    bool isSubdivided;  // РЇРІР»СЏРµС‚СЃСЏ Р»Рё Р»СѓС‡ С‡Р°СЃС‚СЊСЋ РїРѕРґСЂР°Р·Р±РёРµРЅРёСЏ
+    bool centerCheckPassed; // Р”Р»СЏ Р°РґР°РїС‚РёРІРЅС‹С… СЂРµР¶РёРјРѕРІ: РїСЂРѕС€РµР» Р»Рё РїСЂРѕРІРµСЂРєСѓ С†РµРЅС‚СЂР°
 
-    // Тип луча для отладки
+    // РўРёРї Р»СѓС‡Р° РґР»СЏ РѕС‚Р»Р°РґРєРё
     enum RayType {
-        RAY_CENTER = 0,         // Центральный луч клетки
-        RAY_CORNER = 1,         // Угловой луч клетки
-        RAY_SUB_CENTER = 2,     // Центральный луч подклетки
-        RAY_SUB_CORNER = 3      // Угловой луч подклетки
+        RAY_CENTER = 0,         // Р¦РµРЅС‚СЂР°Р»СЊРЅС‹Р№ Р»СѓС‡ РєР»РµС‚РєРё
+        RAY_CORNER = 1,         // РЈРіР»РѕРІРѕР№ Р»СѓС‡ РєР»РµС‚РєРё
+        RAY_SUB_CENTER = 2,     // Р¦РµРЅС‚СЂР°Р»СЊРЅС‹Р№ Р»СѓС‡ РїРѕРґРєР»РµС‚РєРё
+        RAY_SUB_CORNER = 3      // РЈРіР»РѕРІРѕР№ Р»СѓС‡ РїРѕРґРєР»РµС‚РєРё
     } rayType;
 
     DebugRay() : origin(0.0f), direction(0.0f), hitPoint(0.0f),
@@ -43,18 +43,18 @@ struct DebugRay {
 
 struct ShadowSample {
     bool computed;
-    float value;        // 0.0 = в тени, 1.0 = на свету
-    glm::vec3 position; // Позиция клетки (центр)
-    int cellX, cellZ;   // Координаты клетки в сетке
+    float value;        // 0.0 = РІ С‚РµРЅРё, 1.0 = РЅР° СЃРІРµС‚Сѓ
+    glm::vec3 position; // РџРѕР·РёС†РёСЏ РєР»РµС‚РєРё (С†РµРЅС‚СЂ)
+    int cellX, cellZ;   // РљРѕРѕСЂРґРёРЅР°С‚С‹ РєР»РµС‚РєРё РІ СЃРµС‚РєРµ
 
-    // Для градиентного режима
-    float cornerShadows[4]; // Тени для 4 углов
-    bool useGradient;       // Использовать ли градиент
+    // Р”Р»СЏ РіСЂР°РґРёРµРЅС‚РЅРѕРіРѕ СЂРµР¶РёРјР°
+    float cornerShadows[4]; // РўРµРЅРё РґР»СЏ 4 СѓРіР»РѕРІ
+    bool useGradient;       // РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ Р»Рё РіСЂР°РґРёРµРЅС‚
 
-    // Для subdivided режимов - хранение значений подклеток
-    std::vector<std::vector<float>> subCellValues; // 10x10 сетка значений теней
+    // Р”Р»СЏ subdivided СЂРµР¶РёРјРѕРІ - С…СЂР°РЅРµРЅРёРµ Р·РЅР°С‡РµРЅРёР№ РїРѕРґРєР»РµС‚РѕРє
+    std::vector<std::vector<float>> subCellValues; // 10x10 СЃРµС‚РєР° Р·РЅР°С‡РµРЅРёР№ С‚РµРЅРµР№
 
-    // Для адаптивных режимов: был ли центр освещён
+    // Р”Р»СЏ Р°РґР°РїС‚РёРІРЅС‹С… СЂРµР¶РёРјРѕРІ: Р±С‹Р» Р»Рё С†РµРЅС‚СЂ РѕСЃРІРµС‰С‘РЅ
     bool centerWasLit;
 
     ShadowSample() : computed(false), value(1.0f), position(0.0f), cellX(0), cellZ(0),
@@ -62,7 +62,7 @@ struct ShadowSample {
         for (int i = 0; i < 4; i++) cornerShadows[i] = 1.0f;
     }
 
-    // Безопасный доступ к подклеткам
+    // Р‘РµР·РѕРїР°СЃРЅС‹Р№ РґРѕСЃС‚СѓРї Рє РїРѕРґРєР»РµС‚РєР°Рј
     bool hasSubCells() const { return !subCellValues.empty(); }
 
     void initSubCells() {
@@ -92,31 +92,77 @@ struct ShadowSample {
 
 struct BoundingSphere {
     glm::vec3 center;
-    float radius;
+    float baseRadius;      // Р‘Р°Р·РѕРІС‹Р№ СЂР°РґРёСѓСЃ (РѕСЂРёРіРёРЅР°Р»СЊРЅС‹Р№ СЂР°Р·РјРµСЂ РѕР±СЉРµРєС‚Р°)
+    float currentRadius;   // Р Р°РґРёСѓСЃ СЃ СѓС‡С‘С‚РѕРј РёСЃС‚РѕС‡РЅРёРєР° СЃРІРµС‚Р°
 
-    BoundingSphere() : center(0.0f), radius(0.0f) {}
-    BoundingSphere(const glm::vec3& c, float r) : center(c), radius(r) {}
+    BoundingSphere() : center(0.0f), baseRadius(0.0f), currentRadius(0.0f) {}
+    BoundingSphere(const glm::vec3& c, float r) : center(c), baseRadius(r), currentRadius(r) {}
+
+    // РћР±РЅРѕРІРёС‚СЊ СЂР°РґРёСѓСЃ РІ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ РёСЃС‚РѕС‡РЅРёРєР° СЃРІРµС‚Р°
+    void updateRadius(LightType lightType, const glm::vec3& lightPos,
+        const glm::vec3& lightDir, float maxDistance = 20.0f) {
+
+        switch (lightType) {
+        case LightType::Directional:
+            // РќР°РїСЂР°РІР»РµРЅРЅС‹Р№ СЃРІРµС‚ - СЂРµР·РєРёРµ С‚РµРЅРё
+            currentRadius = baseRadius * 0.7f;
+            break;
+
+        case LightType::Points:
+        {
+            float distance = glm::distance(center, lightPos);
+            // Р¤РѕСЂРјСѓР»Р°: R = R_base Г— (1.0 + (dist/maxDist) Г— 1.5)
+            float blurFactor = 1.0f + (distance / maxDistance) * 1.5f;
+            blurFactor = glm::clamp(blurFactor, 0.8f, 2.5f);
+            currentRadius = baseRadius * blurFactor;
+            break;
+        }
+
+        case LightType::Spot:
+        {
+            float distance = glm::distance(center, lightPos);
+            // Р’РµРєС‚РѕСЂ РѕС‚ РѕР±СЉРµРєС‚Р° Рє РёСЃС‚РѕС‡РЅРёРєСѓ СЃРІРµС‚Р°
+            glm::vec3 toLight = glm::normalize(lightPos - center);
+            // РЈРіРѕР» РјРµР¶РґСѓ РЅР°РїСЂР°РІР»РµРЅРёРµРј Рє СЃРІРµС‚Сѓ Рё РЅР°РїСЂР°РІР»РµРЅРёРµРј РїСЂРѕР¶РµРєС‚РѕСЂР°
+            float angleDot = glm::dot(toLight, lightDir);
+            float angleFactor = glm::clamp(angleDot, 0.3f, 1.0f);
+
+            // Р¤РѕСЂРјСѓР»Р°: R = R_base Г— (1.0 + dist/20) Г— (1.0 - angleГ—0.5)
+            float blurFactor = 1.0f + (distance / maxDistance) * 1.2f;
+            blurFactor *= (1.0f - angleFactor * 0.5f);
+            blurFactor = glm::clamp(blurFactor, 0.7f, 2.0f);
+
+            currentRadius = baseRadius * blurFactor;
+            break;
+        }
+        }
+    }
 };
 
 class ShadowMapper {
 public:
-    // Режимы трассировки теней
+    // Р РµР¶РёРјС‹ С‚СЂР°СЃСЃРёСЂРѕРІРєРё С‚РµРЅРµР№
     enum ShadowTraceMode {
-        TRACE_CENTER = 0,           // 1 луч в центр клетки (бинарный результат)
-        TRACE_CORNERS = 1,          // 4 луча по углам клетки + градиент
-        TRACE_CENTER_SUBDIVIDED = 2, // Адаптивный: центр освещён? -> вся клетка свет, иначе разбиение 10x10 с лучами в центры (бинарно)
-        TRACE_CORNERS_SUBDIVIDED = 3 // Адаптивный: центр освещён? -> вся клетка свет, иначе разбиение 10x10 с 4 лучами по углам (градиент)
+        TRACE_CENTER = 0,           // 1 Р»СѓС‡ РІ С†РµРЅС‚СЂ РєР»РµС‚РєРё (Р±РёРЅР°СЂРЅС‹Р№ СЂРµР·СѓР»СЊС‚Р°С‚)
+        TRACE_CORNERS = 1,          // 4 Р»СѓС‡Р° РїРѕ СѓРіР»Р°Рј РєР»РµС‚РєРё + РіСЂР°РґРёРµРЅС‚
+        TRACE_CENTER_SUBDIVIDED = 2, // РђРґР°РїС‚РёРІРЅС‹Р№: С†РµРЅС‚СЂ РѕСЃРІРµС‰С‘РЅ? -> РІСЃСЏ РєР»РµС‚РєР° СЃРІРµС‚, РёРЅР°С‡Рµ СЂР°Р·Р±РёРµРЅРёРµ 10x10 СЃ Р»СѓС‡Р°РјРё РІ С†РµРЅС‚СЂС‹ (Р±РёРЅР°СЂРЅРѕ)
+        TRACE_CORNERS_SUBDIVIDED = 3 // РђРґР°РїС‚РёРІРЅС‹Р№: С†РµРЅС‚СЂ РѕСЃРІРµС‰С‘РЅ? -> РІСЃСЏ РєР»РµС‚РєР° СЃРІРµС‚, РёРЅР°С‡Рµ СЂР°Р·Р±РёРµРЅРёРµ 10x10 СЃ 4 Р»СѓС‡Р°РјРё РїРѕ СѓРіР»Р°Рј (РіСЂР°РґРёРµРЅС‚)
     };
-
+    void updateSpheresRadius(LightType lightType, const glm::vec3& lightPos,
+        const glm::vec3& lightDirection) {
+        for (auto& sphere : m_objectSpheres) {
+            sphere.updateRadius(lightType, lightPos, lightDirection);
+        }
+    }
 private:
-    int m_gridWidth;        // Количество клеток в игровой сетке
+    int m_gridWidth;        // РљРѕР»РёС‡РµСЃС‚РІРѕ РєР»РµС‚РѕРє РІ РёРіСЂРѕРІРѕР№ СЃРµС‚РєРµ
     int m_gridDepth;
     float m_cellSize;
     float m_groundHeight;
-    int m_strideX;          // Шаг по X
-    int m_strideZ;          // Шаг по Z
-    int m_totalCellsX;      // Всего клеток по X
-    int m_totalCellsZ;      // Всего клеток по Z
+    int m_strideX;          // РЁР°Рі РїРѕ X
+    int m_strideZ;          // РЁР°Рі РїРѕ Z
+    int m_totalCellsX;      // Р’СЃРµРіРѕ РєР»РµС‚РѕРє РїРѕ X
+    int m_totalCellsZ;      // Р’СЃРµРіРѕ РєР»РµС‚РѕРє РїРѕ Z
 
     std::vector<std::vector<ShadowSample>> m_shadowGrid;
 
@@ -128,15 +174,15 @@ private:
     std::vector<BoundingSphere> m_objectSpheres;
     std::function<bool(const struct Ray&, float&, glm::vec3&)> m_intersectCallback;
 
-    // Режим трассировки
+    // Р РµР¶РёРј С‚СЂР°СЃСЃРёСЂРѕРІРєРё
     ShadowTraceMode m_shadowTraceMode;
 
-    // ===== ОТЛАДОЧНЫЕ ЛУЧИ =====
+    // ===== РћРўР›РђР”РћР§РќР«Р• Р›РЈР§Р =====
     std::vector<DebugRay> m_debugRays;
     bool m_recordDebugRays;
     int m_nextRayId;
 
-    // Вспомогательные методы
+    // Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ РјРµС‚РѕРґС‹
     glm::vec3 getCellCenter(int cellX, int cellZ) const;
     glm::vec3 getCornerWorldPosition(int cellX, int cellZ, int cornerIndex) const;
     glm::vec3 getSubCellCenter(int cellX, int cellZ, int subX, int subZ) const;
@@ -147,11 +193,11 @@ private:
     float computeCornerShadow(const glm::vec3& cornerPos, int& hitCellX, int& hitCellZ, float& hitDistance);
     void computeCellGradient(ShadowSample& sample, int cellX, int cellZ);
 
-    // Методы для subdivided режимов (адаптивные)
+    // РњРµС‚РѕРґС‹ РґР»СЏ subdivided СЂРµР¶РёРјРѕРІ (Р°РґР°РїС‚РёРІРЅС‹Рµ)
     void computeCellCenterSubdivided(ShadowSample& sample, int cellX, int cellZ);
     void computeCellCornersSubdivided(ShadowSample& sample, int cellX, int cellZ);
 
-    // Инициализация подклеток для всех клеток
+    // РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ РїРѕРґРєР»РµС‚РѕРє РґР»СЏ РІСЃРµС… РєР»РµС‚РѕРє
     void initAllSubCells();
 
 public:
@@ -170,29 +216,29 @@ public:
     void clearObjectBounds();
     void setIntersectCallback(std::function<bool(const struct Ray&, float&, glm::vec3&)> callback);
 
-    // Управление режимом трассировки
+    // РЈРїСЂР°РІР»РµРЅРёРµ СЂРµР¶РёРјРѕРј С‚СЂР°СЃСЃРёСЂРѕРІРєРё
     void setShadowTraceMode(ShadowTraceMode mode);
     ShadowTraceMode getShadowTraceMode() const { return m_shadowTraceMode; }
 
-    // Получить строковое имя режима
+    // РџРѕР»СѓС‡РёС‚СЊ СЃС‚СЂРѕРєРѕРІРѕРµ РёРјСЏ СЂРµР¶РёРјР°
     static const char* getModeName(ShadowTraceMode mode);
     const char* getCurrentModeName() const { return getModeName(m_shadowTraceMode); }
 
-    // Главный метод - вычисляет тени для всех клеток
+    // Р“Р»Р°РІРЅС‹Р№ РјРµС‚РѕРґ - РІС‹С‡РёСЃР»СЏРµС‚ С‚РµРЅРё РґР»СЏ РІСЃРµС… РєР»РµС‚РѕРє
     void computeShadows();
 
-    // Получить значение тени для клетки по координатам
+    // РџРѕР»СѓС‡РёС‚СЊ Р·РЅР°С‡РµРЅРёРµ С‚РµРЅРё РґР»СЏ РєР»РµС‚РєРё РїРѕ РєРѕРѕСЂРґРёРЅР°С‚Р°Рј
     float getShadowAtCell(int cellX, int cellZ) const;
 
-    // Получить значение тени с градиентом (для режимов с градиентом)
+    // РџРѕР»СѓС‡РёС‚СЊ Р·РЅР°С‡РµРЅРёРµ С‚РµРЅРё СЃ РіСЂР°РґРёРµРЅС‚РѕРј (РґР»СЏ СЂРµР¶РёРјРѕРІ СЃ РіСЂР°РґРёРµРЅС‚РѕРј)
     float getShadowAtCellGradient(int cellX, int cellZ, float& outR, float& outG, float& outB) const;
     glm::vec3 getShadowColorAtCell(int cellX, int cellZ) const;
 
-    // Получить значение тени для точки в мире
+    // РџРѕР»СѓС‡РёС‚СЊ Р·РЅР°С‡РµРЅРёРµ С‚РµРЅРё РґР»СЏ С‚РѕС‡РєРё РІ РјРёСЂРµ
     float getShadowAtPoint(const glm::vec3& point) const;
     float getShadowAtWorldPos(float x, float z) const;
 
-    // Получить цвет тени для точки (с учётом градиента)
+    // РџРѕР»СѓС‡РёС‚СЊ С†РІРµС‚ С‚РµРЅРё РґР»СЏ С‚РѕС‡РєРё (СЃ СѓС‡С‘С‚РѕРј РіСЂР°РґРёРµРЅС‚Р°)
     glm::vec3 getShadowColorAtPoint(const glm::vec3& point) const;
 
     const std::vector<std::vector<ShadowSample>>& getShadowGrid() const { return m_shadowGrid; }
@@ -204,17 +250,17 @@ public:
 
     bool isInGridBounds(int x, int z) const;
 
-    // ===== ОТЛАДОЧНЫЕ МЕТОДЫ ДЛЯ ЛУЧЕЙ =====
+    // ===== РћРўР›РђР”РћР§РќР«Р• РњР•РўРћР”Р« Р”Р›РЇ Р›РЈР§Р•Р™ =====
     void enableDebugRays(bool enable) { m_recordDebugRays = enable; }
     bool isDebugRaysEnabled() const { return m_recordDebugRays; }
     void clearDebugRays() { m_debugRays.clear(); m_nextRayId = 0; }
     const std::vector<DebugRay>& getDebugRays() const { return m_debugRays; }
     std::vector<DebugRay> getDebugRays() { return m_debugRays; }
 
-    // Получить лучи по типу
+    // РџРѕР»СѓС‡РёС‚СЊ Р»СѓС‡Рё РїРѕ С‚РёРїСѓ
     std::vector<DebugRay> getRaysByType(DebugRay::RayType type) const;
-    std::vector<DebugRay> getHitRays() const;      // Лучи, которые попали в объекты
-    std::vector<DebugRay> getMissRays() const;     // Лучи, которые достигли света
+    std::vector<DebugRay> getHitRays() const;      // Р›СѓС‡Рё, РєРѕС‚РѕСЂС‹Рµ РїРѕРїР°Р»Рё РІ РѕР±СЉРµРєС‚С‹
+    std::vector<DebugRay> getMissRays() const;     // Р›СѓС‡Рё, РєРѕС‚РѕСЂС‹Рµ РґРѕСЃС‚РёРіР»Рё СЃРІРµС‚Р°
     void setUseSpheres(bool use) { m_useSpheres = use; }
     bool getUseSpheres() const { return m_useSpheres; }
     void setGroundHeight(float height) { m_groundHeight = height; }
@@ -226,7 +272,7 @@ private:
         int cellX, int cellZ, int cornerIndex, int subCellX, int subCellZ,
         bool isSubdivided, bool centerCheckPassed, DebugRay::RayType rayType);
 
-    // Перегруженный метод для удобства
+    // РџРµСЂРµРіСЂСѓР¶РµРЅРЅС‹Р№ РјРµС‚РѕРґ РґР»СЏ СѓРґРѕР±СЃС‚РІР°
     void recordRay(const glm::vec3& origin, const glm::vec3& direction,
         const glm::vec3& hitPoint, float distance, bool hit,
         int cellX, int cellZ, int cornerIndex = -1, int subCellX = -1, int subCellZ = -1) {
