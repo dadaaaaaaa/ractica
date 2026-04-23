@@ -18,7 +18,7 @@ ShadowMapper::ShadowMapper()
     , m_lightPos(0.0f, 5.0f, 0.0f)
     , m_lightDirection(1.0f, 0.2f, 0.5f)
     , m_lightColor(0.9f, 0.85f, 0.75f)
-    , m_shadowTraceMode(TRACE_CENTER)
+    , m_shadowTraceMode(TRACE_CORNERS_SUBDIVIDED)
     , m_recordDebugRays(false)
     , m_nextRayId(0)
     , m_useSpheres(false)  // <-- ДОБАВИТЬ
@@ -43,7 +43,7 @@ ShadowMapper::ShadowMapper(int width, int depth, float cellSize, float groundHei
     , m_lightPos(lightPos)
     , m_lightDirection(glm::normalize(lightDirection))
     , m_lightColor(lightColor)
-    , m_shadowTraceMode(TRACE_CENTER)
+    , m_shadowTraceMode(TRACE_CORNERS_SUBDIVIDED)
     , m_recordDebugRays(false)
     , m_nextRayId(0)
 {
@@ -59,7 +59,60 @@ const char* ShadowMapper::getModeName(ShadowTraceMode mode) {
     default: return "UNKNOWN";
     }
 }
+float ShadowMapper::getShadowAtPointWithSubdivision(const glm::vec3& point, ShadowMapper* otherMapper) const
+{
+    float halfWidth = m_gridWidth * m_cellSize / 2.0f;
+    float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 
+    int cellX = (int)((point.x + halfWidth) / m_cellSize);
+    int cellZ = (int)((point.z + halfDepth) / m_cellSize);
+
+    cellX = std::max(0, std::min(cellX, m_gridWidth - 1));
+    cellZ = std::max(0, std::min(cellZ, m_gridDepth - 1));
+
+    int shadowX = cellX / m_strideX;
+    int shadowZ = cellZ / m_strideZ;
+
+    if (shadowX < 0 || shadowX >= m_totalCellsX || shadowZ < 0 || shadowZ >= m_totalCellsZ) {
+        return 1.0f;
+    }
+
+    const ShadowSample& sample = m_shadowGrid[shadowZ][shadowX];
+
+    // Если есть подклетки - интерполируем
+    if (sample.hasSubCells()) {
+        // Вычисляем позицию внутри клетки (0..1)
+        float cellStartX = (shadowX * m_strideX) * m_cellSize - halfWidth;
+        float cellStartZ = (shadowZ * m_strideZ) * m_cellSize - halfDepth;
+        float cellWidth = m_strideX * m_cellSize;
+        float cellDepth = m_strideZ * m_cellSize;
+
+        float localX = (point.x - cellStartX) / cellWidth;
+        float localZ = (point.z - cellStartZ) / cellDepth;
+
+        // Clamp to [0, 1)
+        localX = std::max(0.0f, std::min(0.999f, localX));
+        localZ = std::max(0.0f, std::min(0.999f, localZ));
+
+        int subX = (int)(localX * SHADOW_SUBDIVISION_SIZE);
+        int subZ = (int)(localZ * SHADOW_SUBDIVISION_SIZE);
+
+        subX = std::min(subX, SHADOW_SUBDIVISION_SIZE - 1);
+        subZ = std::min(subZ, SHADOW_SUBDIVISION_SIZE - 1);
+
+        float subValue = sample.subCellValues[subZ][subX];
+
+        // Если есть другой mapper (например, для snake или food), тоже интерполируем
+        if (otherMapper) {
+            float otherValue = otherMapper->getShadowAtPointWithSubdivision(point, nullptr);
+            return std::min(subValue, otherValue);
+        }
+
+        return subValue;
+    }
+
+    return sample.value;
+}
 std::vector<DebugRay> ShadowMapper::getRaysByType(DebugRay::RayType type) const {
     std::vector<DebugRay> result;
     for (const auto& ray : m_debugRays) {

@@ -202,6 +202,7 @@ private:
 
 public:
     ShadowMapper();
+    float getShadowAtPointWithSubdivision(const glm::vec3& point, ShadowMapper* otherMapper = nullptr) const;
     ShadowMapper(int width, int depth, float cellSize, float groundHeight,
         const glm::vec3& lightDirection, const glm::vec3& lightColor,
         LightType lightType, const glm::vec3& lightPos,
