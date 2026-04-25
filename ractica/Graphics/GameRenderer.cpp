@@ -68,7 +68,7 @@ GameRenderer::GameRenderer()
     , m_floorTileSizeZ(0.1f)
     , m_floorUseSubdivision(false)
     , m_floorSubdivisionLevel(10)
-    , m_useCornerTrace(DEFAULT_SHADOW_MODE == 3)  // CORNERS или CORNERS_SUBDIVIDED
+    , m_useCornerTrace(DEFAULT_SHADOW_MODE == 2)  // CORNERS или CORNERS_SUBDIVIDED
     , m_currentShadowMode(static_cast<ShadowMapper::ShadowTraceMode>(DEFAULT_SHADOW_MODE))
 {
     m_lightType = LightType::Points;
@@ -78,6 +78,64 @@ GameRenderer::GameRenderer()
 
     // Устанавливаем режим из константы
     setShadowTraceModeByIndex(DEFAULT_SHADOW_MODE);
+}
+void GameRenderer::drawDebugSpheres() {
+    if (!m_debugNormalsEnabled) return;  // Используем тот же флаг
+
+    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
+
+    const GameObjects& objects = g_game.getGameObjects();
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+    // Рисуем сферы для деревьев (красные, полупрозрачные)
+    glColor4f(1.0f, 0.0f, 0.0f, 0.3f);
+
+    for (const auto& obstacle : objects.getObstacles()) {
+        for (const auto& block : obstacle.blocks) {
+            float x = block.x * m_cellSize - offsetX;
+            float z = block.z * m_cellSize - offsetZ;
+            float y = block.y * m_cellSize;
+
+            // Должна быть такая же сфера, как в rayIntersectsModel
+            // Вычисляем bounding sphere модели
+            if (!m_treeModel.vertices.empty()) {
+                // Находим границы модели в локальных координатах
+                float minX = m_treeModel.vertices[0].position.x;
+                float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
+                for (const auto& v : m_treeModel.vertices) {
+                    minX = std::min(minX, v.position.x);
+                    maxX = std::max(maxX, v.position.x);
+                    minY = std::min(minY, v.position.y);
+                    maxY = std::max(maxY, v.position.y);
+                    minZ = std::min(minZ, v.position.z);
+                    maxZ = std::max(maxZ, v.position.z);
+                }
+
+                float radius = std::max({ (maxX - minX) * 0.5f,
+                                         (maxY - minY) * 0.5f,
+                                         (maxZ - minZ) * 0.5f }) * (m_cellSize * 1.2f);
+
+                glm::vec3 center(x + (minX + maxX) * 0.5f * (m_cellSize * 1.2f),
+                    y + (minY + maxY) * 0.5f * (m_cellSize * 1.2f),
+                    z + (minZ + maxZ) * 0.5f * (m_cellSize * 1.2f));
+
+                // Рисуем сферу
+                GLUquadric* quad = gluNewQuadric();
+                glPushMatrix();
+                glTranslatef(center.x, center.y, center.z);
+                gluSphere(quad, radius, 16, 16);
+                glPopMatrix();
+                gluDeleteQuadric(quad);
+            }
+        }
+    }
+
+    glPopAttrib();
+    glEnable(GL_DEPTH_TEST);
 }
 void GameRenderer::toggleUseExactModels() {
     m_useExactModels = !m_useExactModels;
@@ -89,16 +147,22 @@ void GameRenderer::toggleUseExactModels() {
     m_foodShadowsDirty = true;
 }
 // Добавьте эту функцию в GameRenderer.cpp
-bool GameRenderer::rayIntersectsModel(const Ray& ray, const Model& model, const glm::mat4& transform, float& hitDistance, glm::vec3& hitPoint) {
+bool GameRenderer::rayIntersectsModel(const Ray& ray, const Model& model,
+    const glm::mat4& transform,
+    float& hitDistance, glm::vec3& hitPoint) {
     if (model.vertices.empty()) return false;
 
-    // Быстрая проверка bounding box модели
+    // Статический счётчик для ограничения вывода
+    static int debugCount = 0;
+    bool doDebug = (debugCount < 20);  // Первые 20 проверок
+
+    // Вычисляем bounding sphere
     float minX = 999999.0f, maxX = -999999.0f;
     float minY = 999999.0f, maxY = -999999.0f;
     float minZ = 999999.0f, maxZ = -999999.0f;
 
     for (const auto& vert : model.vertices) {
-        glm::vec3 worldPos = glm::vec3(transform * glm::vec4(vert.position, 1.0f));
+        glm::vec4 worldPos = transform * glm::vec4(vert.position, 1.0f);
         minX = std::min(minX, worldPos.x);
         maxX = std::max(maxX, worldPos.x);
         minY = std::min(minY, worldPos.y);
@@ -107,20 +171,44 @@ bool GameRenderer::rayIntersectsModel(const Ray& ray, const Model& model, const 
         maxZ = std::max(maxZ, worldPos.z);
     }
 
-    glm::vec3 boxMin(minX, minY, minZ);
-    glm::vec3 boxMax(maxX, maxY, maxZ);
+    glm::vec3 sphereCenter(
+        (minX + maxX) * 0.5f,
+        (minY + maxY) * 0.5f,
+        (minZ + maxZ) * 0.5f
+    );
 
-    float tMinBox, tMaxBox;
-    if (!rayIntersectsAABB(ray, boxMin, boxMax, tMinBox, tMaxBox)) {
-        return false; // Луч не попадает в bounding box модели
+    float radiusX = (maxX - minX) * 0.5f;
+    float radiusY = (maxY - minY) * 0.5f;
+    float radiusZ = (maxZ - minZ) * 0.5f;
+    float sphereRadius = std::max({ radiusX, radiusY, radiusZ });
+
+    if (doDebug) {
+        std::cout << "\n=== Ray-Model Test " << debugCount << " ===" << std::endl;
+        std::cout << "Sphere center: (" << sphereCenter.x << ", " << sphereCenter.y << ", " << sphereCenter.z << ")" << std::endl;
+        std::cout << "Sphere radius: " << sphereRadius << std::endl;
+        std::cout << "Ray origin: (" << ray.origin.x << ", " << ray.origin.y << ", " << ray.origin.z << ")" << std::endl;
+        std::cout << "Ray direction: (" << ray.direction.x << ", " << ray.direction.y << ", " << ray.direction.z << ")" << std::endl;
     }
 
-    // Если попал - проверяем треугольники
-    float closestHit = tMinBox;
-    glm::vec3 closestPoint;
-    bool hit = false;
+    // Проверка сферы
+    float tSphere;
+    bool sphereHit = rayIntersectsSphere(ray, sphereCenter, sphereRadius, tSphere);
 
+    if (doDebug) {
+        std::cout << "Sphere intersection: " << (sphereHit ? "YES at t=" : "NO") << tSphere << std::endl;
+    }
+
+    if (!sphereHit) return false;
+
+    if (doDebug) {
+        std::cout << "Testing triangles (total: " << model.vertices.size() / 3 << ")..." << std::endl;
+    }
+
+    // Проверка треугольников
+    float closestHit = 1000.0f;
+    bool hit = false;
     const float EPSILON = 0.000001f;
+    int triangleCheckCount = 0;
 
     for (size_t i = 0; i < model.vertices.size(); i += 3) {
         glm::vec3 v0_local = model.vertices[i].position;
@@ -153,14 +241,23 @@ bool GameRenderer::rayIntersectsModel(const Ray& ray, const Model& model, const 
 
         if (t > EPSILON && t < closestHit) {
             closestHit = t;
-            closestPoint = ray.pointAt(t);
+            hitPoint = ray.pointAt(t);
             hit = true;
+            triangleCheckCount++;
         }
+    }
+
+    if (doDebug) {
+        std::cout << "Triangle hits: " << triangleCheckCount << std::endl;
+        if (hit) {
+            std::cout << "HIT at distance: " << closestHit << std::endl;
+            std::cout << "Hit point: (" << hitPoint.x << ", " << hitPoint.y << ", " << hitPoint.z << ")" << std::endl;
+        }
+        debugCount++;
     }
 
     if (hit) {
         hitDistance = closestHit;
-        hitPoint = closestPoint;
     }
 
     return hit;
@@ -1063,7 +1160,8 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     drawBirds(objects.getBirds());
     drawLightSource();
     drawDebugNormals(objects);
-    
+    drawDebugNormals(objects);
+    drawDebugSpheres();  // Добавить после drawDebugNormals
     if (m_debugRaysEnabled && m_shadowMapEnabled) {
         drawDebugRaysIfEnabled();
     }
@@ -1094,9 +1192,9 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     m_foodShadow.setLightPos(m_lightPos);
     m_foodShadow.setLightDirection(m_lightDir);
 
-    // ========== СТАТИЧЕСКИЕ ТЕНИ (деревья, забор) ==========
+    // ========== СТАТИЧЕСКИЕ ТЕНИ (только деревья) ==========
     if (m_staticShadowsDirty) {
-        std::cout << "\n[STATIC SHADOWS] Computing..." << std::endl;
+        std::cout << "\n[STATIC SHADOWS - TREES ONLY] Computing..." << std::endl;
 
         m_staticShadow.clearObjectBounds();
         m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
@@ -1108,21 +1206,19 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         m_staticShadow.setUseSpheres(useSpheres);
 
         if (useSpheres) {
-            // Добавляем сферы для деревьев с БАЗОВЫМ радиусом
+            // Добавляем сферы ТОЛЬКО для деревьев
             std::vector<BoundingSphere> staticSpheres;
             for (const auto& obstacle : objects.getObstacles()) {
                 for (const auto& block : obstacle.blocks) {
                     float x = block.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
                     float z = block.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
                     float treeSize = m_cellSize * 1.5f;
-                    float baseRadius = treeSize * 0.7f;  // Базовый радиус
+                    float baseRadius = treeSize * 0.7f;
                     float y = treeSize / 2.0f;
                     staticSpheres.emplace_back(glm::vec3(x, y, z), baseRadius);
                 }
             }
             m_staticShadow.registerObjectBounds(staticSpheres);
-
-            // ОБНОВЛЯЕМ РАДИУСЫ С УЧЁТОМ ИСТОЧНИКА СВЕТА
             m_staticShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
         }
 
@@ -1130,7 +1226,8 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
                 float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-                HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
+                // Используем существующую функцию intersectScene, но модифицируем её ниже
+                HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ, true);
                 if (hit.hit && hit.distance > 0.01f) {
                     hitDist = hit.distance;
                     hitPoint = hit.point;
@@ -1144,94 +1241,13 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         m_staticShadowsDirty = false;
     }
 
-    // ========== ДИНАМИЧЕСКИЕ ТЕНИ (змейка) ==========
-    if (m_dynamicShadowsDirty) {
-        std::cout << "\n[DYNAMIC SHADOWS - SNAKE] Computing..." << std::endl;
+    // ========== ДИНАМИЧЕСКИЕ ТЕНИ (змейка) - ОТКЛЮЧЕНЫ ==========
+    m_dynamicShadow.clearObjectBounds();
+    m_dynamicShadowsDirty = false;
 
-        m_dynamicShadow.clearObjectBounds();
-
-        bool useSpheres = (m_currentShadowMode == ShadowMapper::TRACE_CENTER ||
-            m_currentShadowMode == ShadowMapper::TRACE_CORNERS);
-
-        m_dynamicShadow.setUseSpheres(useSpheres);
-
-        if (useSpheres) {
-            std::vector<BoundingSphere> snakeSpheres;
-            for (size_t i = 0; i < objects.getSnake().size(); i++) {
-                const auto& segment = objects.getSnake()[i];
-                float x = segment.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
-                float z = segment.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-                float baseRadius = m_cellSize * 0.6f;  // Базовый радиус
-                float y = 0.2f;
-                snakeSpheres.emplace_back(glm::vec3(x, y, z), baseRadius);
-            }
-            m_dynamicShadow.registerObjectBounds(snakeSpheres);
-
-            // ОБНОВЛЯЕМ РАДИУСЫ С УЧЁТОМ ИСТОЧНИКА СВЕТА
-            m_dynamicShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
-        }
-
-        m_dynamicShadow.setIntersectCallback(
-            [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
-                float offsetX = m_gridWidth * m_cellSize / 2.0f;
-                float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-                HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
-                if (hit.hit && hit.distance > 0.01f) {
-                    hitDist = hit.distance;
-                    hitPoint = hit.point;
-                    return true;
-                }
-                return false;
-            }
-        );
-
-        m_dynamicShadow.computeShadows();
-        m_dynamicShadowsDirty = false;
-    }
-
-    // ========== ТЕНИ ДЛЯ ЕДЫ ==========
-    if (m_foodShadowsDirty) {
-        std::cout << "\n[FOOD SHADOWS] Computing..." << std::endl;
-
-        m_foodShadow.clearObjectBounds();
-
-        bool useSpheres = (m_currentShadowMode == ShadowMapper::TRACE_CENTER ||
-            m_currentShadowMode == ShadowMapper::TRACE_CORNERS);
-
-        m_foodShadow.setUseSpheres(useSpheres);
-
-        if (useSpheres) {
-            std::vector<BoundingSphere> foodSpheres;
-            for (const auto& apple : objects.getFood()) {
-                float x = apple.x * m_cellSize - (m_gridWidth * m_cellSize / 2.0f);
-                float z = apple.z * m_cellSize - (m_gridDepth * m_cellSize / 2.0f);
-                float baseRadius = m_cellSize * 0.35f;  // Базовый радиус
-                float y = 0.15f;
-                foodSpheres.emplace_back(glm::vec3(x, y, z), baseRadius);
-            }
-            m_foodShadow.registerObjectBounds(foodSpheres);
-
-            // ОБНОВЛЯЕМ РАДИУСЫ С УЧЁТОМ ИСТОЧНИКА СВЕТА
-            m_foodShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
-        }
-
-        m_foodShadow.setIntersectCallback(
-            [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
-                float offsetX = m_gridWidth * m_cellSize / 2.0f;
-                float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-                HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
-                if (hit.hit && hit.distance > 0.01f) {
-                    hitDist = hit.distance;
-                    hitPoint = hit.point;
-                    return true;
-                }
-                return false;
-            }
-        );
-
-        m_foodShadow.computeShadows();
-        m_foodShadowsDirty = false;
-    }
+    // ========== ТЕНИ ДЛЯ ЕДЫ - ОТКЛЮЧЕНЫ ==========
+    m_foodShadow.clearObjectBounds();
+    m_foodShadowsDirty = false;
 }
 void GameRenderer::markFoodShadowsDirty() {
     m_foodShadowsDirty = true;
@@ -1834,7 +1850,7 @@ void GameRenderer::drawRay(const DebugRay& ray, const glm::vec3& color) {
     // Реализация для отладки
 }
 
-HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ) {
+HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, bool treesOnly) {
     HitInfo closestHit;
     closestHit.hit = false;
     closestHit.distance = 1000.0f;
@@ -1855,7 +1871,7 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // ===== ДЕРЕВЬЯ - сферы =====
+    // ===== ДЕРЕВЬЯ (всегда проверяем) =====
     for (const auto& obstacle : objects.getObstacles()) {
         for (const auto& block : obstacle.blocks) {
             float x = block.x * m_cellSize - offsetX;
@@ -1863,7 +1879,6 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
             float y = block.y * m_cellSize;
 
             if (m_useExactModels && !m_treeModel.vertices.empty()) {
-                // Точная модель (медленно, но точно)
                 glm::mat4 transform = glm::mat4(1.0f);
                 transform = glm::translate(transform, glm::vec3(x, y, z));
                 transform = glm::scale(transform, glm::vec3(m_cellSize * 1.2f));
@@ -1880,7 +1895,6 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
                 }
             }
             else {
-                // Сфера для кроны дерева (основная тень)
                 float foliageRadius = m_cellSize * 0.6f;
                 float foliageY = y + m_cellSize * 0.8f;
                 glm::vec3 foliageCenter(x, foliageY, z);
@@ -1895,7 +1909,6 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
                     }
                 }
 
-                // Маленькая сфера для ствола (у основания)
                 float trunkRadius = m_cellSize * 0.15f;
                 float trunkY = y + m_cellSize * 0.3f;
                 glm::vec3 trunkCenter(x, trunkY, z);
@@ -1913,7 +1926,31 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // ===== ЗМЕЙКА - сферы для каждого сегмента =====
+    // Если treesOnly == true, пропускаем все остальные объекты
+    if (treesOnly) {
+        return closestHit;
+    }
+
+    // ===== ЗАБОР =====
+    float fenceRadius = m_cellSize * 0.2f;
+    for (const auto& fenceBlock : objects.getFenceBlocks()) {
+        float x = fenceBlock.x * m_cellSize - offsetX;
+        float z = fenceBlock.z * m_cellSize - offsetZ;
+        float y = m_floorHeight + m_cellSize * 0.25f;
+
+        glm::vec3 fenceCenter(x, y, z);
+        float tFence;
+        if (rayIntersectsSphere(ray, fenceCenter, fenceRadius, tFence)) {
+            if (tFence > 0.01f && tFence < closestHit.distance) {
+                closestHit.hit = true;
+                closestHit.distance = tFence;
+                closestHit.point = ray.pointAt(tFence);
+                closestHit.normal = glm::normalize(closestHit.point - fenceCenter);
+            }
+        }
+    }
+
+    // ===== ЗМЕЙКА =====
     const auto& snake = objects.getSnake();
     float segmentRadius = m_cellSize * 0.35f;
 
@@ -1959,7 +1996,6 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
             }
         }
         else {
-            // Сфера для сегмента змейки
             glm::vec3 segmentCenter(x, y, z);
             float tSegment;
             if (rayIntersectsSphere(ray, segmentCenter, segmentRadius, tSegment)) {
@@ -1973,26 +2009,7 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // ===== ЗАБОР - сферы для столбов =====
-    float fenceRadius = m_cellSize * 0.2f;
-    for (const auto& fenceBlock : objects.getFenceBlocks()) {
-        float x = fenceBlock.x * m_cellSize - offsetX;
-        float z = fenceBlock.z * m_cellSize - offsetZ;
-        float y = m_floorHeight + m_cellSize * 0.25f;
-
-        glm::vec3 fenceCenter(x, y, z);
-        float tFence;
-        if (rayIntersectsSphere(ray, fenceCenter, fenceRadius, tFence)) {
-            if (tFence > 0.01f && tFence < closestHit.distance) {
-                closestHit.hit = true;
-                closestHit.distance = tFence;
-                closestHit.point = ray.pointAt(tFence);
-                closestHit.normal = glm::normalize(closestHit.point - fenceCenter);
-            }
-        }
-    }
-
-    // ===== ЕДА (яблоки) - сферы =====
+    // ===== ЕДА =====
     float foodRadius = m_cellSize * 0.35f;
     for (const auto& apple : objects.getFood()) {
         float x = apple.x * m_cellSize - offsetX;
@@ -2028,7 +2045,7 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // ===== ЦВЕТЫ - маленькие сферы =====
+    // ===== ЦВЕТЫ =====
     float flowerRadius = m_cellSize * 0.12f;
     for (const auto& flower : objects.getFlowerSprites()) {
         glm::vec3 flowerPos = flower.position;
@@ -2043,7 +2060,7 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // ===== ПТИЦЫ - сферы (опционально) =====
+    // ===== ПТИЦЫ =====
     float birdRadius = m_cellSize * 0.2f;
     for (const auto& bird : objects.getBirds()) {
         float tBird;
@@ -2057,7 +2074,7 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // ===== ОБЛАКА - большие сферы =====
+    // ===== ОБЛАКА =====
     float cloudRadius = m_cellSize * 0.8f;
     for (const auto& cloud : objects.getCloudSprites()) {
         float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
@@ -2104,34 +2121,6 @@ glm::vec3 GameRenderer::traceRay(const Ray& ray, const GameObjects& objects, flo
     return skyColor;
 }
 
-bool GameRenderer::rayIntersectsAABB(const Ray& ray, const glm::vec3& min, const glm::vec3& max, float& tMin, float& tMax) {
-    tMin = 0.0f;
-    tMax = 1000.0f;
-
-    for (int i = 0; i < 3; i++) {
-        float origin = ray.origin[i];
-        float dir = ray.direction[i];
-
-        if (abs(dir) < 1e-6f) {
-            if (origin < min[i] || origin > max[i]) {
-                return false;
-            }
-        }
-        else {
-            float t1 = (min[i] - origin) / dir;
-            float t2 = (max[i] - origin) / dir;
-
-            if (t1 > t2) std::swap(t1, t2);
-
-            tMin = glm::max(tMin, t1);
-            tMax = glm::min(tMax, t2);
-
-            if (tMin > tMax) return false;
-        }
-    }
-
-    return tMin > 0.0f;
-}
 
 bool GameRenderer::rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius, float& tHit) {
     glm::vec3 oc = ray.origin - center;

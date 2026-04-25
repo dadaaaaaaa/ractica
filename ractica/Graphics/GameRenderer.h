@@ -110,8 +110,9 @@ private:
     void setupTexture(GLuint textureID);
     void resetDepthState();
     void drawCube();
+    void drawDebugSpheres();
     void computeShadowsIfNeeded(const GameObjects& objects);
-    HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
+    HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, bool treesOnly = false);
     ShadowMapper::ShadowTraceMode m_currentShadowMode;
 public:
     void toggleAmbient();
