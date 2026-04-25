@@ -27,7 +27,12 @@
 #include "../Graphics/RayTracer.h"
 #include "Model.h"
 #include "ModelLoader.h"
-
+struct ModelBounds {
+    glm::vec3 center;
+    float radius;
+    glm::mat4 transform;
+    const Model* model;
+};
 class GameRenderer {
 public:
     GameRenderer();
@@ -115,6 +120,7 @@ private:
     HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, bool treesOnly = false);
     ShadowMapper::ShadowTraceMode m_currentShadowMode;
 public:
+
     void toggleAmbient();
     void toggleSpecular();
     void toggleShowAllRays();

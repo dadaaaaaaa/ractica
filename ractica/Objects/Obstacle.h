@@ -9,10 +9,6 @@ struct Obstacle {
 
     Obstacle(const Point& center) : center(center) {
         blocks.push_back(center);
-        blocks.push_back(Point(center.x + 1, center.y, center.z));
-        blocks.push_back(Point(center.x - 1, center.y, center.z));
-        blocks.push_back(Point(center.x, center.y, center.z + 1));
-        blocks.push_back(Point(center.x, center.y, center.z - 1));
     }
 
     bool contains(const Point& point) const {
