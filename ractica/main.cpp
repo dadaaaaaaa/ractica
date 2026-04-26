@@ -109,32 +109,39 @@ int main() {
             frameCount = 0;
             fpsUpdateTime = currentTime;
 
-            std::string title = "3D Snake Game";
-            if (fps > 0) {
-                title += " | FPS: " + std::to_string(static_cast<int>(fps));
+            std::stringstream ss;
+            ss << "3D Snake Game";
+
+            // Форматируем FPS
+            if (fps >= 10.0) {
+                ss << " | FPS: " << static_cast<int>(fps);
+            }
+            else if (fps >= 1.0) {
+                ss << " | FPS: " << std::fixed << std::setprecision(1) << fps;
+            }
+            else {
+                ss << " | FPS: " << std::fixed << std::setprecision(2) << fps;
             }
 
             GameState currentState = g_game.getGameState();
             if (currentState == PLAYING) {
-                title += " | Score: " + std::to_string(g_game.getScore());
+                ss << " | Score: " << g_game.getScore();
             }
             else if (currentState == PAUSED) {
-                title += " | PAUSED | Score: " + std::to_string(g_game.getScore());
+                ss << " | PAUSED | Score: " << g_game.getScore();
             }
             else if (currentState == GAME_OVER) {
-                title += " | GAME OVER | Score: " + std::to_string(g_game.getScore());
+                ss << " | GAME OVER | Score: " << g_game.getScore();
             }
 
-            glfwSetWindowTitle(window, title.c_str());
+            glfwSetWindowTitle(window, ss.str().c_str());
         }
-
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         g_game.render();
         glfwSwapBuffers(window);
 
         glfwPollEvents();
     }
-
     // Очистка ресурсов
     std::cout << "Cleaning up resources..." << std::endl;
     if (uiVAO) glDeleteVertexArrays(1, &uiVAO);
