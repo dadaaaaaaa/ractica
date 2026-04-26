@@ -220,10 +220,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="text.vs" />
-    <None Include="text.fs" />
-  </ItemGroup>
-  <ItemGroup>
     <Object Include="models\snake_body.obj">
       <Filter>Файлы ресурсов\models</Filter>
     </Object>
