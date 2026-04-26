@@ -1510,7 +1510,7 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
 
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-    
+
     for (const auto& obstacle : obstacles) {
         for (const auto& block : obstacle.blocks) {
             float x = block.x * m_cellSize - offsetX;
@@ -1518,7 +1518,8 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
             float z = block.z * m_cellSize - offsetZ;
 
             glPushMatrix();
-            glTranslatef(x, y, z);
+            // ИСПРАВЛЕНО: добавлен + m_cellSize * 0.5f для X и Z
+            glTranslatef(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f);
             glScalef(m_cellSize * 1.2f, m_cellSize * 1.2f, m_cellSize * 1.2f);
 
             if (m_treeModel.hasTexture && m_treeModel.textureID != 0) {
