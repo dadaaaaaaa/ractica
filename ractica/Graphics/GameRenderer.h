@@ -44,7 +44,9 @@ public:
     void setFloorTexture(const std::string& texturePath);
     void markDynamicShadowsDirty();
     void resetShadows();
-
+    HitInfo intersectTreesOnly(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
+    HitInfo intersectSnakeOnly(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
+    HitInfo intersectFoodOnly(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
     // Настройки
     void setRayTracingEnabled(bool enabled) { m_rayTracingEnabled = enabled; }
     void setShadowMapEnabled(bool enabled) { shadow_map = enabled; }
