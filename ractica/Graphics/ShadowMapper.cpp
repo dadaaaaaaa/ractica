@@ -189,14 +189,6 @@ void ShadowMapper::setGrid(int width, int depth, float cellSize, float groundHei
 
     float shadowCellSize = m_cellSize * m_strideX;
 
-    std::cout << "=== ShadowMapper Grid Setup ===" << std::endl;
-    std::cout << "Original grid cells: " << m_gridWidth << " x " << m_gridDepth << std::endl;
-    std::cout << "Stride: " << m_strideX << " x " << m_strideZ << std::endl;
-    std::cout << "Shadow grid cells: " << m_totalCellsX << " x " << m_totalCellsZ << std::endl;
-    std::cout << "Shadow cell size: " << shadowCellSize << std::endl;
-    std::cout << "Total shadow cells: " << (m_totalCellsX * m_totalCellsZ) << std::endl;
-    std::cout << "Trace mode: " << getModeName(m_shadowTraceMode) << std::endl;
-    std::cout << "===============================" << std::endl;
 
     // Инициализируем сетку теней
     m_shadowGrid.resize(m_totalCellsZ, std::vector<ShadowSample>(m_totalCellsX));
@@ -770,20 +762,46 @@ void ShadowMapper::computeShadows()
 {
     if (m_totalCellsX == 0 || m_totalCellsZ == 0) return;
 
+    // СТАТИЧЕСКИЕ ПЕРЕМЕННЫЕ ДЛЯ КОНТРОЛЯ ВЫВОДА
+    static ShadowTraceMode lastPrintedMode = TRACE_CENTER;
+    static int computeCount = 0;
+    static bool firstCompute = true;
+
+    computeCount++;
+
+    // Определяем, нужно ли выводить информацию
+    bool shouldPrintDetails = false;
+
+    // При первом вычислении
+    if (firstCompute) {
+        shouldPrintDetails = true;
+        firstCompute = false;
+    }
+    // При смене режима
+    else if (lastPrintedMode != m_shadowTraceMode) {
+        shouldPrintDetails = true;
+        lastPrintedMode = m_shadowTraceMode;
+    }
+
+
     auto startTime = std::chrono::high_resolution_clock::now();
 
     if (m_recordDebugRays) {
         clearDebugRays();
-        std::cout << "\n========== SHADOW COMPUTATION WITH DEBUG RAYS ==========" << std::endl;
-        std::cout << "Recording debug rays for shadow computation..." << std::endl;
+        if (shouldPrintDetails) {
+            std::cout << "\n========== SHADOW COMPUTATION WITH DEBUG RAYS ==========" << std::endl;
+            std::cout << "Recording debug rays for shadow computation..." << std::endl;
+        }
     }
 
-    std::cout << "\n=== SHADOW MAPPER: Computing shadows ===" << std::endl;
-    std::cout << "Original grid cells: " << m_gridWidth << " x " << m_gridDepth << std::endl;
-    std::cout << "Shadow grid cells: " << m_totalCellsX << " x " << m_totalCellsZ << std::endl;
-    std::cout << "Stride: " << m_strideX << " x " << m_strideZ << std::endl;
-    std::cout << "Total shadow cells: " << (m_totalCellsX * m_totalCellsZ) << std::endl;
-    std::cout << "Trace mode: " << getModeName(m_shadowTraceMode) << std::endl;
+    if (shouldPrintDetails) {
+        std::cout << "\n=== SHADOW MAPPER: Computing shadows ===" << std::endl;
+        std::cout << "Original grid cells: " << m_gridWidth << " x " << m_gridDepth << std::endl;
+        std::cout << "Shadow grid cells: " << m_totalCellsX << " x " << m_totalCellsZ << std::endl;
+        std::cout << "Stride: " << m_strideX << " x " << m_strideZ << std::endl;
+        std::cout << "Total shadow cells: " << (m_totalCellsX * m_totalCellsZ) << std::endl;
+        std::cout << "Trace mode: " << getModeName(m_shadowTraceMode) << std::endl;
+    }
 
     int shadowCount = 0;
     int totalCells = m_totalCellsX * m_totalCellsZ;
@@ -863,25 +881,27 @@ void ShadowMapper::computeShadows()
 
     float shadowPercent = (float)shadowCount / totalCells * 100.0f;
 
-    std::cout << "Cells in shadow (<50%): " << shadowCount << " / " << totalCells
-        << " (" << shadowPercent << "%)" << std::endl;
-    std::cout << "Time: " << durationMs << " ms" << std::endl;
+    if (shouldPrintDetails) {
+        std::cout << "Cells in shadow (<50%): " << shadowCount << " / " << totalCells
+            << " (" << shadowPercent << "%)" << std::endl;
+        std::cout << "Time: " << durationMs << " ms" << std::endl;
 
-    if (m_recordDebugRays) {
-        std::cout << "ACTUAL DEBUG RAYS RECORDED: " << raysRecorded << std::endl;
-        std::cout << "m_debugRays.size(): " << m_debugRays.size() << std::endl;
+        if (m_recordDebugRays) {
+            std::cout << "ACTUAL DEBUG RAYS RECORDED: " << raysRecorded << std::endl;
+            std::cout << "m_debugRays.size(): " << m_debugRays.size() << std::endl;
 
-        std::cout << "\n--- Ray Statistics ---" << std::endl;
-        std::cout << "Center rays: " << getRaysByType(DebugRay::RAY_CENTER).size() << std::endl;
-        std::cout << "Corner rays: " << getRaysByType(DebugRay::RAY_CORNER).size() << std::endl;
-        std::cout << "Sub-center rays: " << getRaysByType(DebugRay::RAY_SUB_CENTER).size() << std::endl;
-        std::cout << "Sub-corner rays: " << getRaysByType(DebugRay::RAY_SUB_CORNER).size() << std::endl;
-        std::cout << "Hit rays (hit objects): " << getHitRays().size() << std::endl;
-        std::cout << "Miss rays (reached light): " << getMissRays().size() << std::endl;
-        std::cout << "---------------------" << std::endl;
+            std::cout << "\n--- Ray Statistics ---" << std::endl;
+            std::cout << "Center rays: " << getRaysByType(DebugRay::RAY_CENTER).size() << std::endl;
+            std::cout << "Corner rays: " << getRaysByType(DebugRay::RAY_CORNER).size() << std::endl;
+            std::cout << "Sub-center rays: " << getRaysByType(DebugRay::RAY_SUB_CENTER).size() << std::endl;
+            std::cout << "Sub-corner rays: " << getRaysByType(DebugRay::RAY_SUB_CORNER).size() << std::endl;
+            std::cout << "Hit rays (hit objects): " << getHitRays().size() << std::endl;
+            std::cout << "Miss rays (reached light): " << getMissRays().size() << std::endl;
+            std::cout << "---------------------" << std::endl;
+        }
+
+        std::cout << "=========================================\n" << std::endl;
     }
-
-    std::cout << "=========================================\n" << std::endl;
 }
 
 float ShadowMapper::getShadowAtCell(int cellX, int cellZ) const

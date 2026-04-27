@@ -52,8 +52,8 @@ GameRenderer::GameRenderer()
     , m_shadowMapEnabled(false)
     , m_debugRaysEnabled(false)
     , m_showGroundRays(false)
-    , m_shadowStrideX(1)
-    , m_shadowStrideZ(1)
+    , m_shadowStrideX(2)
+    , m_shadowStrideZ(2)
     , m_staticShadowsDirty(true)
     , m_dynamicShadowsDirty(true)
     , m_foodShadowsDirty(true)
@@ -68,7 +68,7 @@ GameRenderer::GameRenderer()
     , m_floorTileSizeZ(0.1f)
     , m_floorUseSubdivision(false)
     , m_floorSubdivisionLevel(10)
-    , m_useCornerTrace(DEFAULT_SHADOW_MODE == 2)  // CORNERS или CORNERS_SUBDIVIDED
+    , m_useCornerTrace(DEFAULT_SHADOW_MODE == 1)  // CORNERS или CORNERS_SUBDIVIDED
     , m_currentShadowMode(static_cast<ShadowMapper::ShadowTraceMode>(DEFAULT_SHADOW_MODE))
 {
     m_lightType = LightType::Points;
@@ -1192,7 +1192,6 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
 
     // ========== СТАТИЧЕСКИЕ ТЕНИ (только деревья) ==========
     if (m_staticShadowsDirty) {
-        std::cout << "\n[STATIC SHADOWS - TREES ONLY] Computing..." << std::endl;
         m_staticShadow.clearObjectBounds();
         m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
         m_staticShadow.setUseSpheres(false);
@@ -1217,7 +1216,6 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     // ========== ДИНАМИЧЕСКИЕ ТЕНИ (ВСЕГДА пересчитываем, если тени включены) ==========
     if (m_shadowMapEnabled) {
         // ВСЕГДА пересчитываем динамические тени для змейки
-        std::cout << "[DYNAMIC SHADOWS] Recalculating every frame..." << std::endl;
 
         m_dynamicShadow.clearObjectBounds();
         m_dynamicShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
@@ -1241,7 +1239,6 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
 
     // ========== ТЕНИ ДЛЯ ЕДЫ (ВСЕГДА пересчитываем, если тени включены) ==========
     if (m_shadowMapEnabled) {
-        std::cout << "[FOOD SHADOWS] Recalculating every frame..." << std::endl;
 
         m_foodShadow.clearObjectBounds();
         m_foodShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
@@ -1252,6 +1249,7 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
                 float offsetZ = m_gridDepth * m_cellSize / 2.0f;
                 HitInfo hit = intersectFoodOnly(ray, objects, offsetX, offsetZ);
+                // ВАЖНО: hit.distance может быть > 0, даже если hit.hit == true (попали в пол)
                 if (hit.hit && hit.distance > 0.01f) {
                     hitDist = hit.distance;
                     hitPoint = hit.point;
@@ -1418,11 +1416,20 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
     const GameObjects& gameObjects = g_game.getGameObjects();
 
+    // Вычисляем bounding box модели головы, чтобы правильно поставить на пол
+    float modelBottomOffset = 0.0f;
+    if (!m_snakeHeadModel.vertices.empty()) {
+        float minY_local = FLT_MAX;
+        for (const auto& vert : m_snakeHeadModel.vertices) {
+            minY_local = std::min(minY_local, vert.position.y);
+        }
+        modelBottomOffset = -minY_local;  // Смещение от центра модели до нижней точки
+    }
+
     for (size_t i = 0; i < snake.size(); i++) {
         const Point& segment = snake[i];
 
         float x = segment.x * m_cellSize - offsetX;
-        float y = segment.y * m_cellSize + 0.1f;
         float z = segment.z * m_cellSize - offsetZ;
 
         float scale;
@@ -1445,6 +1452,9 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
             currentModel = &m_snakeBodyModel;
         }
 
+        // Ставим нижнюю точку модели на пол (m_floorHeight)
+        float y = m_floorHeight + modelBottomOffset * scale;
+
         float rotationAngle = calculateSegmentRotation(snake, i);
 
         glPushMatrix();
@@ -1452,7 +1462,6 @@ void GameRenderer::drawSnake(const std::vector<Point>& snake) {
         glRotatef(rotationAngle, 0.0f, 1.0f, 0.0f);
         glScalef(scale, scale, scale);
 
-        // Нормальное освещение для всех сегментов (без принудительного затемнения)
         if (currentModel->hasTexture && currentModel->textureID != 0) {
             setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 64.0f, 0.2f);
             setupTexture(currentModel->textureID);
@@ -1477,28 +1486,27 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    // Вычисляем bounding box модели один раз
     if (m_appleModel.vertices.empty()) return;
 
+    // Вычисляем bounding box модели один раз
     float minY_local = FLT_MAX;
     float maxY_local = -FLT_MAX;
     for (const auto& vert : m_appleModel.vertices) {
-        minY_local = std::min(minY_local, vert.position.y);  // Используем position.y
+        minY_local = std::min(minY_local, vert.position.y);
         maxY_local = std::max(maxY_local, vert.position.y);
     }
-    float modelHeight = maxY_local - minY_local;
     float offsetFromCenterToBottom = -minY_local;  // Смещение от центра модели до нижней точки
 
     for (const auto& apple : food) {
         float x = apple.x * m_cellSize - offsetX;
         float z = apple.z * m_cellSize - offsetZ;
-        float y = apple.y + m_floorHeight;
 
         float scale = m_cellSize * 0.6f;
         float worldBottomOffset = offsetFromCenterToBottom * scale;
 
+        // ВАЖНО: используем m_floorHeight, а НЕ apple.y!
         float centerX = x + m_cellSize * 0.5f;
-        float centerY = y + worldBottomOffset;  // Нижняя точка на полу
+        float centerY = m_floorHeight + worldBottomOffset;  // <-- ИСПРАВЛЕНО
         float centerZ = z + m_cellSize * 0.5f;
 
         glPushMatrix();
@@ -1524,16 +1532,27 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
+    // Вычисляем нижнюю точку модели дерева
+    float treeBottomOffset = 0.0f;
+    if (!m_treeModel.vertices.empty()) {
+        float minY_local = FLT_MAX;
+        for (const auto& vert : m_treeModel.vertices) {
+            minY_local = std::min(minY_local, vert.position.y);
+        }
+        treeBottomOffset = -minY_local;
+    }
+
     for (const auto& obstacle : obstacles) {
         for (const auto& block : obstacle.blocks) {
             float x = block.x * m_cellSize - offsetX;
-            float y = m_floorHeight;
             float z = block.z * m_cellSize - offsetZ;
 
+            float scale = m_cellSize * 1.2f;
+            float y = m_floorHeight + treeBottomOffset * scale;
+
             glPushMatrix();
-            // ИСПРАВЛЕНО: добавлен + m_cellSize * 0.5f для X и Z
             glTranslatef(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f);
-            glScalef(m_cellSize * 1.2f, m_cellSize * 1.2f, m_cellSize * 1.2f);
+            glScalef(scale, scale, scale);
 
             if (m_treeModel.hasTexture && m_treeModel.textureID != 0) {
                 setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 30.0f, 0.2f);
@@ -2158,31 +2177,52 @@ HitInfo GameRenderer::intersectFoodOnly(const Ray& ray, const GameObjects& objec
     HitInfo closestHit;
     closestHit.hit = false;
     closestHit.distance = 1000.0f;
+    float maxDistance = 100.0f;
 
+    // ===== ВАЖНО: сначала проверяем пол (ground) для теней! =====
+    float halfWidth = m_gridWidth * m_cellSize / 2.0f;
+    float halfDepth = m_gridDepth * m_cellSize / 2.0f;
+
+    float tGround = -ray.origin.y / ray.direction.y;
+    if (tGround > 0.01f && tGround < maxDistance && tGround < closestHit.distance) {
+        glm::vec3 hitPoint = ray.pointAt(tGround);
+        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+            closestHit.hit = true;
+            closestHit.distance = tGround;
+            closestHit.point = hitPoint;
+            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+    }
+
+    // Теперь проверяем яблоки (еда)
     if (m_appleModel.vertices.empty()) return closestHit;
 
-    // Вычисляем bounding box модели (лучше вынести в отдельную переменную класса)
-    float minY_local = FLT_MAX;
-    float maxY_local = -FLT_MAX;
-    for (const auto& vert : m_appleModel.vertices) {
-        minY_local = std::min(minY_local, vert.position.y);  // Используем position.y
-        maxY_local = std::max(maxY_local, vert.position.y);
+    // Вычисляем bounding box модели один раз
+    static float minY_local = FLT_MAX;
+    static float maxY_local = -FLT_MAX;
+    static float offsetFromCenterToBottom = 0.0f;
+    static bool boundsComputed = false;
+
+    if (!boundsComputed) {
+        for (const auto& vert : m_appleModel.vertices) {
+            minY_local = std::min(minY_local, vert.position.y);
+            maxY_local = std::max(maxY_local, vert.position.y);
+        }
+        offsetFromCenterToBottom = -minY_local;
+        boundsComputed = true;
     }
-    float offsetFromCenterToBottom = -minY_local;
 
     for (const auto& apple : objects.getFood()) {
         float x = apple.x * m_cellSize - offsetX;
         float z = apple.z * m_cellSize - offsetZ;
-        float y = apple.y + m_floorHeight;
 
         float scale = m_cellSize * 0.6f;
         float worldBottomOffset = offsetFromCenterToBottom * scale;
 
         float centerX = x + m_cellSize * 0.5f;
-        float centerY = y + worldBottomOffset;
+        float centerY = m_floorHeight + worldBottomOffset;
         float centerZ = z + m_cellSize * 0.5f;
 
-        // Для сферического теста используем реальный радиус модели
         float modelRadius = (maxY_local - minY_local) * 0.5f * scale;
         glm::vec3 center(centerX, centerY, centerZ);
 
@@ -2195,6 +2235,7 @@ HitInfo GameRenderer::intersectFoodOnly(const Ray& ray, const GameObjects& objec
             float hitDist;
             glm::vec3 hitPt;
             if (rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPt)) {
+                // Убеждаемся, что попали в яблоко, а не в пол за ним
                 if (hitDist > 0.01f && hitDist < closestHit.distance) {
                     closestHit.hit = true;
                     closestHit.distance = hitDist;
