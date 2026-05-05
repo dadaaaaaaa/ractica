@@ -273,7 +273,20 @@ void initPaths() {
     }
 }
 
+// В ConfigEditor.cpp, исправленная функция initElements():
+
 void initElements() {
+    // Очищаем существующие элементы
+    for (auto* el : snakeElements) delete el;
+    for (auto* el : groundSkyElements) delete el;
+    for (auto* el : obstaclesElements) delete el;
+    for (auto* el : environmentElements) delete el;
+
+    snakeElements.clear();
+    groundSkyElements.clear();
+    obstaclesElements.clear();
+    environmentElements.clear();
+
     // Змея
     VisualElement* head = new VisualElement("ГОЛОВА");
     head->modelFile = currentConfig.snakeHeadModel;
@@ -305,26 +318,23 @@ void initElements() {
     sky->color = currentConfig.skyColor;
     groundSkyElements.push_back(sky);
 
-    // Преграды
+    // Преграды (читаем из конфига)
     VisualElement* tree = new VisualElement("ДЕРЕВО");
     tree->modelFile = currentConfig.treeModel;
     tree->color = glm::vec3(0.1f, 0.4f, 0.1f);
     tree->scale = 1.5f;
-    tree->count = 10;
     obstaclesElements.push_back(tree);
 
     VisualElement* rock = new VisualElement("КАМЕНЬ");
     rock->modelFile = currentConfig.rockModel;
     rock->color = glm::vec3(0.5f, 0.5f, 0.5f);
     rock->scale = 1.2f;
-    rock->count = 5;
     obstaclesElements.push_back(rock);
 
     VisualElement* fence = new VisualElement("ЗАБОР");
     fence->modelFile = currentConfig.fenceModel;
     fence->color = glm::vec3(0.6f, 0.4f, 0.2f);
     fence->scale = 1.0f;
-    fence->count = 8;
     obstaclesElements.push_back(fence);
 
     VisualElement* apple = new VisualElement("ЯБЛОКО");
@@ -356,7 +366,6 @@ void initElements() {
     cloud->count = currentConfig.cloudCount;
     environmentElements.push_back(cloud);
 }
-
 //=============================================================================
 // ШРИФТЫ (FreeType)
 //=============================================================================
@@ -375,7 +384,8 @@ void initFreeType() {
         return;
     }
 
-    FT_Set_Pixel_Sizes(g_face, 0, 48);
+    // Устанавливаем размер шрифта 20 (как в GameUI)
+    FT_Set_Pixel_Sizes(g_face, 0, 20);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
     // Загружаем ASCII символы (32-126)
@@ -401,10 +411,11 @@ void initFreeType() {
         g_characters.insert(std::pair<unsigned char, Character>(c, character));
     }
 
-    // Заглавные русские буквы А-Я (Unicode 0x0410-0x042F)
+    // Заглавные русские буквы А-Я (Unicode 0x0410-0x042F -> CP1251 0xC0-0xDF)
     for (int i = 0; i < 32; i++) {
         int unicode = 0x0410 + i;
         unsigned char cp1251 = 0xC0 + i;
+
         if (FT_Load_Char(g_face, unicode, FT_LOAD_RENDER)) continue;
 
         GLuint texture;
@@ -447,10 +458,11 @@ void initFreeType() {
         g_characters.insert(std::pair<unsigned char, Character>(0xA8, character));
     }
 
-    // Строчные русские буквы а-я (Unicode 0x0430-0x044F)
+    // Строчные русские буквы а-я (Unicode 0x0430-0x044F -> CP1251 0xE0-0xFF)
     for (int i = 0; i < 32; i++) {
         int unicode = 0x0430 + i;
         unsigned char cp1251 = 0xE0 + i;
+
         if (FT_Load_Char(g_face, unicode, FT_LOAD_RENDER)) continue;
 
         GLuint texture;
@@ -501,10 +513,12 @@ void initFreeType() {
     glBindVertexArray(g_textVAO);
     glBindBuffer(GL_ARRAY_BUFFER, g_textVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 6 * 4, NULL, GL_DYNAMIC_DRAW);
+
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     glVertexPointer(2, GL_FLOAT, 4 * sizeof(float), 0);
     glTexCoordPointer(2, GL_FLOAT, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
@@ -538,6 +552,7 @@ float getTextWidth(const std::string& text) {
         else {
             auto spaceIt = g_characters.find(' ');
             if (spaceIt != g_characters.end()) width += (float)(spaceIt->second.Advance >> 6);
+            else width += 10.0f;
         }
     }
     return width;
@@ -551,7 +566,7 @@ void drawText(float x, float y, const std::string& text, float r, float g, float
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
-    glOrtho(0.0, (double)windowWidth, 0.0, (double)windowHeight, -1.0, 1.0);
+    glOrtho(0.0, (double)windowWidth, (double)windowHeight, 0.0, -1.0, 1.0);
 
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
@@ -567,6 +582,11 @@ void drawText(float x, float y, const std::string& text, float r, float g, float
     glBindVertexArray(g_textVAO);
     glBindBuffer(GL_ARRAY_BUFFER, g_textVBO);
 
+    // Фиксированная высота строки (можно подобрать под размер шрифта)
+    const int LINE_HEIGHT = 20;
+    // Базовое смещение для выравнивания символов
+    const int BASE_OFFSET = 15;
+
     float startX = x;
     for (unsigned char c : text) {
         auto it = g_characters.find(c);
@@ -576,18 +596,20 @@ void drawText(float x, float y, const std::string& text, float r, float g, float
         }
         Character& ch = it->second;
 
+        // Выравниваем все символы по одной базовой линии
         float xpos = startX + (float)ch.Bearing.x;
-        float ypos = y - (float)(ch.Size.y - ch.Bearing.y);
+        // Смещаем так, чтобы низ символа был на y + BASE_OFFSET
+        float ypos = y + BASE_OFFSET - (float)ch.Size.y;
         float w = (float)ch.Size.x;
         float h = (float)ch.Size.y;
 
         float vertices[6][4] = {
-            { xpos,     ypos + h,   0.0f, 0.0f },
-            { xpos,     ypos,       0.0f, 1.0f },
-            { xpos + w, ypos,       1.0f, 1.0f },
-            { xpos,     ypos + h,   0.0f, 0.0f },
-            { xpos + w, ypos,       1.0f, 1.0f },
-            { xpos + w, ypos + h,   1.0f, 0.0f }
+            { xpos,     ypos,       0.0f, 0.0f },
+            { xpos,     ypos + h,   0.0f, 1.0f },
+            { xpos + w, ypos + h,   1.0f, 1.0f },
+            { xpos,     ypos,       0.0f, 0.0f },
+            { xpos + w, ypos + h,   1.0f, 1.0f },
+            { xpos + w, ypos,       1.0f, 0.0f }
         };
 
         glBindTexture(GL_TEXTURE_2D, ch.TextureID);
@@ -620,7 +642,8 @@ void drawQuad(float x, float y, float width, float height, const glm::vec3& colo
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
-    glOrtho(0.0, (double)windowWidth, 0.0, (double)windowHeight, -1.0, 1.0);
+    // Та же система координат: Y=0 вверху, Y=windowHeight внизу
+    glOrtho(0.0, (double)windowWidth, (double)windowHeight, 0.0, -1.0, 1.0);
 
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
@@ -685,9 +708,11 @@ bool drawButton(int x, int y, int w, int h, const char* text, bool enabled) {
     glVertex2f((float)x, (float)(y + h));
     glEnd();
 
+    // Центрируем текст на кнопке (Y теперь правильный)
     float textWidth = getTextWidth(text);
+    float textHeight = 15.0f;
     float textX = (float)x + ((float)w - textWidth) / 2.0f;
-    float textY = (float)y + (float)h / 2.0f + 8.0f;
+    float textY = (float)y + ((float)h - textHeight) / 2.0f;  // Без +7, так как Y=0 вверху
     drawText(textX, textY, text, 1.0f, 1.0f, 1.0f);
 
     return enabled && hover && mousePressed && !mousePressedLast;
@@ -728,7 +753,8 @@ bool drawSlider(int x, int y, int w, float* value, float minVal, float maxVal, c
 
     char valueText[100];
     sprintf_s(valueText, "%s: %.2f", label, *value);
-    drawText((float)(x + w + 10), (float)(y - 5), valueText, 1.0f, 1.0f, 1.0f);
+    // Текст рисуем справа от слайдера, Y корректируем
+    drawText((float)(x + w + 10), (float)(y - 8), valueText, 1.0f, 1.0f, 1.0f);
 
     return changed;
 }
@@ -741,7 +767,8 @@ bool drawIntSlider(int x, int y, int w, int* value, int minVal, int maxVal, cons
 }
 
 void drawColorPicker(int x, int y, const char* label, glm::vec3& color) {
-    drawText((float)x, (float)(y - 20), label, 1.0f, 1.0f, 0.0f);
+    // label рисуем над picker'ом
+    drawText((float)x, (float)(y - 22), label, 1.0f, 1.0f, 0.0f);
 
     glColor3f(color.r, color.g, color.b);
     glBegin(GL_QUADS);
@@ -759,6 +786,7 @@ void drawColorPicker(int x, int y, const char* label, glm::vec3& color) {
     glVertex2f((float)x, (float)(y + 35));
     glEnd();
 
+    // Слайдеры под color picker'ом
     drawSlider(x + 70, y + 5, 120, &color.r, 0.0f, 1.0f, "R");
     drawSlider(x + 70, y + 40, 120, &color.g, 0.0f, 1.0f, "G");
     drawSlider(x + 70, y + 75, 120, &color.b, 0.0f, 1.0f, "B");
@@ -965,11 +993,11 @@ void reset2DProjection() {
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
+    // Y=0 вверху, Y=windowHeight внизу
     glOrtho(0, windowWidth, windowHeight, 0, -1, 1);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 }
-
 //=============================================================================
 // ПРЕДПРОСМОТР МОДЕЛИ
 //=============================================================================
@@ -1095,14 +1123,17 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
 //=============================================================================
 // РЕДАКТОР ЗМЕЙКИ
 //=============================================================================
-
+std::string truncateFilename(const std::string& filename, int maxLen = 25) {
+    if (filename.length() <= maxLen) return filename;
+    return "..." + filename.substr(filename.length() - (maxLen - 3));
+}
 void renderSnakeEditor() {
     reset2DProjection();
     drawCenteredText((float)(windowHeight * 0.05f), "РЕДАКТОР ЗМЕЙКИ", 1.0f, 1.0f, 0.0f);
 
     int listX = (int)(windowWidth * 0.03f);
     int listY = (int)(windowHeight * 0.12f);
-    int listWidth = (int)(windowWidth * 0.1f);
+    int listWidth = (int)(windowWidth * 0.12f);
     int listHeight = (int)(windowHeight * 0.05f);
 
     // Список частей змеи
@@ -1123,12 +1154,14 @@ void renderSnakeEditor() {
         int buttonWidth = 90;
         int buttonSpacing = 100;
 
-        drawText((float)editX, (float)(editY - 20), el->name, 1.0f, 1.0f, 0.0f);
+        drawText((float)editX, (float)(editY - 20), el->name.c_str(), 1.0f, 1.0f, 0.0f);
 
         // Модель
         int modelY = editY;
         drawText((float)editX, (float)(modelY + 20), "Модель:", 1.0f, 1.0f, 1.0f);
-        drawText((float)(editX + 80), (float)(modelY + 20), el->modelFile, 0.0f, 1.0f, 0.0f);
+
+        std::string displayFile = truncateFilename(el->modelFile, 30);
+        drawText((float)(editX + 80), (float)(modelY + 20), displayFile.c_str(), 0.0f, 1.0f, 0.0f);
 
         if (drawButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
@@ -1184,26 +1217,6 @@ void renderSnakeEditor() {
 
         if (drawButton(editX + 260, scaleY + 10, 80, 30, "СБРОСИТЬ")) {
             el->scale = 0.8f;
-        }
-
-        // Кнопка очистить все
-        if (drawButton(editX, scaleY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
-            if (selectedPart == 0) {
-                el->modelFile = "snake_head.fbx";
-                el->color = glm::vec3(0.0f, 1.0f, 0.0f);
-                el->scale = 0.8f;
-            }
-            else if (selectedPart == 1) {
-                el->modelFile = "snake_body.fbx";
-                el->color = glm::vec3(0.0f, 0.7f, 0.0f);
-                el->scale = 0.8f;
-            }
-            else {
-                el->modelFile = "snake_tail.fbx";
-                el->color = glm::vec3(0.0f, 0.5f, 0.0f);
-                el->scale = 0.8f;
-            }
-            updatePreviewForCurrentMode();
         }
     }
 
