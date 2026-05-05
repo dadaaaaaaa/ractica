@@ -158,7 +158,7 @@ float Model::getHeightAt(float worldX, float worldZ) const {
     heightCache[key] = bestY;
     return bestY;
 }
-
+ 
 // Ќќ¬јя ‘”Ќ ÷»я - вычисление нормалей дл€ модели
 void Model::computeNormals() {
     if (vertices.empty()) return;
