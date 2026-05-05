@@ -25,11 +25,30 @@ static bool parseBool(const std::string& str) {
     return (lower == "true" || lower == "1" || lower == "yes");
 }
 
+static int parseInt(const std::string& str) {
+    try {
+        return std::stoi(str);
+    }
+    catch (...) {
+        return 0;
+    }
+}
+
+static float parseFloat(const std::string& str) {
+    try {
+        return std::stof(str);
+    }
+    catch (...) {
+        return 0.0f;
+    }
+}
+
 bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& config) {
     std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "Cannot open config file: " << filename << std::endl;
-        return false;
+        // Возвращаем true с дефолтными значениями
+        return true;
     }
 
     std::string line;
@@ -43,38 +62,59 @@ bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& conf
         std::string value = trim(line.substr(equalsPos + 1));
 
         // Game Settings
-        if (key == "GRID_WIDTH") config.gridWidth = std::stoi(value);
-        else if (key == "GRID_DEPTH") config.gridDepth = std::stoi(value);
-        else if (key == "CELL_SIZE") config.cellSize = std::stof(value);
-        else if (key == "INITIAL_FOOD_COUNT") config.initialFoodCount = std::stoi(value);
-        else if (key == "OBSTACLE_COUNT") config.obstacleCount = std::stoi(value);
+        if (key == "GRID_WIDTH") config.gridWidth = parseInt(value);
+        else if (key == "GRID_DEPTH") config.gridDepth = parseInt(value);
+        else if (key == "CELL_SIZE") config.cellSize = parseFloat(value);
+        else if (key == "INITIAL_FOOD_COUNT") config.initialFoodCount = parseInt(value);
+        else if (key == "OBSTACLE_COUNT") config.obstacleCount = parseInt(value);
 
         // Grid settings
         else if (key == "GRID_ENABLED") config.gridEnabled = parseBool(value);
-        else if (key == "GRID_LINE_WIDTH") config.gridLineWidth = std::stof(value);
+        else if (key == "GRID_LINE_WIDTH") config.gridLineWidth = parseFloat(value);
+
+        // Floor polygon settings
+        else if (key == "FLOOR_POLYGONS_X") config.floorPolygonsX = parseInt(value);
+        else if (key == "FLOOR_POLYGONS_Z") config.floorPolygonsZ = parseInt(value);
+        else if (key == "FLOOR_USE_SUBDIVISION") config.floorUseSubdivision = parseBool(value);
+        else if (key == "FLOOR_SUBDIVISION_LEVEL") config.floorSubdivisionLevel = parseInt(value);
 
         // Environment counts
-        else if (key == "CLOUD_COUNT") config.cloudCount = std::stoi(value);
-        else if (key == "BIRD_COUNT") config.birdCount = std::stoi(value);
-        else if (key == "FLOWER_COUNT") config.flowerCount = std::stoi(value);
+        else if (key == "CLOUD_COUNT") config.cloudCount = parseInt(value);
+        else if (key == "BIRD_COUNT") config.birdCount = parseInt(value);
+        else if (key == "FLOWER_COUNT") config.flowerCount = parseInt(value);
 
         // Colors
         else if (key == "SKY_COLOR") config.skyColor = parseVec3(value);
         else if (key == "FLOOR_COLOR") config.floorColor = parseVec3(value);
         else if (key == "GRID_COLOR") config.gridColor = parseVec3(value);
 
+        // Light settings
+        else if (key == "LIGHT_TYPE") config.lightType = parseInt(value);
+        else if (key == "LIGHT_COLOR") config.lightColor = parseVec3(value);
+        else if (key == "LIGHT_DIR") config.lightDir = parseVec3(value);
+        else if (key == "LIGHT_POS") config.lightPos = parseVec3(value);
+
+        // Shadow settings
+        else if (key == "SHADOW_TRACE_MODE") config.shadowTraceMode = parseInt(value);
+        else if (key == "SHADOW_SUBDIVISION_SIZE") config.shadowSubdivisionSize = parseInt(value);
+        else if (key == "SHADOW_STRIDE_X") config.shadowStrideX = parseInt(value);
+        else if (key == "SHADOW_STRIDE_Z") config.shadowStrideZ = parseInt(value);
+        else if (key == "SHADOW_MAP_ENABLED") config.shadowMapEnabled = parseBool(value);
+        else if (key == "AMBIENT_ENABLED") config.ambientEnabled = parseBool(value);
+        else if (key == "SPECULAR_ENABLED") config.specularEnabled = parseBool(value);
+
         // Snake Models and Colors
         else if (key == "SNAKE_HEAD_MODEL") config.snakeHeadModel = value;
         else if (key == "SNAKE_HEAD_COLOR") config.snakeHeadColor = parseVec3(value);
-        else if (key == "SNAKE_HEAD_SCALE") config.snakeHeadScale = std::stof(value);
+        else if (key == "SNAKE_HEAD_SCALE") config.snakeHeadScale = parseFloat(value);
 
         else if (key == "SNAKE_BODY_MODEL") config.snakeBodyModel = value;
         else if (key == "SNAKE_BODY_COLOR") config.snakeBodyColor = parseVec3(value);
-        else if (key == "SNAKE_BODY_SCALE") config.snakeBodyScale = std::stof(value);
+        else if (key == "SNAKE_BODY_SCALE") config.snakeBodyScale = parseFloat(value);
 
         else if (key == "SNAKE_TAIL_MODEL") config.snakeTailModel = value;
         else if (key == "SNAKE_TAIL_COLOR") config.snakeTailColor = parseVec3(value);
-        else if (key == "SNAKE_TAIL_SCALE") config.snakeTailScale = std::stof(value);
+        else if (key == "SNAKE_TAIL_SCALE") config.snakeTailScale = parseFloat(value);
 
         // Environment Models
         else if (key == "APPLE_MODEL") config.appleModel = value;
@@ -92,6 +132,13 @@ bool ConfigManager::loadGameConfig(const std::string& filename, GameConfig& conf
     }
 
     file.close();
+
+    // Валидация значений
+    if (config.shadowSubdivisionSize < 2) config.shadowSubdivisionSize = 2;
+    if (config.shadowSubdivisionSize > 20) config.shadowSubdivisionSize = 20;
+    if (config.floorPolygonsX < 1) config.floorPolygonsX = 1;
+    if (config.floorPolygonsZ < 1) config.floorPolygonsZ = 1;
+
     return true;
 }
 
@@ -116,6 +163,12 @@ bool ConfigManager::saveGameConfig(const std::string& filename, const GameConfig
     file << "GRID_ENABLED = " << (config.gridEnabled ? "true" : "false") << "\n";
     file << "GRID_LINE_WIDTH = " << config.gridLineWidth << "\n\n";
 
+    file << "# Floor Polygon Settings (for accurate shadows)\n";
+    file << "FLOOR_POLYGONS_X = " << config.floorPolygonsX << "\n";
+    file << "FLOOR_POLYGONS_Z = " << config.floorPolygonsZ << "\n";
+    file << "FLOOR_USE_SUBDIVISION = " << (config.floorUseSubdivision ? "true" : "false") << "\n";
+    file << "FLOOR_SUBDIVISION_LEVEL = " << config.floorSubdivisionLevel << "\n\n";
+
     file << "# Environment Counts\n";
     file << "CLOUD_COUNT = " << config.cloudCount << "\n";
     file << "BIRD_COUNT = " << config.birdCount << "\n";
@@ -125,6 +178,21 @@ bool ConfigManager::saveGameConfig(const std::string& filename, const GameConfig
     file << "SKY_COLOR = " << config.skyColor.r << " " << config.skyColor.g << " " << config.skyColor.b << "\n";
     file << "FLOOR_COLOR = " << config.floorColor.r << " " << config.floorColor.g << " " << config.floorColor.b << "\n";
     file << "GRID_COLOR = " << config.gridColor.r << " " << config.gridColor.g << " " << config.gridColor.b << "\n\n";
+
+    file << "# Light Settings\n";
+    file << "LIGHT_TYPE = " << config.lightType << "  # 0=Directional, 1=Point, 2=Spot\n";
+    file << "LIGHT_COLOR = " << config.lightColor.r << " " << config.lightColor.g << " " << config.lightColor.b << "\n";
+    file << "LIGHT_DIR = " << config.lightDir.x << " " << config.lightDir.y << " " << config.lightDir.z << "\n";
+    file << "LIGHT_POS = " << config.lightPos.x << " " << config.lightPos.y << " " << config.lightPos.z << "\n\n";
+
+    file << "# Shadow Settings\n";
+    file << "SHADOW_TRACE_MODE = " << config.shadowTraceMode << "  # 0=CENTER, 1=CORNERS, 2=CENTER_SUBDIVIDED, 3=CORNERS_SUBDIVIDED\n";
+    file << "SHADOW_SUBDIVISION_SIZE = " << config.shadowSubdivisionSize << "  # Size of subdivision grid (NxN)\n";
+    file << "SHADOW_STRIDE_X = " << config.shadowStrideX << "\n";
+    file << "SHADOW_STRIDE_Z = " << config.shadowStrideZ << "\n";
+    file << "SHADOW_MAP_ENABLED = " << (config.shadowMapEnabled ? "true" : "false") << "\n";
+    file << "AMBIENT_ENABLED = " << (config.ambientEnabled ? "true" : "false") << "\n";
+    file << "SPECULAR_ENABLED = " << (config.specularEnabled ? "true" : "false") << "\n\n";
 
     file << "# Snake Appearance\n";
     file << "SNAKE_HEAD_MODEL = " << config.snakeHeadModel << "\n";
