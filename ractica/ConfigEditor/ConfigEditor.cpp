@@ -118,6 +118,17 @@ float lastRotationTime = 0.0f;
 float autoRotateDelay = 5.0f;
 float rotationSpeed = 0.5f;
 
+// Управление предпросмотром
+float previewCameraDistance = 6.0f;
+float previewCameraPitch = 25.0f;
+bool previewAutoRotate = true;
+float previewRotationAngle = 0.0f;
+float previewLastRotateTime = 0.0f;
+bool previewMouseRotating = false;
+double previewLastMouseX = 0, previewLastMouseY = 0;
+int previewHoverX = 0, previewHoverY = 0, previewHoverW = 0, previewHoverH = 0;
+bool previewHovered = false;
+
 // Выбранные элементы
 int selectedPart = 0;
 int selectedObstacle = 0;
@@ -169,8 +180,10 @@ void reset2DProjection();
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 void cursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void windowSizeCallback(GLFWwindow* window, int width, int height);
 bool initOpenGL();
+std::string truncateFilename(const std::string& filename, int maxLen = 30);
 
 //=============================================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -180,6 +193,11 @@ std::string extractFilename(const std::string& path) {
     size_t pos = path.find_last_of("\\/");
     if (pos != std::string::npos) return path.substr(pos + 1);
     return path;
+}
+
+std::string truncateFilename(const std::string& filename, int maxLen) {
+    if (filename.length() <= maxLen) return filename;
+    return "..." + filename.substr(filename.length() - (maxLen - 3));
 }
 
 GLuint loadTextureFromMemory(unsigned char* data, int width, int height, int channels) {
@@ -273,8 +291,6 @@ void initPaths() {
     }
 }
 
-// В ConfigEditor.cpp, исправленная функция initElements():
-
 void initElements() {
     // Очищаем существующие элементы
     for (auto* el : snakeElements) delete el;
@@ -318,7 +334,7 @@ void initElements() {
     sky->color = currentConfig.skyColor;
     groundSkyElements.push_back(sky);
 
-    // Преграды (читаем из конфига)
+    // Преграды
     VisualElement* tree = new VisualElement("ДЕРЕВО");
     tree->modelFile = currentConfig.treeModel;
     tree->color = glm::vec3(0.1f, 0.4f, 0.1f);
@@ -366,6 +382,7 @@ void initElements() {
     cloud->count = currentConfig.cloudCount;
     environmentElements.push_back(cloud);
 }
+
 //=============================================================================
 // ШРИФТЫ (FreeType)
 //=============================================================================
@@ -384,7 +401,6 @@ void initFreeType() {
         return;
     }
 
-    // Устанавливаем размер шрифта 20 (как в GameUI)
     FT_Set_Pixel_Sizes(g_face, 0, 20);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
@@ -411,11 +427,10 @@ void initFreeType() {
         g_characters.insert(std::pair<unsigned char, Character>(c, character));
     }
 
-    // Заглавные русские буквы А-Я (Unicode 0x0410-0x042F -> CP1251 0xC0-0xDF)
+    // Заглавные русские буквы А-Я
     for (int i = 0; i < 32; i++) {
         int unicode = 0x0410 + i;
         unsigned char cp1251 = 0xC0 + i;
-
         if (FT_Load_Char(g_face, unicode, FT_LOAD_RENDER)) continue;
 
         GLuint texture;
@@ -437,7 +452,7 @@ void initFreeType() {
         g_characters.insert(std::pair<unsigned char, Character>(cp1251, character));
     }
 
-    // Ё (0x0401 -> 0xA8)
+    // Ё
     if (FT_Load_Char(g_face, 0x0401, FT_LOAD_RENDER) == 0) {
         GLuint texture;
         glGenTextures(1, &texture);
@@ -458,11 +473,10 @@ void initFreeType() {
         g_characters.insert(std::pair<unsigned char, Character>(0xA8, character));
     }
 
-    // Строчные русские буквы а-я (Unicode 0x0430-0x044F -> CP1251 0xE0-0xFF)
+    // Строчные русские буквы а-я
     for (int i = 0; i < 32; i++) {
         int unicode = 0x0430 + i;
         unsigned char cp1251 = 0xE0 + i;
-
         if (FT_Load_Char(g_face, unicode, FT_LOAD_RENDER)) continue;
 
         GLuint texture;
@@ -484,7 +498,7 @@ void initFreeType() {
         g_characters.insert(std::pair<unsigned char, Character>(cp1251, character));
     }
 
-    // ё (0x0451 -> 0xB8)
+    // ё
     if (FT_Load_Char(g_face, 0x0451, FT_LOAD_RENDER) == 0) {
         GLuint texture;
         glGenTextures(1, &texture);
@@ -513,12 +527,10 @@ void initFreeType() {
     glBindVertexArray(g_textVAO);
     glBindBuffer(GL_ARRAY_BUFFER, g_textVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 6 * 4, NULL, GL_DYNAMIC_DRAW);
-
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     glVertexPointer(2, GL_FLOAT, 4 * sizeof(float), 0);
     glTexCoordPointer(2, GL_FLOAT, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
@@ -582,11 +594,6 @@ void drawText(float x, float y, const std::string& text, float r, float g, float
     glBindVertexArray(g_textVAO);
     glBindBuffer(GL_ARRAY_BUFFER, g_textVBO);
 
-    // Фиксированная высота строки (можно подобрать под размер шрифта)
-    const int LINE_HEIGHT = 20;
-    // Базовое смещение для выравнивания символов
-    const int BASE_OFFSET = 15;
-
     float startX = x;
     for (unsigned char c : text) {
         auto it = g_characters.find(c);
@@ -596,10 +603,8 @@ void drawText(float x, float y, const std::string& text, float r, float g, float
         }
         Character& ch = it->second;
 
-        // Выравниваем все символы по одной базовой линии
         float xpos = startX + (float)ch.Bearing.x;
-        // Смещаем так, чтобы низ символа был на y + BASE_OFFSET
-        float ypos = y + BASE_OFFSET - (float)ch.Size.y;
+        float ypos = y + (float)(ch.Bearing.y) - 5.0f;
         float w = (float)ch.Size.x;
         float h = (float)ch.Size.y;
 
@@ -642,7 +647,6 @@ void drawQuad(float x, float y, float width, float height, const glm::vec3& colo
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
-    // Та же система координат: Y=0 вверху, Y=windowHeight внизу
     glOrtho(0.0, (double)windowWidth, (double)windowHeight, 0.0, -1.0, 1.0);
 
     glMatrixMode(GL_MODELVIEW);
@@ -708,11 +712,10 @@ bool drawButton(int x, int y, int w, int h, const char* text, bool enabled) {
     glVertex2f((float)x, (float)(y + h));
     glEnd();
 
-    // Центрируем текст на кнопке (Y теперь правильный)
     float textWidth = getTextWidth(text);
     float textHeight = 15.0f;
     float textX = (float)x + ((float)w - textWidth) / 2.0f;
-    float textY = (float)y + ((float)h - textHeight) / 2.0f;  // Без +7, так как Y=0 вверху
+    float textY = (float)y + ((float)h - textHeight) / 2.0f + 3.0f;
     drawText(textX, textY, text, 1.0f, 1.0f, 1.0f);
 
     return enabled && hover && mousePressed && !mousePressedLast;
@@ -753,7 +756,6 @@ bool drawSlider(int x, int y, int w, float* value, float minVal, float maxVal, c
 
     char valueText[100];
     sprintf_s(valueText, "%s: %.2f", label, *value);
-    // Текст рисуем справа от слайдера, Y корректируем
     drawText((float)(x + w + 10), (float)(y - 8), valueText, 1.0f, 1.0f, 1.0f);
 
     return changed;
@@ -767,7 +769,6 @@ bool drawIntSlider(int x, int y, int w, int* value, int minVal, int maxVal, cons
 }
 
 void drawColorPicker(int x, int y, const char* label, glm::vec3& color) {
-    // label рисуем над picker'ом
     drawText((float)x, (float)(y - 22), label, 1.0f, 1.0f, 0.0f);
 
     glColor3f(color.r, color.g, color.b);
@@ -786,7 +787,6 @@ void drawColorPicker(int x, int y, const char* label, glm::vec3& color) {
     glVertex2f((float)x, (float)(y + 35));
     glEnd();
 
-    // Слайдеры под color picker'ом
     drawSlider(x + 70, y + 5, 120, &color.r, 0.0f, 1.0f, "R");
     drawSlider(x + 70, y + 40, 120, &color.g, 0.0f, 1.0f, "G");
     drawSlider(x + 70, y + 75, 120, &color.b, 0.0f, 1.0f, "B");
@@ -993,17 +993,25 @@ void reset2DProjection() {
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    // Y=0 вверху, Y=windowHeight внизу
     glOrtho(0, windowWidth, windowHeight, 0, -1, 1);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 }
+
 //=============================================================================
 // ПРЕДПРОСМОТР МОДЕЛИ
 //=============================================================================
 
 void renderModelPreview(ModelData& model, const char* title, float x, float y, float w, float h,
     float& rotation, bool& autoRotate, float& lastTime, float scale, bool isFloor) {
+
+    // Сохраняем область preview для обработки мыши
+    previewHoverX = (int)x;
+    previewHoverY = (int)y;
+    previewHoverW = (int)w;
+    previewHoverH = (int)h;
+
+    previewHovered = (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h);
 
     GLint viewport[4];
     glGetIntegerv(GL_VIEWPORT, viewport);
@@ -1025,56 +1033,89 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
-    glm::vec3 eye(3.0f, 2.0f, 5.0f);
+
+    // Вычисляем позицию камеры
+    float radPitch = glm::radians(previewCameraPitch);
+    float radYaw = glm::radians(previewRotationAngle);
+
     glm::vec3 center(0.0f, 0.0f, 0.0f);
+    float camX = sin(radYaw) * cos(radPitch) * previewCameraDistance;
+    float camY = sin(radPitch) * previewCameraDistance;
+    float camZ = cos(radYaw) * cos(radPitch) * previewCameraDistance;
+    glm::vec3 eye(camX, camY + 1.0f, camZ);
     glm::vec3 up(0.0f, 1.0f, 0.0f);
+
     glm::mat4 view = glm::lookAt(eye, center, up);
     glLoadMatrixf(glm::value_ptr(view));
-    glRotatef(rotation, 0.0f, 1.0f, 0.0f);
 
-    // Пол
+    // Отрисовка пола
+    float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
+    float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
+    float offsetX = worldWidth / 2.0f;
+    float offsetZ = worldDepth / 2.0f;
+
+    glm::vec3 floorColor = currentConfig.floorColor;
+
     glDisable(GL_TEXTURE_2D);
-    glColor3f(0.3f, 0.3f, 0.3f);
+    glColor3f(floorColor.r, floorColor.g, floorColor.b);
     glBegin(GL_QUADS);
-    glVertex3f(-3.0f, -0.5f, -3.0f);
-    glVertex3f(3.0f, -0.5f, -3.0f);
-    glVertex3f(3.0f, -0.5f, 3.0f);
-    glVertex3f(-3.0f, -0.5f, 3.0f);
-    glEnd();
-    glColor3f(0.5f, 0.5f, 0.5f);
-    glBegin(GL_LINES);
-    for (int i = -3; i <= 3; i++) {
-        float pos = (float)i * 0.5f;
-        glVertex3f(pos, -0.45f, -3.0f);
-        glVertex3f(pos, -0.45f, 3.0f);
-        glVertex3f(-3.0f, -0.45f, pos);
-        glVertex3f(3.0f, -0.45f, pos);
-    }
+    glNormal3f(0.0f, 1.0f, 0.0f);
+    glVertex3f(-offsetX, -0.02f, -offsetZ);
+    glVertex3f(offsetX, -0.02f, -offsetZ);
+    glVertex3f(offsetX, -0.02f, offsetZ);
+    glVertex3f(-offsetX, -0.02f, offsetZ);
     glEnd();
 
-    // Модель
+    if (currentConfig.gridEnabled) {
+        glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
+        glLineWidth(currentConfig.gridLineWidth);
+        glBegin(GL_LINES);
+
+        for (int i = -currentConfig.gridWidth / 2; i <= currentConfig.gridWidth / 2; i++) {
+            float xPos = (float)i * currentConfig.cellSize;
+            glVertex3f(xPos, -0.01f, -offsetZ);
+            glVertex3f(xPos, -0.01f, offsetZ);
+        }
+        for (int i = -currentConfig.gridDepth / 2; i <= currentConfig.gridDepth / 2; i++) {
+            float zPos = (float)i * currentConfig.cellSize;
+            glVertex3f(-offsetX, -0.01f, zPos);
+            glVertex3f(offsetX, -0.01f, zPos);
+        }
+        glEnd();
+        glLineWidth(1.0f);
+    }
+
+    // Отрисовка модели
     if (model.loaded && !model.vertices.empty()) {
         glPushMatrix();
+
         if (isFloor) {
             glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
             glScalef(0.01f, 0.01f, 0.01f);
         }
         else {
-            glScalef(scale, scale, scale);
             float minX = model.vertices[0], maxX = model.vertices[0];
             float minY = model.vertices[1], maxY = model.vertices[1];
             float minZ = model.vertices[2], maxZ = model.vertices[2];
+
             for (size_t i = 0; i < model.vertices.size() / 3; i++) {
                 float vx = model.vertices[i * 3];
                 float vy = model.vertices[i * 3 + 1];
                 float vz = model.vertices[i * 3 + 2];
-                minX = std::min(minX, vx); maxX = max(maxX, vx);
-                minY = std::min(minY, vy); maxY = max(maxY, vy);
-                minZ = std::min(minZ, vz); maxZ = max(maxZ, vz);
+                minX = std::min(minX, vx);
+                maxX = max(maxX, vx);
+                minY = std::min(minY, vy);
+                maxY = max(maxY, vy);
+                minZ = std::min(minZ, vz);
+                maxZ = max(maxZ, vz);
             }
+
             float centerX = (minX + maxX) / 2.0f;
             float centerZ = (minZ + maxZ) / 2.0f;
-            glTranslatef(-centerX, -minY + 0.1f, -centerZ);
+            float bottomY = minY;
+
+            glTranslatef(-centerX, -bottomY + 0.05f, -centerZ);
+            glScalef(scale, scale, scale);
         }
         drawModel(model);
         glPopMatrix();
@@ -1096,37 +1137,75 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
     glVertex2f(x + w, y + h);
     glVertex2f(x, y + h);
     glEnd();
+
     drawText(x + 10, y + 25, title, 1.0f, 1.0f, 0.0f);
 
+    // Информация об управлении
+    char controlsInfo[200];
+    sprintf_s(controlsInfo, "Управление: ЛКМ+перетаскивание - вращение | Колёсико - Zoom | Пробел - стоп/старт авто");
+    drawText(x + 10, y + h - 25, controlsInfo, 0.6f, 0.6f, 0.8f);
+
     if (!isFloor) {
+        char gridInfo[100];
+        sprintf_s(gridInfo, "Сетка: %dx%d | Ячейка: %.2f",
+            currentConfig.gridWidth, currentConfig.gridDepth, currentConfig.cellSize);
+        drawText(x + 10, y + h - 50, gridInfo, 0.7f, 0.7f, 0.7f);
+
         char scaleText[50];
-        sprintf_s(scaleText, "Scale: %.2f", scale);
-        drawText(x + w - 100, y + 25, scaleText, 1.0f, 1.0f, 0.0f);
+        sprintf_s(scaleText, "Масштаб: %.2f | Дист: %.1f", scale, previewCameraDistance);
+        drawText(x + w - 150, y + 25, scaleText, 1.0f, 1.0f, 0.0f);
+
+        char rotateStatus[30];
+        sprintf_s(rotateStatus, "Автовращ: %s", previewAutoRotate ? "ВКЛ" : "ВЫКЛ");
+        drawText(x + w - 100, y + h - 25, rotateStatus,
+            previewAutoRotate ? 0.0f : 1.0f,
+            previewAutoRotate ? 1.0f : 0.5f,
+            previewAutoRotate ? 0.0f : 0.5f);
     }
 
+    // Кнопки
     int arrowY = (int)(y + h + 25);
     int arrowCenterX = (int)(x + w / 2);
+
     if (drawButton(arrowCenterX - 70, arrowY, 60, 35, "<-")) {
-        rotation -= 15.0f;
-        autoRotate = false;
+        previewRotationAngle -= 15.0f;
+        previewAutoRotate = false;
+        previewLastRotateTime = (float)glfwGetTime();
     }
     if (drawButton(arrowCenterX + 10, arrowY, 60, 35, "->")) {
-        rotation += 15.0f;
-        autoRotate = false;
+        previewRotationAngle += 15.0f;
+        previewAutoRotate = false;
+        previewLastRotateTime = (float)glfwGetTime();
     }
+
+    const char* autoRotateBtnText = previewAutoRotate ? "СТОП" : "СТАРТ";
+    if (drawButton(arrowCenterX - 135, arrowY, 55, 35, autoRotateBtnText)) {
+        previewAutoRotate = !previewAutoRotate;
+        if (previewAutoRotate) {
+            previewLastRotateTime = (float)glfwGetTime();
+        }
+    }
+
+    // Автовращение
     float currentTime = (float)glfwGetTime();
-    if (!autoRotate && (currentTime - lastTime >= autoRotateDelay)) autoRotate = true;
-    if (autoRotate) rotation += rotationSpeed;
-    if (rotation >= 360) rotation -= 360;
+    if (!previewAutoRotate && (currentTime - previewLastRotateTime >= autoRotateDelay)) {
+        previewAutoRotate = true;
+    }
+    if (previewAutoRotate) {
+        previewRotationAngle += rotationSpeed;
+    }
+    if (previewRotationAngle >= 360) previewRotationAngle -= 360;
+    if (previewRotationAngle < 0) previewRotationAngle += 360;
+
+    rotation = previewRotationAngle;
+    autoRotate = previewAutoRotate;
+    lastTime = previewLastRotateTime;
 }
 
 //=============================================================================
 // РЕДАКТОР ЗМЕЙКИ
 //=============================================================================
-std::string truncateFilename(const std::string& filename, int maxLen = 25) {
-    if (filename.length() <= maxLen) return filename;
-    return "..." + filename.substr(filename.length() - (maxLen - 3));
-}
+
 void renderSnakeEditor() {
     reset2DProjection();
     drawCenteredText((float)(windowHeight * 0.05f), "РЕДАКТОР ЗМЕЙКИ", 1.0f, 1.0f, 0.0f);
@@ -1136,7 +1215,6 @@ void renderSnakeEditor() {
     int listWidth = (int)(windowWidth * 0.12f);
     int listHeight = (int)(windowHeight * 0.05f);
 
-    // Список частей змеи
     for (size_t i = 0; i < snakeElements.size(); i++) {
         char btnText[100];
         sprintf_s(btnText, "%s", snakeElements[i]->name.c_str());
@@ -1156,7 +1234,6 @@ void renderSnakeEditor() {
 
         drawText((float)editX, (float)(editY - 20), el->name.c_str(), 1.0f, 1.0f, 0.0f);
 
-        // Модель
         int modelY = editY;
         drawText((float)editX, (float)(modelY + 20), "Модель:", 1.0f, 1.0f, 1.0f);
 
@@ -1164,7 +1241,8 @@ void renderSnakeEditor() {
         drawText((float)(editX + 80), (float)(modelY + 20), displayFile.c_str(), 0.0f, 1.0f, 0.0f);
 
         if (drawButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
-            std::string folder = (selectedPart == 0) ? "snake_head" : (selectedPart == 1) ? "snake_body" : "snake_tail";
+            std::string folder = (selectedPart == 0) ? "snake_head" :
+                (selectedPart == 1) ? "snake_body" : "snake_tail";
             openFileDialog(el->modelFile, folder);
         }
 
@@ -1175,7 +1253,6 @@ void renderSnakeEditor() {
             updatePreviewForCurrentMode();
         }
 
-        // Цвет
         int colorY = modelY + 90;
         drawText((float)editX, (float)colorY, "Цвет:", 1.0f, 1.0f, 1.0f);
 
@@ -1205,7 +1282,6 @@ void renderSnakeEditor() {
             else el->color = glm::vec3(0.0f, 0.5f, 0.0f);
         }
 
-        // Масштаб
         int scaleY = colorY + 80;
         drawText((float)editX, (float)scaleY, "Масштаб:", 1.0f, 1.0f, 1.0f);
 
@@ -1217,6 +1293,25 @@ void renderSnakeEditor() {
 
         if (drawButton(editX + 260, scaleY + 10, 80, 30, "СБРОСИТЬ")) {
             el->scale = 0.8f;
+        }
+
+        if (drawButton(editX, scaleY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
+            if (selectedPart == 0) {
+                el->modelFile = "snake_head.fbx";
+                el->color = glm::vec3(0.0f, 1.0f, 0.0f);
+                el->scale = 0.8f;
+            }
+            else if (selectedPart == 1) {
+                el->modelFile = "snake_body.fbx";
+                el->color = glm::vec3(0.0f, 0.7f, 0.0f);
+                el->scale = 0.8f;
+            }
+            else {
+                el->modelFile = "snake_tail.fbx";
+                el->color = glm::vec3(0.0f, 0.5f, 0.0f);
+                el->scale = 0.8f;
+            }
+            updatePreviewForCurrentMode();
         }
     }
 
@@ -1244,7 +1339,7 @@ void renderGroundSkyEditor() {
 
     int listX = (int)(windowWidth * 0.03f);
     int listY = (int)(windowHeight * 0.12f);
-    int listWidth = (int)(windowWidth * 0.1f);
+    int listWidth = (int)(windowWidth * 0.12f);
     int listHeight = (int)(windowHeight * 0.05f);
 
     for (size_t i = 0; i < groundSkyElements.size(); i++) {
@@ -1257,7 +1352,6 @@ void renderGroundSkyEditor() {
     }
 
     if (selectedGroundSky == 0) {
-        // ПОЛ
         VisualElement* ground = groundSkyElements[0];
 
         int editX = (int)(windowWidth * 0.18f);
@@ -1267,10 +1361,11 @@ void renderGroundSkyEditor() {
 
         drawText((float)editX, (float)(editY - 20), ground->name, 1.0f, 1.0f, 0.0f);
 
-        // Модель пола
         int modelY = editY;
         drawText((float)editX, (float)(modelY + 20), "Модель:", 1.0f, 1.0f, 1.0f);
-        drawText((float)(editX + 80), (float)(modelY + 20), ground->modelFile, 0.0f, 1.0f, 0.0f);
+
+        std::string displayFile = truncateFilename(ground->modelFile, 30);
+        drawText((float)(editX + 80), (float)(modelY + 20), displayFile.c_str(), 0.0f, 1.0f, 0.0f);
 
         if (drawButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openFileDialog(ground->modelFile, "floor");
@@ -1281,7 +1376,6 @@ void renderGroundSkyEditor() {
             updatePreviewForCurrentMode();
         }
 
-        // Текстура пола
         int textureY = modelY + 90;
         drawText((float)editX, (float)textureY, "Текстура:", 1.0f, 1.0f, 1.0f);
         drawText((float)(editX + 100), (float)textureY, ground->textureFile, 0.0f, 1.0f, 0.0f);
@@ -1298,7 +1392,6 @@ void renderGroundSkyEditor() {
             }
         }
 
-        // Цвет пола
         int colorY = textureY + 70;
         drawText((float)editX, (float)colorY, "Цвет:", 1.0f, 1.0f, 1.0f);
 
@@ -1326,7 +1419,6 @@ void renderGroundSkyEditor() {
             ground->color = glm::vec3(0.3f, 0.6f, 0.2f);
         }
 
-        // Кнопка очистить все
         if (drawButton(editX, colorY + 80, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             ground->modelFile = "";
             ground->textureFile = "";
@@ -1345,7 +1437,6 @@ void renderGroundSkyEditor() {
             1.0f, true);
     }
     else {
-        // НЕБО
         VisualElement* sky = groundSkyElements[1];
 
         int editX = (int)(windowWidth * 0.18f);
@@ -1355,7 +1446,6 @@ void renderGroundSkyEditor() {
 
         drawText((float)editX, (float)(editY - 20), sky->name, 1.0f, 1.0f, 0.0f);
 
-        // Текстура неба
         int textureY = editY;
         drawText((float)editX, (float)textureY, "Текстура:", 1.0f, 1.0f, 1.0f);
         drawText((float)(editX + 100), (float)textureY, sky->textureFile, 0.0f, 1.0f, 0.0f);
@@ -1372,7 +1462,6 @@ void renderGroundSkyEditor() {
             }
         }
 
-        // Цвет неба
         int colorY = textureY + 70;
         drawText((float)editX, (float)colorY, "Цвет:", 1.0f, 1.0f, 1.0f);
 
@@ -1400,7 +1489,6 @@ void renderGroundSkyEditor() {
             sky->color = glm::vec3(0.53f, 0.81f, 0.92f);
         }
 
-        // Кнопка очистить все
         if (drawButton(editX, colorY + 80, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             sky->textureFile = "";
             sky->color = glm::vec3(0.53f, 0.81f, 0.92f);
@@ -1410,7 +1498,6 @@ void renderGroundSkyEditor() {
             }
         }
 
-        // Для неба показываем сообщение
         glColor3f(1.0f, 1.0f, 1.0f);
         glBegin(GL_LINE_LOOP);
         glVertex2f((float)(windowWidth * 0.46f), (float)(windowHeight * 0.12f));
@@ -1438,7 +1525,7 @@ void renderObstaclesEditor() {
 
     int listX = (int)(windowWidth * 0.03f);
     int listY = (int)(windowHeight * 0.12f);
-    int listWidth = (int)(windowWidth * 0.1f);
+    int listWidth = (int)(windowWidth * 0.12f);
     int listHeight = (int)(windowHeight * 0.05f);
 
     for (size_t i = 0; i < obstaclesElements.size(); i++) {
@@ -1460,10 +1547,11 @@ void renderObstaclesEditor() {
 
         drawText((float)editX, (float)(editY - 20), el->name, 1.0f, 1.0f, 0.0f);
 
-        // Модель
         int modelY = editY;
         drawText((float)editX, (float)(modelY + 20), "Модель:", 1.0f, 1.0f, 1.0f);
-        drawText((float)(editX + 80), (float)(modelY + 20), el->modelFile, 0.0f, 1.0f, 0.0f);
+
+        std::string displayFile = truncateFilename(el->modelFile, 30);
+        drawText((float)(editX + 80), (float)(modelY + 20), displayFile.c_str(), 0.0f, 1.0f, 0.0f);
 
         if (drawButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openFileDialog(el->modelFile, "obstacles");
@@ -1477,7 +1565,6 @@ void renderObstaclesEditor() {
             updatePreviewForCurrentMode();
         }
 
-        // Цвет
         int colorY = modelY + 90;
         drawText((float)editX, (float)colorY, "Цвет:", 1.0f, 1.0f, 1.0f);
 
@@ -1508,7 +1595,6 @@ void renderObstaclesEditor() {
             else el->color = glm::vec3(1.0f, 0.0f, 0.0f);
         }
 
-        // Масштаб
         int scaleY = colorY + 80;
         drawText((float)editX, (float)scaleY, "Масштаб:", 1.0f, 1.0f, 1.0f);
 
@@ -1525,7 +1611,6 @@ void renderObstaclesEditor() {
             else el->scale = 0.8f;
         }
 
-        // Количество
         int countY = scaleY + 70;
         drawText((float)editX, (float)countY, "Количество:", 1.0f, 1.0f, 1.0f);
 
@@ -1542,7 +1627,6 @@ void renderObstaclesEditor() {
             else el->count = 10;
         }
 
-        // Кнопка очистить все
         if (drawButton(editX, countY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             if (selectedObstacle == 0) {
                 el->modelFile = "tree.fbx";
@@ -1596,7 +1680,7 @@ void renderEnvironmentEditor() {
 
     int listX = (int)(windowWidth * 0.03f);
     int listY = (int)(windowHeight * 0.12f);
-    int listWidth = (int)(windowWidth * 0.1f);
+    int listWidth = (int)(windowWidth * 0.12f);
     int listHeight = (int)(windowHeight * 0.05f);
 
     for (size_t i = 0; i < environmentElements.size(); i++) {
@@ -1620,10 +1704,11 @@ void renderEnvironmentEditor() {
 
         std::string folder = (selectedEnv == 0) ? "flowers" : (selectedEnv == 1) ? "birds" : "clouds";
 
-        // Модель
         int modelY = editY;
         drawText((float)editX, (float)(modelY + 20), "Модель:", 1.0f, 1.0f, 1.0f);
-        drawText((float)(editX + 80), (float)(modelY + 20), el->modelFile, 0.0f, 1.0f, 0.0f);
+
+        std::string displayFile = truncateFilename(el->modelFile, 30);
+        drawText((float)(editX + 80), (float)(modelY + 20), displayFile.c_str(), 0.0f, 1.0f, 0.0f);
 
         if (drawButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openFileDialog(el->modelFile, folder);
@@ -1636,7 +1721,6 @@ void renderEnvironmentEditor() {
             updatePreviewForCurrentMode();
         }
 
-        // Цвет
         int colorY = modelY + 90;
         drawText((float)editX, (float)colorY, "Цвет:", 1.0f, 1.0f, 1.0f);
 
@@ -1666,7 +1750,6 @@ void renderEnvironmentEditor() {
             else el->color = glm::vec3(1.0f, 1.0f, 1.0f);
         }
 
-        // Масштаб
         int scaleY = colorY + 80;
         drawText((float)editX, (float)scaleY, "Масштаб:", 1.0f, 1.0f, 1.0f);
 
@@ -1682,7 +1765,6 @@ void renderEnvironmentEditor() {
             else el->scale = 1.5f;
         }
 
-        // Количество
         int countY = scaleY + 70;
         drawText((float)editX, (float)countY, "Количество:", 1.0f, 1.0f, 1.0f);
 
@@ -1698,7 +1780,6 @@ void renderEnvironmentEditor() {
             else el->count = 20;
         }
 
-        // Кнопка очистить все
         if (drawButton(editX, countY + 70, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             if (selectedEnv == 0) {
                 el->modelFile = "flower.fbx";
@@ -1747,7 +1828,6 @@ void renderGridEditor() {
     int startX = (int)(windowWidth * 0.05f);
     int startY = (int)(windowHeight * 0.12f);
     int sliderWidth = (int)(windowWidth * 0.25f);
-    int spacing = (int)(windowHeight * 0.08f);
 
     // Сетка
     drawText((float)startX, (float)(startY - 30), "СЕТКА", 1.0f, 1.0f, 0.0f);
@@ -1773,7 +1853,7 @@ void renderGridEditor() {
         }
     }
 
-    startY += spacing;
+    startY += 110;
 
     // Размер сетки
     drawText((float)startX, (float)(startY - 30), "РАЗМЕР СЕТКИ", 1.0f, 1.0f, 0.0f);
@@ -1784,7 +1864,7 @@ void renderGridEditor() {
         currentConfig.gridDepth = 120;
     }
 
-    startY += spacing + 30;
+    startY += 130;
 
     // Размер ячейки
     drawText((float)startX, (float)(startY - 30), "РАЗМЕР ЯЧЕЙКИ", 1.0f, 1.0f, 0.0f);
@@ -1795,52 +1875,13 @@ void renderGridEditor() {
 
     startY += 80;
 
-    // Полигоны пола
-    drawText((float)startX, (float)(startY - 30), "ПОЛИГОНЫ ПОЛА", 1.0f, 1.0f, 0.0f);
-    int totalPolygons = currentConfig.floorPolygonsX * currentConfig.floorPolygonsZ * 2;
-    char polyInfo[100];
-    sprintf_s(polyInfo, "Всего полигонов: %d", totalPolygons);
-    drawText((float)(startX + sliderWidth + 100), (float)(startY - 20), polyInfo, 1.0f, 1.0f, 0.0f);
-
-    drawIntSlider(startX, startY, sliderWidth, &currentConfig.floorPolygonsX, 1, 50, "Полигонов по X");
-    drawIntSlider(startX, startY + 45, sliderWidth, &currentConfig.floorPolygonsZ, 1, 50, "Полигонов по Z");
-
-    if (drawButton(startX + sliderWidth + 20, startY, 150, 35, "СБРОСИТЬ (8x8)")) {
-        currentConfig.floorPolygonsX = 8;
-        currentConfig.floorPolygonsZ = 8;
-    }
-
-    startY += 110;
-
-    // Подразбиение пола
-    drawText((float)startX, (float)(startY - 30), "ПОДРАЗБИЕНИЕ ДЛЯ ТЕНЕЙ", 1.0f, 1.0f, 0.0f);
-    char subdivBtnText[50];
-    sprintf_s(subdivBtnText, "Подразбиение: %s", currentConfig.floorUseSubdivision ? "ВКЛ" : "ВЫКЛ");
-    if (drawButton(startX, startY, 180, 40, subdivBtnText)) {
-        currentConfig.floorUseSubdivision = !currentConfig.floorUseSubdivision;
-    }
-
-    if (currentConfig.floorUseSubdivision) {
-        char levelText[50];
-        sprintf_s(levelText, "Уровень: %d", currentConfig.floorSubdivisionLevel);
-        drawText((float)(startX + 200), (float)(startY + 15), levelText, 1.0f, 1.0f, 0.0f);
-        drawIntSlider(startX + 280, startY, 150, &currentConfig.floorSubdivisionLevel, 2, 20, "");
-    }
-
-    if (drawButton(startX + sliderWidth + 20, startY, 150, 35, "СБРОСИТЬ")) {
-        currentConfig.floorUseSubdivision = false;
-        currentConfig.floorSubdivisionLevel = 10;
-    }
-
-    startY += 70;
-
     // Цвет сетки
     drawColorPicker(startX, startY, "Цвет сетки:", currentConfig.gridColor);
     if (drawButton(startX + sliderWidth + 20, startY + 50, 100, 30, "СБРОСИТЬ")) {
         currentConfig.gridColor = glm::vec3(0.2f, 0.5f, 0.15f);
     }
 
-    // Предпросмотр (3D)
+    // Предпросмотр
     int previewX = (int)(windowWidth * 0.55f);
     int previewY = (int)(windowHeight * 0.12f);
     int previewW = (int)(windowWidth * 0.4f);
@@ -1861,40 +1902,54 @@ void renderGridEditor() {
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
-    glm::vec3 eye(10.0f, 8.0f, 15.0f);
+    glm::vec3 eye(10.0f, 8.0f, 12.0f);
     glm::vec3 center(0.0f, 0.0f, 0.0f);
     glm::mat4 view = glm::lookAt(eye, center, glm::vec3(0.0f, 1.0f, 0.0f));
     glLoadMatrixf(glm::value_ptr(view));
 
-    // Пол
-    float size = (float)currentConfig.gridWidth * currentConfig.cellSize / 2.0f;
-    float depth = (float)currentConfig.gridDepth * currentConfig.cellSize / 2.0f;
+    float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
+    float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
+    float offsetX = worldWidth / 2.0f;
+    float offsetZ = worldDepth / 2.0f;
+
     glDisable(GL_LIGHTING);
-    glColor3f(0.3f, 0.3f, 0.3f);
+    glColor3f(currentConfig.floorColor.r, currentConfig.floorColor.g, currentConfig.floorColor.b);
     glBegin(GL_QUADS);
-    glVertex3f(-size, -0.5f, -depth);
-    glVertex3f(size, -0.5f, -depth);
-    glVertex3f(size, -0.5f, depth);
-    glVertex3f(-size, -0.5f, depth);
+    glVertex3f(-offsetX, -0.5f, -offsetZ);
+    glVertex3f(offsetX, -0.5f, -offsetZ);
+    glVertex3f(offsetX, -0.5f, offsetZ);
+    glVertex3f(-offsetX, -0.5f, offsetZ);
     glEnd();
 
     if (currentConfig.gridEnabled) {
         glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
         glLineWidth(currentConfig.gridLineWidth);
         glBegin(GL_LINES);
+
         for (int i = -currentConfig.gridWidth / 2; i <= currentConfig.gridWidth / 2; i++) {
             float x = (float)i * currentConfig.cellSize;
-            glVertex3f(x, -0.4f, -depth);
-            glVertex3f(x, -0.4f, depth);
+            glVertex3f(x, -0.4f, -offsetZ);
+            glVertex3f(x, -0.4f, offsetZ);
         }
         for (int i = -currentConfig.gridDepth / 2; i <= currentConfig.gridDepth / 2; i++) {
             float z = (float)i * currentConfig.cellSize;
-            glVertex3f(-size, -0.4f, z);
-            glVertex3f(size, -0.4f, z);
+            glVertex3f(-offsetX, -0.4f, z);
+            glVertex3f(offsetX, -0.4f, z);
         }
         glEnd();
         glLineWidth(1.0f);
     }
+
+    glColor3f(0.3f, 0.3f, 0.3f);
+    glBegin(GL_LINES);
+    for (int i = -3; i <= 3; i++) {
+        float pos = (float)i * 0.5f;
+        glVertex3f(pos, -0.45f, -3.0f);
+        glVertex3f(pos, -0.45f, 3.0f);
+        glVertex3f(-3.0f, -0.45f, pos);
+        glVertex3f(3.0f, -0.45f, pos);
+    }
+    glEnd();
 
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -1910,7 +1965,11 @@ void renderGridEditor() {
     glVertex2f((float)(previewX + previewW), (float)(previewY + previewH));
     glVertex2f((float)previewX, (float)(previewY + previewH));
     glEnd();
-    drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР СЕТКИ", 1.0f, 1.0f, 0.0f);
+
+    char infoText[100];
+    sprintf_s(infoText, "ПРЕДПРОСМОТР: %dx%d | Ячейка: %.2f",
+        currentConfig.gridWidth, currentConfig.gridDepth, currentConfig.cellSize);
+    drawText((float)(previewX + 10), (float)(previewY + 25), infoText, 1.0f, 1.0f, 0.0f);
 
     if (drawButton((int)(windowWidth * 0.03f), (int)(windowHeight * 0.9f), 150, 50, "НАЗАД")) {
         currentMode = MODE_MAIN;
@@ -1977,45 +2036,35 @@ void renderLightEditor() {
 //=============================================================================
 // РЕДАКТОР ТЕНЕЙ
 //=============================================================================
-
-void renderShadowPreview() {
-    int previewX = (int)(windowWidth * 0.6f);
+// Добавьте эту функцию перед renderShadowEditor()
+void renderShadowPreview3D() {
+    int previewX = (int)(windowWidth * 0.55f);
     int previewY = (int)(windowHeight * 0.12f);
-    int previewW = (int)(windowWidth * 0.35f);
-    int previewH = (int)(windowHeight * 0.55f);
+    int previewW = (int)(windowWidth * 0.42f);
+    int previewH = (int)(windowHeight * 0.65f);
 
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    // Сохраняем область preview для обработки мыши
+    previewHoverX = (int)previewX;
+    previewHoverY = (int)previewY;
+    previewHoverW = (int)previewW;
+    previewHoverH = (int)previewH;
+
+    previewHovered = (mouseX >= previewX && mouseX <= previewX + previewW &&
+        mouseY >= previewY && mouseY <= previewY + previewH);
+
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
     glViewport(previewX, windowHeight - previewY - previewH, previewW, previewH);
-    glClear(GL_DEPTH_BUFFER_BIT);
+    glScissor(previewX, windowHeight - previewY - previewH, previewW, previewH);
+    glEnable(GL_SCISSOR_TEST);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_BLEND);
 
-    GLfloat light_ambient[] = { currentConfig.ambientEnabled ? 0.3f : 0.0f,
-                                currentConfig.ambientEnabled ? 0.3f : 0.0f,
-                                currentConfig.ambientEnabled ? 0.3f : 0.0f, 1.0f };
-    GLfloat light_diffuse[] = { currentConfig.lightColor.r, currentConfig.lightColor.g, currentConfig.lightColor.b, 1.0f };
-    GLfloat light_specular[] = { currentConfig.specularEnabled ? 0.5f : 0.0f,
-                                 currentConfig.specularEnabled ? 0.5f : 0.0f,
-                                 currentConfig.specularEnabled ? 0.5f : 0.0f, 1.0f };
-
-    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
-    glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
-
-    if (currentConfig.lightType == 0) {
-        GLfloat light_position[] = { -currentConfig.lightDir.x, -currentConfig.lightDir.y, -currentConfig.lightDir.z, 0.0f };
-        glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-    }
-    else {
-        GLfloat light_position[] = { currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z, 1.0f };
-        glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-        if (currentConfig.lightType == 2) {
-            GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
-            glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
-            glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 45.0f);
-        }
-    }
+    // ========== ОТКЛЮЧАЕМ ОСВЕЩЕНИЕ ==========
+    glDisable(GL_LIGHTING);
+    glDisable(GL_LIGHT0);
 
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
@@ -2027,53 +2076,150 @@ void renderShadowPreview() {
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
-    glm::vec3 eye(5.0f, 4.0f, 8.0f);
+
+    // Камера
+    float radPitch = glm::radians(previewCameraPitch);
+    float radYaw = glm::radians(previewRotationAngle);
+
     glm::vec3 center(0.0f, 0.0f, 0.0f);
-    glm::mat4 view = glm::lookAt(eye, center, glm::vec3(0.0f, 1.0f, 0.0f));
+    float camX = sin(radYaw) * cos(radPitch) * previewCameraDistance;
+    float camY = sin(radPitch) * previewCameraDistance;
+    float camZ = cos(radYaw) * cos(radPitch) * previewCameraDistance;
+    glm::vec3 eye(camX, camY + 1.0f, camZ);
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+
+    glm::mat4 view = glm::lookAt(eye, center, up);
     glLoadMatrixf(glm::value_ptr(view));
 
-    // Пол
-    glColor3f(0.6f, 0.6f, 0.6f);
-    glBegin(GL_QUADS);
-    glNormal3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(-3.0f, -0.5f, -3.0f);
-    glVertex3f(3.0f, -0.5f, -3.0f);
-    glVertex3f(3.0f, -0.5f, 3.0f);
-    glVertex3f(-3.0f, -0.5f, 3.0f);
-    glEnd();
+    // ========== ПОЛ С ТЕНЯМИ ==========
+    float visibleSize = 8.0f;
+    float startX = -visibleSize;
+    float endX = visibleSize;
+    float startZ = -visibleSize;
+    float endZ = visibleSize;
 
-    glDisable(GL_LIGHTING);
-    glColor3f(0.3f, 0.3f, 0.3f);
-    glBegin(GL_LINES);
-    for (int i = -3; i <= 3; i++) {
-        glVertex3f((float)i, -0.45f, -3.0f);
-        glVertex3f((float)i, -0.45f, 3.0f);
-        glVertex3f(-3.0f, -0.45f, (float)i);
-        glVertex3f(3.0f, -0.45f, (float)i);
+    // Пол (светлый и тёмный цвета для имитации теней)
+    glm::vec3 lightColor = currentConfig.floorColor;
+    glm::vec3 darkColor = currentConfig.floorColor * 0.3f;
+
+    // Сетка теней для пола
+    int shadowCellsX = 20;
+    int shadowCellsZ = 20;
+    float cellSizeX = (endX - startX) / shadowCellsX;
+    float cellSizeZ = (endZ - startZ) / shadowCellsZ;
+
+    // Пол с ячейками для теней
+    for (int z = 0; z < shadowCellsZ; z++) {
+        for (int x = 0; x < shadowCellsX; x++) {
+            float posX = startX + x * cellSizeX;
+            float posZ = startZ + z * cellSizeZ;
+
+            // Проверяем тень от объектов
+            glm::vec3 samplePos(posX + cellSizeX / 2, 0.5f, posZ + cellSizeZ / 2);
+            bool inShadow = false;
+
+            // Проверка тени от деревьев
+            for (int i = -1; i <= 1; i++) {
+                float treeX = (float)i * 2.5f;
+                float treeZ = -2.0f;
+                float dx = samplePos.x - treeX;
+                float dz = samplePos.z - treeZ;
+                float dist = sqrt(dx * dx + dz * dz);
+                if (dist < 0.8f) {
+                    inShadow = true;
+                    break;
+                }
+            }
+
+            // Проверка тени от змейки
+            float snakeDx = samplePos.x - 0.0f;
+            float snakeDz = samplePos.z - 0.0f;
+            if (abs(snakeDx) < 0.6f && abs(snakeDz) < 0.6f) {
+                inShadow = true;
+            }
+
+            glm::vec3 finalColor = inShadow ? darkColor : lightColor;
+            glColor3f(finalColor.r, finalColor.g, finalColor.b);
+
+            glBegin(GL_QUADS);
+            glVertex3f(posX, -0.5f, posZ);
+            glVertex3f(posX + cellSizeX, -0.5f, posZ);
+            glVertex3f(posX + cellSizeX, -0.5f, posZ + cellSizeZ);
+            glVertex3f(posX, -0.5f, posZ + cellSizeZ);
+            glEnd();
+        }
     }
-    glEnd();
-    glEnable(GL_LIGHTING);
 
-    // Змейка (простая модель)
+    // Сетка
+    if (currentConfig.gridEnabled) {
+        glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
+        glLineWidth(currentConfig.gridLineWidth);
+        glBegin(GL_LINES);
+
+        float step = currentConfig.cellSize * 5;
+        if (step < 0.5f) step = 0.5f;
+
+        for (float x = -visibleSize; x <= visibleSize; x += step) {
+            glVertex3f(x, -0.45f, -visibleSize);
+            glVertex3f(x, -0.45f, visibleSize);
+        }
+        for (float z = -visibleSize; z <= visibleSize; z += step) {
+            glVertex3f(-visibleSize, -0.45f, z);
+            glVertex3f(visibleSize, -0.45f, z);
+        }
+        glEnd();
+        glLineWidth(1.0f);
+    }
+
+    // ========== ТЕСТОВАЯ ЗМЕЙКА ==========
     glPushMatrix();
     glTranslatef(0.0f, -0.2f, 0.0f);
     glScalef(0.6f, 0.6f, 0.6f);
-    glColor3f(0.0f, 1.0f, 0.0f);
 
-    // Голова (сфера из кубов)
+    // Голова (светло-зелёная)
+    glColor3f(0.2f, 0.9f, 0.2f);
     glBegin(GL_QUADS);
-    for (int i = 0; i < 6; i++) {
-        glVertex3f(-0.5f, -0.5f, -0.5f);
-        glVertex3f(0.5f, -0.5f, -0.5f);
-        glVertex3f(0.5f, 0.5f, -0.5f);
-        glVertex3f(-0.5f, 0.5f, -0.5f);
-    }
+    glNormal3f(0.0f, 0.0f, 1.0f);
+    glVertex3f(-0.5f, -0.5f, 0.5f);
+    glVertex3f(0.5f, -0.5f, 0.5f);
+    glVertex3f(0.5f, 0.5f, 0.5f);
+    glVertex3f(-0.5f, 0.5f, 0.5f);
+
+    glNormal3f(0.0f, 0.0f, -1.0f);
+    glVertex3f(-0.5f, -0.5f, -0.5f);
+    glVertex3f(-0.5f, 0.5f, -0.5f);
+    glVertex3f(0.5f, 0.5f, -0.5f);
+    glVertex3f(0.5f, -0.5f, -0.5f);
+
+    glNormal3f(0.0f, 1.0f, 0.0f);
+    glVertex3f(-0.5f, 0.5f, -0.5f);
+    glVertex3f(-0.5f, 0.5f, 0.5f);
+    glVertex3f(0.5f, 0.5f, 0.5f);
+    glVertex3f(0.5f, 0.5f, -0.5f);
+
+    glNormal3f(0.0f, -1.0f, 0.0f);
+    glVertex3f(-0.5f, -0.5f, -0.5f);
+    glVertex3f(0.5f, -0.5f, -0.5f);
+    glVertex3f(0.5f, -0.5f, 0.5f);
+    glVertex3f(-0.5f, -0.5f, 0.5f);
+
+    glNormal3f(1.0f, 0.0f, 0.0f);
+    glVertex3f(0.5f, -0.5f, -0.5f);
+    glVertex3f(0.5f, 0.5f, -0.5f);
+    glVertex3f(0.5f, 0.5f, 0.5f);
+    glVertex3f(0.5f, -0.5f, 0.5f);
+
+    glNormal3f(-1.0f, 0.0f, 0.0f);
+    glVertex3f(-0.5f, -0.5f, -0.5f);
+    glVertex3f(-0.5f, -0.5f, 0.5f);
+    glVertex3f(-0.5f, 0.5f, 0.5f);
+    glVertex3f(-0.5f, 0.5f, -0.5f);
     glEnd();
 
-    // Тело (цилиндр из квадов)
+    // Тело (тёмно-зелёное)
     glPushMatrix();
     glTranslatef(-0.8f, 0.0f, 0.0f);
-    glColor3f(0.0f, 0.7f, 0.0f);
+    glColor3f(0.0f, 0.6f, 0.0f);
     glBegin(GL_QUADS);
     for (int i = 0; i < 32; i++) {
         float angle = (float)i * 3.14159f * 2.0f / 32.0f;
@@ -2090,19 +2236,45 @@ void renderShadowPreview() {
     glPopMatrix();
     glPopMatrix();
 
-    // Деревья
-    for (int i = -1; i <= 1; i += 2) {
+    // ========== ДЕРЕВЬЯ ==========
+    for (int i = -1; i <= 1; i++) {
+        float xPos = (float)i * 2.5f;
+        if (abs(xPos) < 0.5f) continue;
+
         glPushMatrix();
-        glTranslatef((float)i * 1.8f, -0.2f, -1.5f);
+        glTranslatef(xPos, -0.2f, -2.0f);
         glScalef(0.8f, 1.2f, 0.8f);
+
+        // Ствол (коричневый)
         glColor3f(0.5f, 0.3f, 0.1f);
         glBegin(GL_QUADS);
+        glNormal3f(0.0f, 0.0f, 1.0f);
+        glVertex3f(-0.25f, -0.5f, 0.25f);
+        glVertex3f(0.25f, -0.5f, 0.25f);
+        glVertex3f(0.25f, 0.5f, 0.25f);
+        glVertex3f(-0.25f, 0.5f, 0.25f);
+
+        glNormal3f(0.0f, 0.0f, -1.0f);
         glVertex3f(-0.25f, -0.5f, -0.25f);
+        glVertex3f(-0.25f, 0.5f, -0.25f);
+        glVertex3f(0.25f, 0.5f, -0.25f);
+        glVertex3f(0.25f, -0.5f, -0.25f);
+
+        glNormal3f(-1.0f, 0.0f, 0.0f);
+        glVertex3f(-0.25f, -0.5f, -0.25f);
+        glVertex3f(-0.25f, -0.5f, 0.25f);
+        glVertex3f(-0.25f, 0.5f, 0.25f);
+        glVertex3f(-0.25f, 0.5f, -0.25f);
+
+        glNormal3f(1.0f, 0.0f, 0.0f);
         glVertex3f(0.25f, -0.5f, -0.25f);
         glVertex3f(0.25f, 0.5f, -0.25f);
-        glVertex3f(-0.25f, 0.5f, -0.25f);
+        glVertex3f(0.25f, 0.5f, 0.25f);
+        glVertex3f(0.25f, -0.5f, 0.25f);
         glEnd();
-        glColor3f(0.2f, 0.6f, 0.2f);
+
+        // Крона (зелёная)
+        glColor3f(0.2f, 0.7f, 0.2f);
         glTranslatef(0.0f, 0.6f, 0.0f);
         glBegin(GL_TRIANGLES);
         for (int j = 0; j < 12; j++) {
@@ -2123,9 +2295,11 @@ void renderShadowPreview() {
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
-    glPopAttrib();
-
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    glDisable(GL_SCISSOR_TEST);
     reset2DProjection();
+
+    // Рамка
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f((float)previewX, (float)previewY);
@@ -2135,23 +2309,85 @@ void renderShadowPreview() {
     glEnd();
 
     drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР ТЕНЕЙ", 1.0f, 1.0f, 0.0f);
-    drawText((float)(previewX + 10), (float)(previewY + 50), currentConfig.getShadowModeName(), 0.8f, 0.8f, 1.0f);
-}
 
+    char controlsInfo[200];
+    sprintf_s(controlsInfo, "ЛКМ+перетаскивание - вращение | Колёсико - Zoom | Пробел - стоп/старт авто");
+    drawText((float)(previewX + 10), (float)(previewY + previewH - 25), controlsInfo, 0.6f, 0.6f, 0.8f);
+
+    char floorInfo[150];
+    sprintf_s(floorInfo, "Пол: %dx%d | Ячейка: %.2f | Сетка: %s",
+        currentConfig.gridWidth, currentConfig.gridDepth,
+        currentConfig.cellSize,
+        currentConfig.gridEnabled ? "ВКЛ" : "ВЫКЛ");
+    drawText((float)(previewX + 10), (float)(previewY + 50), floorInfo, 0.7f, 0.8f, 1.0f);
+
+    const char* lightTypeName = "Направленный (симуляция из конфига)";
+    char lightInfo[150];
+    sprintf_s(lightInfo, "%s | Цвет: (%.2f,%.2f,%.2f)",
+        lightTypeName,
+        currentConfig.lightColor.r, currentConfig.lightColor.g, currentConfig.lightColor.b);
+    drawText((float)(previewX + 10), (float)(previewY + 75), lightInfo, 0.8f, 0.8f, 1.0f);
+
+    drawText((float)(previewX + 10), (float)(previewY + 100), currentConfig.getShadowModeName(), 0.8f, 0.8f, 1.0f);
+
+    char distInfo[50];
+    sprintf_s(distInfo, "Дист: %.1f | Автовращ: %s", previewCameraDistance, previewAutoRotate ? "ВКЛ" : "ВЫКЛ");
+    drawText((float)(previewX + previewW - 150), (float)(previewY + 25), distInfo, 1.0f, 1.0f, 0.0f);
+
+    int arrowY = (int)(previewY + previewH + 15);
+    int arrowCenterX = (int)(previewX + previewW / 2);
+
+    if (drawButton(arrowCenterX - 70, arrowY, 60, 35, "<-")) {
+        previewRotationAngle -= 15.0f;
+        previewAutoRotate = false;
+        previewLastRotateTime = (float)glfwGetTime();
+    }
+    if (drawButton(arrowCenterX + 10, arrowY, 60, 35, "->")) {
+        previewRotationAngle += 15.0f;
+        previewAutoRotate = false;
+        previewLastRotateTime = (float)glfwGetTime();
+    }
+
+    const char* autoRotateBtnText = previewAutoRotate ? "СТОП" : "СТАРТ";
+    if (drawButton(arrowCenterX - 135, arrowY, 55, 35, autoRotateBtnText)) {
+        previewAutoRotate = !previewAutoRotate;
+        if (previewAutoRotate) {
+            previewLastRotateTime = (float)glfwGetTime();
+        }
+    }
+
+    if (drawButton(arrowCenterX + 80, arrowY, 55, 35, "СБРОС")) {
+        previewCameraDistance = 6.0f;
+        previewCameraPitch = 25.0f;
+        previewRotationAngle = 0.0f;
+        previewAutoRotate = true;
+    }
+
+    float currentTime = (float)glfwGetTime();
+    if (!previewAutoRotate && (currentTime - previewLastRotateTime >= autoRotateDelay)) {
+        previewAutoRotate = true;
+    }
+    if (previewAutoRotate) {
+        previewRotationAngle += rotationSpeed;
+    }
+    if (previewRotationAngle >= 360) previewRotationAngle -= 360;
+}
 void renderShadowEditor() {
     reset2DProjection();
     drawCenteredText((float)(windowHeight * 0.05f), "НАСТРОЙКИ ТЕНЕЙ", 1.0f, 1.0f, 0.0f);
 
-    int startX = (int)(windowWidth * 0.05f);
+    int startX = (int)(windowWidth * 0.03f);
     int startY = (int)(windowHeight * 0.12f);
     int sliderWidth = (int)(windowWidth * 0.25f);
 
     drawText((float)startX, (float)(startY - 30), "РЕЖИМ ТРАССИРОВКИ", 1.0f, 1.0f, 0.0f);
 
-    const char* modes[] = { "CENTER (1 луч, бинарный)", "CORNERS (4 луча, градиент)",
-                            "CENTER_SUBDIVIDED (адаптивный, бинарный)", "CORNERS_SUBDIVIDED (адаптивный, градиент)" };
-    int modeBtnWidth = (int)(windowWidth * 0.4f);
-    int modeBtnHeight = 40;
+    const char* modes[] = { "CENTER (1 луч, бинарный)",
+                            "CORNERS (4 луча, градиент)",
+                            "CENTER_SUBDIVIDED (адаптивный, бинарный)",
+                            "CORNERS_SUBDIVIDED (адаптивный, градиент)" };
+    int modeBtnWidth = (int)(windowWidth * 0.35f);
+    int modeBtnHeight = 35;
 
     for (int i = 0; i < 4; i++) {
         int modeX = startX + (i % 2) * (modeBtnWidth + 10);
@@ -2192,67 +2428,29 @@ void renderShadowEditor() {
     drawText((float)startX, (float)(startY - 30), "ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙКИ", 1.0f, 1.0f, 0.0f);
 
     std::string shadowBtnText = std::string("Тени: ") + (currentConfig.shadowMapEnabled ? "ВКЛ" : "ВЫКЛ");
-    if (drawButton(startX, startY, 180, 40, shadowBtnText.c_str())) {
+    if (drawButton(startX, startY, 150, 40, shadowBtnText.c_str())) {
         currentConfig.shadowMapEnabled = !currentConfig.shadowMapEnabled;
     }
 
     std::string ambientBtnText = std::string("Ambient: ") + (currentConfig.ambientEnabled ? "ВКЛ" : "ВЫКЛ");
-    if (drawButton(startX + 200, startY, 180, 40, ambientBtnText.c_str())) {
+    if (drawButton(startX + 170, startY, 150, 40, ambientBtnText.c_str())) {
         currentConfig.ambientEnabled = !currentConfig.ambientEnabled;
     }
 
     std::string specularBtnText = std::string("Specular: ") + (currentConfig.specularEnabled ? "ВКЛ" : "ВЫКЛ");
-    if (drawButton(startX + 400, startY, 180, 40, specularBtnText.c_str())) {
+    if (drawButton(startX + 340, startY, 150, 40, specularBtnText.c_str())) {
         currentConfig.specularEnabled = !currentConfig.specularEnabled;
     }
 
-    // Информация
-    int infoX = (int)(windowWidth * 0.05f);
-    int infoY = (int)(windowHeight * 0.7f);
-    int infoWidth = (int)(windowWidth * 0.5f);
-    int infoHeight = (int)(windowHeight * 0.2f);
+    // 3D предпросмотр с управлением
+    renderShadowPreview3D();
 
-    glColor3f(0.2f, 0.2f, 0.3f);
-    glBegin(GL_QUADS);
-    glVertex2f((float)infoX, (float)infoY);
-    glVertex2f((float)(infoX + infoWidth), (float)infoY);
-    glVertex2f((float)(infoX + infoWidth), (float)(infoY + infoHeight));
-    glVertex2f((float)infoX, (float)(infoY + infoHeight));
-    glEnd();
-    glColor3f(1.0f, 1.0f, 1.0f);
-    glBegin(GL_LINE_LOOP);
-    glVertex2f((float)infoX, (float)infoY);
-    glVertex2f((float)(infoX + infoWidth), (float)infoY);
-    glVertex2f((float)(infoX + infoWidth), (float)(infoY + infoHeight));
-    glVertex2f((float)infoX, (float)(infoY + infoHeight));
-    glEnd();
-
-    drawText((float)(infoX + 10), (float)(infoY + 25), "ИНФОРМАЦИЯ О РЕЖИМЕ", 1.0f, 1.0f, 0.0f);
-    drawText((float)(infoX + 10), (float)(infoY + 55), currentConfig.getShadowModeName(), 0.8f, 0.8f, 1.0f);
-
-    if (currentConfig.shadowTraceMode == 2 || currentConfig.shadowTraceMode == 3) {
-        char subdivInfo[200];
-        sprintf_s(subdivInfo, "Размер подклеток: %dx%d, Всего лучей на клетку: %d",
-            currentConfig.shadowSubdivisionSize, currentConfig.shadowSubdivisionSize,
-            currentConfig.shadowSubdivisionSize * currentConfig.shadowSubdivisionSize *
-            (currentConfig.useCornerTrace() ? 4 : 1));
-        drawText((float)(infoX + 10), (float)(infoY + 85), subdivInfo, 0.7f, 1.0f, 0.7f);
-    }
-
-    int shadowCellsX = currentConfig.gridWidth / currentConfig.shadowStrideX;
-    int shadowCellsZ = currentConfig.gridDepth / currentConfig.shadowStrideZ;
-    char cellsInfo[200];
-    sprintf_s(cellsInfo, "Теневая сетка: %dx%d клеток (из %dx%d игровых)",
-        shadowCellsX, shadowCellsZ, currentConfig.gridWidth, currentConfig.gridDepth);
-    drawText((float)(infoX + 10), (float)(infoY + 115), cellsInfo, 0.7f, 1.0f, 0.7f);
-
-    renderShadowPreview();
-
-    if (drawButton((int)(windowWidth * 0.03f), (int)(windowHeight * 0.9f), 150, 50, "НАЗАД")) {
+    if (drawButton((int)(windowWidth * 0.03f), (int)(windowHeight * 0.92f), 150, 50, "НАЗАД")) {
         currentMode = MODE_MAIN;
         saveConfig();
     }
 }
+
 
 //=============================================================================
 // ГЛАВНОЕ МЕНЮ
@@ -2262,7 +2460,7 @@ void renderMainMenu() {
     reset2DProjection();
     drawCenteredText((float)(windowHeight * 0.08f), "РЕДАКТОР КОНФИГУРАЦИИ ИГРЫ ЗМЕЙКА", 1.0f, 1.0f, 0.0f);
 
-    int buttonWidth = (int)(windowWidth * 0.28f);
+    int buttonWidth = (int)(windowWidth * 0.32f);
     int buttonHeight = (int)(windowHeight * 0.07f);
     int startY = (int)(windowHeight * 0.2f);
     int centerX = windowWidth / 2 - buttonWidth / 2;
@@ -2306,9 +2504,8 @@ void renderMainMenu() {
     }
 
     char gridInfo[100];
-    sprintf_s(gridInfo, "Сетка: %dx%d  Размер ячейки: %.2f  Полигонов пола: %d",
-        currentConfig.gridWidth, currentConfig.gridDepth, currentConfig.cellSize,
-        currentConfig.floorPolygonsX * currentConfig.floorPolygonsZ * 2);
+    sprintf_s(gridInfo, "Сетка: %dx%d  Размер ячейки: %.2f",
+        currentConfig.gridWidth, currentConfig.gridDepth, currentConfig.cellSize);
     drawCenteredText((float)(windowHeight * 0.92f), gridInfo, 0.8f, 0.8f, 1.0f);
 
     char shadowInfo[100];
@@ -2368,21 +2565,76 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         mousePressedLast = mousePressed;
         mousePressed = (action == GLFW_PRESS);
+
+        if (action == GLFW_PRESS && previewHovered) {
+            previewMouseRotating = true;
+        }
+        if (action == GLFW_RELEASE) {
+            previewMouseRotating = false;
+        }
     }
 }
 
 void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
     mouseX = xpos;
     mouseY = ypos;
+
+    if (previewMouseRotating && previewHovered) {
+        double deltaX = xpos - previewLastMouseX;
+        double deltaY = ypos - previewLastMouseY;
+
+        if (deltaX != 0) {
+            previewRotationAngle += (float)deltaX * 0.5f;
+            previewAutoRotate = false;
+            previewLastRotateTime = (float)glfwGetTime();
+        }
+        if (deltaY != 0) {
+            previewCameraPitch += (float)deltaY * 0.3f;
+            if (previewCameraPitch > 85.0f) previewCameraPitch = 85.0f;
+            if (previewCameraPitch < 5.0f) previewCameraPitch = 5.0f;
+            previewAutoRotate = false;
+            previewLastRotateTime = (float)glfwGetTime();
+        }
+    }
+
+    previewLastMouseX = xpos;
+    previewLastMouseY = ypos;
+}
+
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+    if (previewHovered) {
+        previewCameraDistance -= (float)yoffset;
+        if (previewCameraDistance < 2.0f) previewCameraDistance = 2.0f;
+        if (previewCameraDistance > 20.0f) previewCameraDistance = 20.0f;
+
+        previewAutoRotate = false;
+        previewLastRotateTime = (float)glfwGetTime();
+    }
 }
 
 void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) {
-        if (currentMode != MODE_MAIN) {
-            currentMode = MODE_MAIN;
+    if (action == GLFW_PRESS) {
+        if (key == GLFW_KEY_ESCAPE) {
+            if (currentMode != MODE_MAIN) {
+                currentMode = MODE_MAIN;
+            }
+            else {
+                glfwSetWindowShouldClose(window, true);
+            }
         }
-        else {
-            glfwSetWindowShouldClose(window, true);
+
+        if (key == GLFW_KEY_SPACE && previewHovered) {
+            previewAutoRotate = !previewAutoRotate;
+            if (previewAutoRotate) {
+                previewLastRotateTime = (float)glfwGetTime();
+            }
+        }
+
+        if (key == GLFW_KEY_R && previewHovered) {
+            previewCameraDistance = 6.0f;
+            previewCameraPitch = 25.0f;
+            previewRotationAngle = 0.0f;
+            previewAutoRotate = true;
         }
     }
 }
@@ -2421,6 +2673,7 @@ bool initOpenGL() {
     glfwSetCursorPosCallback(window, cursorPosCallback);
     glfwSetKeyCallback(window, keyCallback);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
+    glfwSetScrollCallback(window, scrollCallback);
 
     if (glewInit() != GLEW_OK) {
         std::cerr << "Не удалось инициализировать GLEW" << std::endl;
@@ -2477,7 +2730,6 @@ int main() {
 
         glfwSwapBuffers(window);
 
-        // Обновление состояния кнопки мыши
         if (!mousePressed) mousePressedLast = false;
     }
 
