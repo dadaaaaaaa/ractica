@@ -86,7 +86,6 @@ void initLighting() {
 
 // ТОЧНАЯ копия GameRenderer::updateLightPosition()
 void updateLightPosition() {
-    // ВАЖНО: Явно включаем освещение
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_NORMALIZE);
@@ -94,10 +93,10 @@ void updateLightPosition() {
     switch (currentConfig.lightType) {
     case 0: { // Directional
         GLfloat light0_position[] = {
-            -currentConfig.lightDir.x,
-            -currentConfig.lightDir.y,
-            -currentConfig.lightDir.z,
-            0.0f
+            currentConfig.lightDir.x,
+            currentConfig.lightDir.y,
+            currentConfig.lightDir.z,
+            0.0f  // ВАЖНО: 0 для направленного света (мировые координаты)
         };
         glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
         break;
@@ -107,7 +106,7 @@ void updateLightPosition() {
             currentConfig.lightPos.x,
             currentConfig.lightPos.y,
             currentConfig.lightPos.z,
-            1.0f
+            1.0f  // ВАЖНО: 1 для точечного света (мировые координаты)
         };
         glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
 
@@ -121,7 +120,7 @@ void updateLightPosition() {
             currentConfig.lightPos.x,
             currentConfig.lightPos.y,
             currentConfig.lightPos.z,
-            1.0f
+            1.0f  // ВАЖНО: 1 для прожектора (мировые координаты)
         };
         glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
 
