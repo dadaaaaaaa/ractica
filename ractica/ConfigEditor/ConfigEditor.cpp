@@ -4,7 +4,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-
+#include <GL/freeglut.h>
 // Windows headers
 #include <windows.h>
 #include <commdlg.h>
@@ -32,10 +32,89 @@
 
 #include "ConfigManager.h"
 #include "../Shared/ConfigTypes.h"
-
+// Добавить после существующих includes
+// Добавить после других includes:
+#include "../Graphics/Model.h"
+#include "../Primitives/PrimitiveBase.h"
+#include "../Primitives/ApplePrimitive.h"
+#include "../Primitives/TreePrimitive.h"
+#include "../Primitives/CloudPrimitive.h"
+#include "../Primitives/BirdPrimitive.h"
+#include "../Primitives/FlowerPrimitive.h"
+#include "../Primitives/FencePrimitive.h"
+#include "../Primitives/SnakeHeadPrimitive.h"
+#include "../Primitives/SnakeBodyPrimitive.h"
+#include "../Primitives/SnakeTailPrimitive.h"
+#include <functional>
+// После существующих глобальных переменных добавить:
+// Модели для предпросмотра (как в GameRenderer)
+Model g_previewSnakeHeadModel;
+Model g_previewSnakeBodyModel;
+Model g_previewSnakeTailModel;
+Model g_previewAppleModel;
+Model g_previewTreeModel;
+Model g_previewCloudModel;
+Model g_previewBirdModel;
+Model g_previewFlowerModel;
+Model g_previewFenceModel;
+Model g_previewFloorModel;
 //=============================================================================
 // ОПРЕДЕЛЕНИЯ СТРУКТУР
 //=============================================================================
+// Добавить после функции loadFBXModel:
+// Добавить после других функций:
+
+bool convertModelDataToModel(const ModelData& modelData, Model& outModel) {
+    if (modelData.vertices.empty()) {
+        return false;
+    }
+
+    outModel.vertices.clear();
+    outModel.hasTexture = false;
+    outModel.textureID = 0;
+
+    size_t vertexCount = modelData.vertices.size() / 3;
+    bool hasNormals = !modelData.normals.empty();
+    bool hasTexCoords = !modelData.texCoords.empty();
+
+    for (size_t i = 0; i < vertexCount; i++) {
+        Vertex vertex;
+
+        vertex.position.x = modelData.vertices[i * 3];
+        vertex.position.y = modelData.vertices[i * 3 + 1];
+        vertex.position.z = modelData.vertices[i * 3 + 2];
+
+        if (hasNormals && i * 3 + 2 < modelData.normals.size()) {
+            vertex.normal.x = modelData.normals[i * 3];
+            vertex.normal.y = modelData.normals[i * 3 + 1];
+            vertex.normal.z = modelData.normals[i * 3 + 2];
+        }
+        else {
+            vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+
+        if (hasTexCoords && i * 2 + 1 < modelData.texCoords.size()) {
+            vertex.texCoords.x = modelData.texCoords[i * 2];
+            vertex.texCoords.y = modelData.texCoords[i * 2 + 1];
+        }
+        else {
+            vertex.texCoords = glm::vec2(0.0f, 0.0f);
+        }
+
+        outModel.vertices.push_back(vertex);
+    }
+
+    if (!modelData.materials.empty() && modelData.materials[0].textureID != 0) {
+        outModel.textureID = modelData.materials[0].textureID;
+        outModel.hasTexture = true;
+    }
+
+    outModel.computeNormals();
+    outModel.setupBuffers();
+
+    return true;
+}
+
 
 // Структура для символа шрифта
 struct Character {
@@ -148,6 +227,10 @@ double mouseX = 0, mouseY = 0;
 // ПРОТОТИПЫ ФУНКЦИЙ
 //=============================================================================
 
+//=============================================================================
+// ПРОТОТИПЫ ФУНКЦИЙ
+//=============================================================================
+
 void renderMainMenu();
 void renderSnakeEditor();
 void renderGroundSkyEditor();
@@ -174,7 +257,7 @@ bool drawIntSlider(int x, int y, int w, int* value, int minVal, int maxVal, cons
 void drawColorPicker(int x, int y, const char* label, glm::vec3& color);
 void openFileDialog(std::string& destVar, const std::string& subFolder);
 void openTextureFileDialog(std::string& destVar, Texture& texture);
-bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder);
+bool loadFBXModel(const std::string& filename, Model& outModel, const std::string& subFolder);
 void drawModel(ModelData& model);
 void reset2DProjection();
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
@@ -184,11 +267,34 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void windowSizeCallback(GLFWwindow* window, int width, int height);
 bool initOpenGL();
 std::string truncateFilename(const std::string& filename, int maxLen = 30);
-
+GLuint loadTextureFromFile(const std::string& path);  // Добавить прототип
 //=============================================================================
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 //=============================================================================
+// Функция для загрузки модели с fallback на примитив
+bool loadModelWithFallback(const std::string& filename, Model& targetModel,
+    const std::string& subFolder,
+    std::function<void(Model&)> createPrimitive) {
+    if (!filename.empty()) {
+        if (loadFBXModel(filename, targetModel, subFolder)) {
+            std::cout << "✓ Loaded FBX model: " << filename << std::endl;
+            return true;
+        }
+        std::cout << "✗ Failed to load FBX model: " << filename << ", using primitive" << std::endl;
+    }
+    else {
+        std::cout << "No model file specified, using primitive" << std::endl;
+    }
 
+    if (createPrimitive) {
+        createPrimitive(targetModel);
+        targetModel.computeNormals();
+        targetModel.setupBuffers();
+        std::cout << "✓ Created primitive model" << std::endl;
+        return true;
+    }
+    return false;
+}
 std::string extractFilename(const std::string& path) {
     size_t pos = path.find_last_of("\\/");
     if (pos != std::string::npos) return path.substr(pos + 1);
@@ -224,36 +330,375 @@ void clearPreview() {
 }
 
 void updatePreviewForCurrentMode() {
-    clearPreview();
+    // Очищаем текущую модель предпросмотра
+    previewModel.vertices.clear();
+    previewModel.normals.clear();
+    previewModel.texCoords.clear();
+    previewModel.loaded = false;
+
     switch (currentMode) {
-    case MODE_SNAKE_EDITOR:
+    case MODE_SNAKE_EDITOR: {
         if (selectedPart >= 0 && selectedPart < (int)snakeElements.size()) {
             std::string folder = (selectedPart == 0) ? "snake_head" :
                 (selectedPart == 1) ? "snake_body" : "snake_tail";
-            loadFBXModel(snakeElements[selectedPart]->modelFile, previewModel, folder);
+            std::string filename = snakeElements[selectedPart]->modelFile;
+
+            Model tempModel;
+            bool loaded = false;
+
+            if (!filename.empty()) {
+                loaded = loadFBXModel(filename, tempModel, folder);
+            }
+
+            if (!loaded) {
+                // Создаём примитив
+                if (selectedPart == 0) SnakeHeadPrimitive::create(tempModel);
+                else if (selectedPart == 1) SnakeBodyPrimitive::create(tempModel);
+                else SnakeTailPrimitive::create(tempModel);
+                tempModel.computeNormals();
+                tempModel.setupBuffers();
+                loaded = true;
+            }
+
+            if (loaded) {
+                // Конвертируем Model в ModelData
+                for (const auto& v : tempModel.vertices) {
+                    previewModel.vertices.push_back(v.position.x);
+                    previewModel.vertices.push_back(v.position.y);
+                    previewModel.vertices.push_back(v.position.z);
+                    previewModel.normals.push_back(v.normal.x);
+                    previewModel.normals.push_back(v.normal.y);
+                    previewModel.normals.push_back(v.normal.z);
+                    previewModel.texCoords.push_back(v.texCoords.x);
+                    previewModel.texCoords.push_back(v.texCoords.y);
+                }
+                previewModel.loaded = true;
+            }
         }
         break;
-    case MODE_GROUND_SKY_EDITOR:
+    }
+    case MODE_GROUND_SKY_EDITOR: {
         if (selectedGroundSky == 0 && !groundSkyElements.empty()) {
-            loadFBXModel(groundSkyElements[0]->modelFile, previewModel, "floor");
+            std::string filename = groundSkyElements[0]->modelFile;
+            Model tempModel;
+            bool loaded = false;
+
+            if (!filename.empty()) {
+                loaded = loadFBXModel(filename, tempModel, "floor");
+            }
+
+            if (!loaded) {
+                // Создаём простой квадрат для пола
+                Vertex v1, v2, v3, v4;
+                v1.position = glm::vec3(-0.5f, 0.0f, -0.5f);
+                v2.position = glm::vec3(0.5f, 0.0f, -0.5f);
+                v3.position = glm::vec3(0.5f, 0.0f, 0.5f);
+                v4.position = glm::vec3(-0.5f, 0.0f, 0.5f);
+                v1.normal = v2.normal = v3.normal = v4.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                tempModel.vertices = { v1, v2, v3, v1, v3, v4 };
+                tempModel.computeNormals();
+                tempModel.setupBuffers();
+                loaded = true;
+            }
+
+            if (loaded) {
+                for (const auto& v : tempModel.vertices) {
+                    previewModel.vertices.push_back(v.position.x);
+                    previewModel.vertices.push_back(v.position.y);
+                    previewModel.vertices.push_back(v.position.z);
+                    previewModel.normals.push_back(v.normal.x);
+                    previewModel.normals.push_back(v.normal.y);
+                    previewModel.normals.push_back(v.normal.z);
+                }
+                previewModel.loaded = true;
+            }
         }
         break;
-    case MODE_OBSTACLES_EDITOR:
+    }
+    case MODE_OBSTACLES_EDITOR: {
         if (selectedObstacle >= 0 && selectedObstacle < (int)obstaclesElements.size()) {
-            loadFBXModel(obstaclesElements[selectedObstacle]->modelFile, previewModel, "obstacles");
+            std::string filename = obstaclesElements[selectedObstacle]->modelFile;
+            Model tempModel;
+            bool loaded = false;
+
+            if (!filename.empty()) {
+                loaded = loadFBXModel(filename, tempModel, "obstacles");
+            }
+
+            if (!loaded) {
+                if (selectedObstacle == 0) {
+                    TreePrimitive::create(tempModel);
+                }
+                else if (selectedObstacle == 1) {
+                    // Rock primitive - простой куб
+                    Vertex v;
+                    v.position = glm::vec3(0.0f, 0.0f, 0.0f);
+                    v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                    for (int i = -1; i <= 1; i++) {
+                        for (int j = -1; j <= 1; j++) {
+                            for (int k = -1; k <= 1; k++) {
+                                v.position = glm::vec3(i * 0.3f, j * 0.3f + 0.3f, k * 0.3f);
+                                tempModel.vertices.push_back(v);
+                            }
+                        }
+                    }
+                }
+                else if (selectedObstacle == 2) {
+                    FencePrimitive::create(tempModel);
+                }
+                else {
+                    ApplePrimitive::create(tempModel);
+                }
+                tempModel.computeNormals();
+                tempModel.setupBuffers();
+                loaded = true;
+            }
+
+            if (loaded) {
+                for (const auto& v : tempModel.vertices) {
+                    previewModel.vertices.push_back(v.position.x);
+                    previewModel.vertices.push_back(v.position.y);
+                    previewModel.vertices.push_back(v.position.z);
+                    previewModel.normals.push_back(v.normal.x);
+                    previewModel.normals.push_back(v.normal.y);
+                    previewModel.normals.push_back(v.normal.z);
+                }
+                previewModel.loaded = true;
+            }
         }
         break;
-    case MODE_ENVIRONMENT_EDITOR:
+    }
+    case MODE_ENVIRONMENT_EDITOR: {
         if (selectedEnv >= 0 && selectedEnv < (int)environmentElements.size()) {
             std::string folder = (selectedEnv == 0) ? "flowers" :
                 (selectedEnv == 1) ? "birds" : "clouds";
-            loadFBXModel(environmentElements[selectedEnv]->modelFile, previewModel, folder);
+            std::string filename = environmentElements[selectedEnv]->modelFile;
+            Model tempModel;
+            bool loaded = false;
+
+            if (!filename.empty()) {
+                loaded = loadFBXModel(filename, tempModel, folder);
+            }
+
+            if (!loaded) {
+                if (selectedEnv == 0) {
+                    FlowerPrimitive::create(tempModel);
+                }
+                else if (selectedEnv == 1) {
+                    BirdPrimitive::create(tempModel);
+                }
+                else {
+                    CloudPrimitive::create(tempModel);
+                }
+                tempModel.computeNormals();
+                tempModel.setupBuffers();
+                loaded = true;
+            }
+
+            if (loaded) {
+                for (const auto& v : tempModel.vertices) {
+                    previewModel.vertices.push_back(v.position.x);
+                    previewModel.vertices.push_back(v.position.y);
+                    previewModel.vertices.push_back(v.position.z);
+                    previewModel.normals.push_back(v.normal.x);
+                    previewModel.normals.push_back(v.normal.y);
+                    previewModel.normals.push_back(v.normal.z);
+                    previewModel.texCoords.push_back(v.texCoords.x);
+                    previewModel.texCoords.push_back(v.texCoords.y);
+                }
+                previewModel.loaded = true;
+            }
         }
         break;
+    }
     default: break;
     }
 }
+void renderModelPreviewFromModel(Model& model, const char* title, float x, float y, float w, float h,
+    float& rotation, bool& autoRotate, float& lastTime, float scale, bool isFloor) {
 
+    previewHoverX = (int)x;
+    previewHoverY = (int)y;
+    previewHoverW = (int)w;
+    previewHoverH = (int)h;
+
+    previewHovered = (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h);
+
+    GLint viewport[4];
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    glViewport((GLint)x, windowHeight - (GLint)y - (GLint)h, (GLint)w, (GLint)h);
+    glScissor((GLint)x, windowHeight - (GLint)y - (GLint)h, (GLint)w, (GLint)h);
+    glEnable(GL_SCISSOR_TEST);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glDisable(GL_BLEND);
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    float aspect = w / h;
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+    glLoadMatrixf(glm::value_ptr(projection));
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    float radPitch = glm::radians(previewCameraPitch);
+    float radYaw = glm::radians(previewRotationAngle);
+
+    glm::vec3 center(0.0f, 0.0f, 0.0f);
+    float camX = sin(radYaw) * cos(radPitch) * previewCameraDistance;
+    float camY = sin(radPitch) * previewCameraDistance;
+    float camZ = cos(radYaw) * cos(radPitch) * previewCameraDistance;
+    glm::vec3 eye(camX, camY + 1.0f, camZ);
+    glm::vec3 up(0.0f, 1.0f, 0.0f);
+
+    glm::mat4 view = glm::lookAt(eye, center, up);
+    glLoadMatrixf(glm::value_ptr(view));
+
+    // Пол
+    float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
+    float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
+    float offsetX = worldWidth / 2.0f;
+    float offsetZ = worldDepth / 2.0f;
+
+    glDisable(GL_LIGHTING);
+    glColor3f(currentConfig.floorColor.r, currentConfig.floorColor.g, currentConfig.floorColor.b);
+    glBegin(GL_QUADS);
+    glVertex3f(-offsetX, -0.02f, -offsetZ);
+    glVertex3f(offsetX, -0.02f, -offsetZ);
+    glVertex3f(offsetX, -0.02f, offsetZ);
+    glVertex3f(-offsetX, -0.02f, offsetZ);
+    glEnd();
+
+    if (currentConfig.gridEnabled) {
+        glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
+        glLineWidth(currentConfig.gridLineWidth);
+        glBegin(GL_LINES);
+        for (int i = -currentConfig.gridWidth / 2; i <= currentConfig.gridWidth / 2; i++) {
+            float xPos = (float)i * currentConfig.cellSize;
+            glVertex3f(xPos, -0.01f, -offsetZ);
+            glVertex3f(xPos, -0.01f, offsetZ);
+        }
+        for (int i = -currentConfig.gridDepth / 2; i <= currentConfig.gridDepth / 2; i++) {
+            float zPos = (float)i * currentConfig.cellSize;
+            glVertex3f(-offsetX, -0.01f, zPos);
+            glVertex3f(offsetX, -0.01f, zPos);
+        }
+        glEnd();
+        glLineWidth(1.0f);
+    }
+
+    // Модель
+    if (model.isCompiled || !model.vertices.empty()) {
+        glPushMatrix();
+
+        if (isFloor) {
+            glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+            glScalef(0.01f, 0.01f, 0.01f);
+        }
+        else {
+            float minY = FLT_MAX;
+            for (const auto& v : model.vertices) {
+                minY = std::min(minY, v.position.y);
+            }
+            glTranslatef(0.0f, -minY + 0.05f, 0.0f);
+            glScalef(scale, scale, scale);
+        }
+
+        if (model.hasTexture && model.textureID != 0) {
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, model.textureID);
+        }
+
+        model.draw();
+
+        if (model.hasTexture && model.textureID != 0) {
+            glDisable(GL_TEXTURE_2D);
+        }
+        glPopMatrix();
+    }
+
+    glEnable(GL_LIGHTING);
+
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    glDisable(GL_SCISSOR_TEST);
+    reset2DProjection();
+
+    // UI Рамка и кнопки...
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x, y);
+    glVertex2f(x + w, y);
+    glVertex2f(x + w, y + h);
+    glVertex2f(x, y + h);
+    glEnd();
+
+    drawText(x + 10, y + 25, title, 1.0f, 1.0f, 0.0f);
+
+    char controlsInfo[200];
+    sprintf_s(controlsInfo, "Управление: ЛКМ+перетаскивание - вращение | Колёсико - Zoom | Пробел - стоп/старт авто");
+    drawText(x + 10, y + h - 25, controlsInfo, 0.6f, 0.6f, 0.8f);
+
+    if (!isFloor) {
+        char gridInfo[100];
+        sprintf_s(gridInfo, "Сетка: %dx%d | Ячейка: %.2f",
+            currentConfig.gridWidth, currentConfig.gridDepth, currentConfig.cellSize);
+        drawText(x + 10, y + h - 50, gridInfo, 0.7f, 0.7f, 0.7f);
+
+        char scaleText[50];
+        sprintf_s(scaleText, "Масштаб: %.2f | Дист: %.1f", scale, previewCameraDistance);
+        drawText(x + w - 150, y + 25, scaleText, 1.0f, 1.0f, 0.0f);
+
+        char rotateStatus[30];
+        sprintf_s(rotateStatus, "Автовращ: %s", previewAutoRotate ? "ВКЛ" : "ВЫКЛ");
+        drawText(x + w - 100, y + h - 25, rotateStatus,
+            previewAutoRotate ? 0.0f : 1.0f,
+            previewAutoRotate ? 1.0f : 0.5f,
+            previewAutoRotate ? 0.0f : 0.5f);
+    }
+
+    int arrowY = (int)(y + h + 25);
+    int arrowCenterX = (int)(x + w / 2);
+
+    if (drawButton(arrowCenterX - 70, arrowY, 60, 35, "<-")) {
+        previewRotationAngle -= 15.0f;
+        previewAutoRotate = false;
+        previewLastRotateTime = (float)glfwGetTime();
+    }
+    if (drawButton(arrowCenterX + 10, arrowY, 60, 35, "->")) {
+        previewRotationAngle += 15.0f;
+        previewAutoRotate = false;
+        previewLastRotateTime = (float)glfwGetTime();
+    }
+
+    const char* autoRotateBtnText = previewAutoRotate ? "СТОП" : "СТАРТ";
+    if (drawButton(arrowCenterX - 135, arrowY, 55, 35, autoRotateBtnText)) {
+        previewAutoRotate = !previewAutoRotate;
+        if (previewAutoRotate) {
+            previewLastRotateTime = (float)glfwGetTime();
+        }
+    }
+
+    float currentTime = (float)glfwGetTime();
+    if (!previewAutoRotate && (currentTime - previewLastRotateTime >= autoRotateDelay)) {
+        previewAutoRotate = true;
+    }
+    if (previewAutoRotate) {
+        previewRotationAngle += rotationSpeed;
+    }
+    if (previewRotationAngle >= 360) previewRotationAngle -= 360;
+
+    rotation = previewRotationAngle;
+    autoRotate = previewAutoRotate;
+    lastTime = previewLastRotateTime;
+}
 //=============================================================================
 // ИНИЦИАЛИЗАЦИЯ
 //=============================================================================
@@ -829,82 +1274,92 @@ bool loadTexture(const std::string& filename, Texture& texture) {
     return texture.id != 0;
 }
 
-bool loadFBXModel(const std::string& filename, ModelData& model, const std::string& subFolder) {
+bool loadFBXModel(const std::string& filename, Model& outModel, const std::string& subFolder) {
     if (filename.empty()) return false;
 
     std::string fullPath = g_modelsPath + subFolder + "\\" + filename;
-    if (!std::filesystem::exists(fullPath)) return false;
+    if (!std::filesystem::exists(fullPath)) {
+        std::cout << "FBX file not found: " << fullPath << std::endl;
+        return false;
+    }
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(fullPath,
         aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_FlipUVs |
         aiProcess_JoinIdenticalVertices);
-    if (!scene) return false;
-
-    model.vertices.clear();
-    model.normals.clear();
-    model.texCoords.clear();
-    model.materials.clear();
-    model.materialIndices.clear();
-
-    // Загружаем материалы
-    for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
-        aiMaterial* mat = scene->mMaterials[i];
-        Material material;
-        material.textureID = 0;
-        aiColor3D color(1.0f, 1.0f, 1.0f);
-        if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
-            material.diffuse = glm::vec3(color.r, color.g, color.b);
-        }
-        model.materials.push_back(material);
+    if (!scene) {
+        std::cout << "Failed to load FBX: " << importer.GetErrorString() << std::endl;
+        return false;
     }
-    if (model.materials.empty()) {
-        Material defaultMat;
-        defaultMat.diffuse = glm::vec3(0.8f, 0.8f, 0.8f);
-        model.materials.push_back(defaultMat);
-    }
+
+    outModel.vertices.clear();
+    outModel.hasTexture = false;
+    outModel.textureID = 0;
 
     // Загружаем меши
     for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
         aiMesh* mesh = scene->mMeshes[i];
-        int materialIndex = (mesh->mMaterialIndex < (int)model.materials.size()) ? mesh->mMaterialIndex : 0;
+
         for (unsigned int j = 0; j < mesh->mNumFaces; j++) {
             aiFace face = mesh->mFaces[j];
-            model.materialIndices.push_back(materialIndex);
             for (unsigned int k = 0; k < face.mNumIndices; k++) {
                 unsigned int vertexIdx = face.mIndices[k];
-                model.vertices.push_back(mesh->mVertices[vertexIdx].x);
-                model.vertices.push_back(mesh->mVertices[vertexIdx].y);
-                model.vertices.push_back(mesh->mVertices[vertexIdx].z);
+
+                Vertex vertex;
+
+                vertex.position.x = mesh->mVertices[vertexIdx].x;
+                vertex.position.y = mesh->mVertices[vertexIdx].y;
+                vertex.position.z = mesh->mVertices[vertexIdx].z;
+
                 if (mesh->HasNormals()) {
-                    model.normals.push_back(mesh->mNormals[vertexIdx].x);
-                    model.normals.push_back(mesh->mNormals[vertexIdx].y);
-                    model.normals.push_back(mesh->mNormals[vertexIdx].z);
+                    vertex.normal.x = mesh->mNormals[vertexIdx].x;
+                    vertex.normal.y = mesh->mNormals[vertexIdx].y;
+                    vertex.normal.z = mesh->mNormals[vertexIdx].z;
                 }
+                else {
+                    vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                }
+
                 if (mesh->HasTextureCoords(0)) {
-                    model.texCoords.push_back(mesh->mTextureCoords[0][vertexIdx].x);
-                    model.texCoords.push_back(mesh->mTextureCoords[0][vertexIdx].y);
+                    vertex.texCoords.x = mesh->mTextureCoords[0][vertexIdx].x;
+                    vertex.texCoords.y = mesh->mTextureCoords[0][vertexIdx].y;
                 }
+                else {
+                    vertex.texCoords = glm::vec2(0.0f, 0.0f);
+                }
+
+                outModel.vertices.push_back(vertex);
             }
         }
     }
 
-    if (model.normals.empty()) {
-        for (size_t i = 0; i < model.vertices.size() / 3; i++) {
-            model.normals.push_back(0.0f);
-            model.normals.push_back(1.0f);
-            model.normals.push_back(0.0f);
-        }
+    if (outModel.vertices.empty()) {
+        std::cout << "No vertices loaded from FBX" << std::endl;
+        return false;
     }
-    if (model.texCoords.empty()) {
-        for (size_t i = 0; i < model.vertices.size() / 3; i++) {
-            model.texCoords.push_back(0.0f);
-            model.texCoords.push_back(0.0f);
+
+    // Загружаем текстуры
+    for (unsigned int i = 0; i < scene->mNumMaterials && outModel.textureID == 0; i++) {
+        aiMaterial* mat = scene->mMaterials[i];
+        aiString texturePath;
+        if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath) == AI_SUCCESS) {
+            std::string texFile = texturePath.C_Str();
+            size_t pos = texFile.find_last_of("\\/");
+            if (pos != std::string::npos) texFile = texFile.substr(pos + 1);
+
+            std::string fullTexPath = g_texturesPath + texFile;
+            if (std::filesystem::exists(fullTexPath)) {
+                outModel.textureID = loadTextureFromFile(fullTexPath);
+                outModel.hasTexture = (outModel.textureID != 0);
+            }
         }
     }
 
-    model.loaded = (model.vertices.size() > 0);
-    return model.loaded;
+    outModel.computeNormals();
+    outModel.setupBuffers();
+
+    std::cout << "Loaded FBX model: " << filename << " with " << outModel.vertices.size() << " vertices" << std::endl;
+    return true;
 }
 
 void openFileDialog(std::string& destVar, const std::string& subFolder) {
@@ -1103,11 +1558,11 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
                 float vy = model.vertices[i * 3 + 1];
                 float vz = model.vertices[i * 3 + 2];
                 minX = std::min(minX, vx);
-                maxX = max(maxX, vx);
+                maxX = std::max(maxX, vx);
                 minY = std::min(minY, vy);
-                maxY = max(maxY, vy);
+                maxY = std::max(maxY, vy);
                 minZ = std::min(minZ, vz);
-                maxZ = max(maxZ, vz);
+                maxZ = std::max(maxZ, vz);
             }
 
             float centerX = (minX + maxX) / 2.0f;
@@ -2043,7 +2498,6 @@ void renderShadowPreview3D() {
     int previewW = (int)(windowWidth * 0.42f);
     int previewH = (int)(windowHeight * 0.65f);
 
-    // Сохраняем область preview для обработки мыши
     previewHoverX = (int)previewX;
     previewHoverY = (int)previewY;
     previewHoverW = (int)previewW;
@@ -2062,10 +2516,78 @@ void renderShadowPreview3D() {
     glDepthFunc(GL_LESS);
     glDisable(GL_BLEND);
 
-    // ========== ОТКЛЮЧАЕМ ОСВЕЩЕНИЕ ==========
-    glDisable(GL_LIGHTING);
-    glDisable(GL_LIGHT0);
+    // ============================================================
+    // ШАГ 1: УСТАНАВЛИВАЕМ СВЕТ В МИРОВЫХ КООРДИНАТАХ
+    // ============================================================
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();  // ЕДИНИЧНАЯ МАТРИЦА - МИРОВЫЕ КООРДИНАТЫ
 
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+
+    // ВАЖНО: GL_LIGHT_MODEL_LOCAL_VIEWER = GL_FALSE 
+    // означает что позиция света задаётся в мировых координатах
+    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_FALSE);
+
+    GLfloat light_ambient[] = {
+        currentConfig.ambientEnabled ? 0.3f : 0.0f,
+        currentConfig.ambientEnabled ? 0.3f : 0.0f,
+        currentConfig.ambientEnabled ? 0.3f : 0.0f,
+        1.0f
+    };
+    GLfloat light_diffuse[] = {
+        currentConfig.lightColor.r,
+        currentConfig.lightColor.g,
+        currentConfig.lightColor.b,
+        1.0f
+    };
+    GLfloat light_specular[] = {
+        currentConfig.specularEnabled ? 0.5f : 0.0f,
+        currentConfig.specularEnabled ? 0.5f : 0.0f,
+        currentConfig.specularEnabled ? 0.5f : 0.0f,
+        1.0f
+    };
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
+
+    // Устанавливаем позицию света В МИРОВЫХ КООРДИНАТАХ
+    if (currentConfig.lightType == 0) {
+        // Направленный свет
+        GLfloat light_position[] = {
+            -currentConfig.lightDir.x,
+            -currentConfig.lightDir.y,
+            -currentConfig.lightDir.z,
+            0.0f
+        };
+        glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+    }
+    else {
+        // Точечный или прожектор - фиксированная позиция в мире
+        GLfloat light_position[] = {
+            currentConfig.lightPos.x,
+            currentConfig.lightPos.y,
+            currentConfig.lightPos.z,
+            1.0f
+        };
+        glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+
+        if (currentConfig.lightType == 2) {
+            GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
+            glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
+            glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 45.0f);
+            glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 2.0f);
+        }
+
+        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.8f);
+        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.07f);
+        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.02f);
+    }
+
+    // ============================================================
+    // ШАГ 2: УСТАНАВЛИВАЕМ ПРОЕКЦИЮ
+    // ============================================================
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -2073,15 +2595,17 @@ void renderShadowPreview3D() {
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     glLoadMatrixf(glm::value_ptr(projection));
 
+    // ============================================================
+    // ШАГ 3: УСТАНАВЛИВАЕМ КАМЕРУ (ПОВЕРХ СВЕТА)
+    // ============================================================
     glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
+    glPushMatrix();  // Сохраняем единичную матрицу
+    glLoadIdentity(); // Начинаем с чистого листа для камеры
 
-    // Камера
     float radPitch = glm::radians(previewCameraPitch);
     float radYaw = glm::radians(previewRotationAngle);
 
-    glm::vec3 center(0.0f, 0.0f, 0.0f);
+    glm::vec3 center(0.0f, 0.5f, 0.0f);
     float camX = sin(radYaw) * cos(radPitch) * previewCameraDistance;
     float camY = sin(radPitch) * previewCameraDistance;
     float camZ = cos(radYaw) * cos(radPitch) * previewCameraDistance;
@@ -2091,215 +2615,205 @@ void renderShadowPreview3D() {
     glm::mat4 view = glm::lookAt(eye, center, up);
     glLoadMatrixf(glm::value_ptr(view));
 
-    // ========== ПОЛ С ТЕНЯМИ ==========
-    float visibleSize = 8.0f;
-    float startX = -visibleSize;
-    float endX = visibleSize;
-    float startZ = -visibleSize;
-    float endZ = visibleSize;
+    // ============================================================
+    // ШАГ 4: РИСУЕМ ПОЛ И ОБЪЕКТЫ
+    // ============================================================
 
-    // Пол (светлый и тёмный цвета для имитации теней)
-    glm::vec3 lightColor = currentConfig.floorColor;
-    glm::vec3 darkColor = currentConfig.floorColor * 0.3f;
-
-    // Сетка теней для пола
-    int shadowCellsX = 20;
-    int shadowCellsZ = 20;
-    float cellSizeX = (endX - startX) / shadowCellsX;
-    float cellSizeZ = (endZ - startZ) / shadowCellsZ;
-
-    // Пол с ячейками для теней
-    for (int z = 0; z < shadowCellsZ; z++) {
-        for (int x = 0; x < shadowCellsX; x++) {
-            float posX = startX + x * cellSizeX;
-            float posZ = startZ + z * cellSizeZ;
-
-            // Проверяем тень от объектов
-            glm::vec3 samplePos(posX + cellSizeX / 2, 0.5f, posZ + cellSizeZ / 2);
-            bool inShadow = false;
-
-            // Проверка тени от деревьев
-            for (int i = -1; i <= 1; i++) {
-                float treeX = (float)i * 2.5f;
-                float treeZ = -2.0f;
-                float dx = samplePos.x - treeX;
-                float dz = samplePos.z - treeZ;
-                float dist = sqrt(dx * dx + dz * dz);
-                if (dist < 0.8f) {
-                    inShadow = true;
-                    break;
-                }
-            }
-
-            // Проверка тени от змейки
-            float snakeDx = samplePos.x - 0.0f;
-            float snakeDz = samplePos.z - 0.0f;
-            if (abs(snakeDx) < 0.6f && abs(snakeDz) < 0.6f) {
-                inShadow = true;
-            }
-
-            glm::vec3 finalColor = inShadow ? darkColor : lightColor;
-            glColor3f(finalColor.r, finalColor.g, finalColor.b);
-
-            glBegin(GL_QUADS);
-            glVertex3f(posX, -0.5f, posZ);
-            glVertex3f(posX + cellSizeX, -0.5f, posZ);
-            glVertex3f(posX + cellSizeX, -0.5f, posZ + cellSizeZ);
-            glVertex3f(posX, -0.5f, posZ + cellSizeZ);
-            glEnd();
-        }
-    }
+    float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
+    float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
+    float offsetX = worldWidth / 2.0f;
+    float offsetZ = worldDepth / 2.0f;
+    float floorHeight = 0.0f;
 
     // Сетка
     if (currentConfig.gridEnabled) {
+        glDisable(GL_LIGHTING);
         glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
         glLineWidth(currentConfig.gridLineWidth);
         glBegin(GL_LINES);
-
-        float step = currentConfig.cellSize * 5;
-        if (step < 0.5f) step = 0.5f;
-
-        for (float x = -visibleSize; x <= visibleSize; x += step) {
-            glVertex3f(x, -0.45f, -visibleSize);
-            glVertex3f(x, -0.45f, visibleSize);
+        for (int i = 0; i <= currentConfig.gridWidth; i++) {
+            float x = i * currentConfig.cellSize - offsetX;
+            glVertex3f(x, 0.01f, -offsetZ);
+            glVertex3f(x, 0.01f, offsetZ);
         }
-        for (float z = -visibleSize; z <= visibleSize; z += step) {
-            glVertex3f(-visibleSize, -0.45f, z);
-            glVertex3f(visibleSize, -0.45f, z);
+        for (int i = 0; i <= currentConfig.gridDepth; i++) {
+            float z = i * currentConfig.cellSize - offsetZ;
+            glVertex3f(-offsetX, 0.01f, z);
+            glVertex3f(offsetX, 0.01f, z);
         }
         glEnd();
         glLineWidth(1.0f);
+        glEnable(GL_LIGHTING);
     }
 
-    // ========== ТЕСТОВАЯ ЗМЕЙКА ==========
-    glPushMatrix();
-    glTranslatef(0.0f, -0.2f, 0.0f);
-    glScalef(0.6f, 0.6f, 0.6f);
+    // Текстура пола
+    bool useFloorTexture = !currentConfig.floorTexture.empty() && floorTexture.id != 0;
+    if (useFloorTexture) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, floorTexture.id);
+        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    }
+    else {
+        glDisable(GL_TEXTURE_2D);
+    }
 
-    // Голова (светло-зелёная)
-    glColor3f(0.2f, 0.9f, 0.2f);
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+
+    // Рисуем простой однотонный пол
+    glColor3f(currentConfig.floorColor.r, currentConfig.floorColor.g, currentConfig.floorColor.b);
     glBegin(GL_QUADS);
-    glNormal3f(0.0f, 0.0f, 1.0f);
-    glVertex3f(-0.5f, -0.5f, 0.5f);
-    glVertex3f(0.5f, -0.5f, 0.5f);
-    glVertex3f(0.5f, 0.5f, 0.5f);
-    glVertex3f(-0.5f, 0.5f, 0.5f);
-
-    glNormal3f(0.0f, 0.0f, -1.0f);
-    glVertex3f(-0.5f, -0.5f, -0.5f);
-    glVertex3f(-0.5f, 0.5f, -0.5f);
-    glVertex3f(0.5f, 0.5f, -0.5f);
-    glVertex3f(0.5f, -0.5f, -0.5f);
-
     glNormal3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(-0.5f, 0.5f, -0.5f);
-    glVertex3f(-0.5f, 0.5f, 0.5f);
-    glVertex3f(0.5f, 0.5f, 0.5f);
-    glVertex3f(0.5f, 0.5f, -0.5f);
-
-    glNormal3f(0.0f, -1.0f, 0.0f);
-    glVertex3f(-0.5f, -0.5f, -0.5f);
-    glVertex3f(0.5f, -0.5f, -0.5f);
-    glVertex3f(0.5f, -0.5f, 0.5f);
-    glVertex3f(-0.5f, -0.5f, 0.5f);
-
-    glNormal3f(1.0f, 0.0f, 0.0f);
-    glVertex3f(0.5f, -0.5f, -0.5f);
-    glVertex3f(0.5f, 0.5f, -0.5f);
-    glVertex3f(0.5f, 0.5f, 0.5f);
-    glVertex3f(0.5f, -0.5f, 0.5f);
-
-    glNormal3f(-1.0f, 0.0f, 0.0f);
-    glVertex3f(-0.5f, -0.5f, -0.5f);
-    glVertex3f(-0.5f, -0.5f, 0.5f);
-    glVertex3f(-0.5f, 0.5f, 0.5f);
-    glVertex3f(-0.5f, 0.5f, -0.5f);
+    glVertex3f(-offsetX, floorHeight - 0.02f, -offsetZ);
+    glVertex3f(offsetX, floorHeight - 0.02f, -offsetZ);
+    glVertex3f(offsetX, floorHeight - 0.02f, offsetZ);
+    glVertex3f(-offsetX, floorHeight - 0.02f, offsetZ);
     glEnd();
 
-    // Тело (тёмно-зелёное)
-    glPushMatrix();
-    glTranslatef(-0.8f, 0.0f, 0.0f);
-    glColor3f(0.0f, 0.6f, 0.0f);
-    glBegin(GL_QUADS);
-    for (int i = 0; i < 32; i++) {
-        float angle = (float)i * 3.14159f * 2.0f / 32.0f;
-        float x1 = 0.4f * cos(angle);
-        float z1 = 0.4f * sin(angle);
-        float x2 = 0.4f * cos(angle + 3.14159f * 2.0f / 32.0f);
-        float z2 = 0.4f * sin(angle + 3.14159f * 2.0f / 32.0f);
-        glVertex3f(x1, -0.5f, z1);
-        glVertex3f(x2, -0.5f, z2);
-        glVertex3f(x2, 0.5f, z2);
-        glVertex3f(x1, 0.5f, z1);
-    }
-    glEnd();
-    glPopMatrix();
-    glPopMatrix();
+    glDisable(GL_TEXTURE_2D);
 
-    // ========== ДЕРЕВЬЯ ==========
-    for (int i = -1; i <= 1; i++) {
-        float xPos = (float)i * 2.5f;
-        if (abs(xPos) < 0.5f) continue;
+    // ============================================================
+    // ШАГ 5: ЗАГРУЖАЕМ И РИСУЕМ МОДЕЛИ
+    // ============================================================
 
-        glPushMatrix();
-        glTranslatef(xPos, -0.2f, -2.0f);
-        glScalef(0.8f, 1.2f, 0.8f);
+    Model snakeHeadModel, snakeBodyModel, snakeTailModel;
+    Model treeModel, appleModel;
 
-        // Ствол (коричневый)
-        glColor3f(0.5f, 0.3f, 0.1f);
-        glBegin(GL_QUADS);
-        glNormal3f(0.0f, 0.0f, 1.0f);
-        glVertex3f(-0.25f, -0.5f, 0.25f);
-        glVertex3f(0.25f, -0.5f, 0.25f);
-        glVertex3f(0.25f, 0.5f, 0.25f);
-        glVertex3f(-0.25f, 0.5f, 0.25f);
+    loadModelWithFallback(currentConfig.snakeHeadModel, snakeHeadModel, "snake_head",
+        [](Model& m) { SnakeHeadPrimitive::create(m); });
+    loadModelWithFallback(currentConfig.snakeBodyModel, snakeBodyModel, "snake_body",
+        [](Model& m) { SnakeBodyPrimitive::create(m); });
+    loadModelWithFallback(currentConfig.snakeTailModel, snakeTailModel, "snake_tail",
+        [](Model& m) { SnakeTailPrimitive::create(m); });
+    loadModelWithFallback(currentConfig.treeModel, treeModel, "obstacles",
+        [](Model& m) { TreePrimitive::create(m); });
+    loadModelWithFallback(currentConfig.appleModel, appleModel, "food",
+        [](Model& m) { ApplePrimitive::create(m); });
 
-        glNormal3f(0.0f, 0.0f, -1.0f);
-        glVertex3f(-0.25f, -0.5f, -0.25f);
-        glVertex3f(-0.25f, 0.5f, -0.25f);
-        glVertex3f(0.25f, 0.5f, -0.25f);
-        glVertex3f(0.25f, -0.5f, -0.25f);
-
-        glNormal3f(-1.0f, 0.0f, 0.0f);
-        glVertex3f(-0.25f, -0.5f, -0.25f);
-        glVertex3f(-0.25f, -0.5f, 0.25f);
-        glVertex3f(-0.25f, 0.5f, 0.25f);
-        glVertex3f(-0.25f, 0.5f, -0.25f);
-
-        glNormal3f(1.0f, 0.0f, 0.0f);
-        glVertex3f(0.25f, -0.5f, -0.25f);
-        glVertex3f(0.25f, 0.5f, -0.25f);
-        glVertex3f(0.25f, 0.5f, 0.25f);
-        glVertex3f(0.25f, -0.5f, 0.25f);
-        glEnd();
-
-        // Крона (зелёная)
-        glColor3f(0.2f, 0.7f, 0.2f);
-        glTranslatef(0.0f, 0.6f, 0.0f);
-        glBegin(GL_TRIANGLES);
-        for (int j = 0; j < 12; j++) {
-            float angle = (float)j * 3.14159f * 2.0f / 12.0f;
-            float x1 = 0.5f * cos(angle);
-            float z1 = 0.5f * sin(angle);
-            float x2 = 0.5f * cos(angle + 3.14159f * 2.0f / 12.0f);
-            float z2 = 0.5f * sin(angle + 3.14159f * 2.0f / 12.0f);
-            glVertex3f(0.0f, 0.3f, 0.0f);
-            glVertex3f(x1, -0.2f, z1);
-            glVertex3f(x2, -0.2f, z2);
+    auto getModelBottomOffset = [](const Model& model) -> float {
+        if (model.vertices.empty()) return 0.0f;
+        float minY = FLT_MAX;
+        for (const auto& v : model.vertices) {
+            minY = std::min(minY, v.position.y);
         }
-        glEnd();
+        return -minY;
+        };
+
+    float cellSize = currentConfig.cellSize;
+
+    // Змейка
+    std::vector<glm::vec3> snakePositions = {
+        glm::vec3(0.0f, floorHeight, 0.0f),
+        glm::vec3(-0.8f, floorHeight, 0.0f),
+        glm::vec3(-1.6f, floorHeight, 0.0f)
+    };
+
+    // Голова
+    float headOffset = getModelBottomOffset(snakeHeadModel);
+    float headScale = cellSize * currentConfig.snakeHeadScale;
+    glPushMatrix();
+    glTranslatef(snakePositions[0].x, snakePositions[0].y + headOffset * headScale + 0.05f, snakePositions[0].z);
+    glScalef(headScale, headScale, headScale);
+    if (snakeHeadModel.hasTexture) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, snakeHeadModel.textureID);
+    }
+    snakeHeadModel.draw();
+    if (snakeHeadModel.hasTexture) glDisable(GL_TEXTURE_2D);
+    glPopMatrix();
+
+    // Тело
+    float bodyOffset = getModelBottomOffset(snakeBodyModel);
+    float bodyScale = cellSize * currentConfig.snakeBodyScale;
+    glPushMatrix();
+    glTranslatef(snakePositions[1].x, snakePositions[1].y + bodyOffset * bodyScale + 0.05f, snakePositions[1].z);
+    glScalef(bodyScale, bodyScale, bodyScale);
+    if (snakeBodyModel.hasTexture) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, snakeBodyModel.textureID);
+    }
+    snakeBodyModel.draw();
+    if (snakeBodyModel.hasTexture) glDisable(GL_TEXTURE_2D);
+    glPopMatrix();
+
+    // Хвост
+    float tailOffset = getModelBottomOffset(snakeTailModel);
+    float tailScale = cellSize * currentConfig.snakeTailScale;
+    glPushMatrix();
+    glTranslatef(snakePositions[2].x, snakePositions[2].y + tailOffset * tailScale + 0.05f, snakePositions[2].z);
+    glScalef(tailScale, tailScale, tailScale);
+    if (snakeTailModel.hasTexture) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, snakeTailModel.textureID);
+    }
+    snakeTailModel.draw();
+    if (snakeTailModel.hasTexture) glDisable(GL_TEXTURE_2D);
+    glPopMatrix();
+
+    // Деревья
+    float treeOffset = getModelBottomOffset(treeModel);
+    float treeScale = cellSize * 1.2f;
+    std::vector<glm::vec3> treePositions = {
+        glm::vec3(2.5f, floorHeight, -2.0f),
+        glm::vec3(-2.5f, floorHeight, -2.0f)
+    };
+    for (const auto& pos : treePositions) {
+        glPushMatrix();
+        glTranslatef(pos.x, pos.y + treeOffset * treeScale, pos.z);
+        glScalef(treeScale, treeScale, treeScale);
+        if (treeModel.hasTexture) {
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, treeModel.textureID);
+        }
+        treeModel.draw();
+        if (treeModel.hasTexture) glDisable(GL_TEXTURE_2D);
         glPopMatrix();
     }
 
-    glMatrixMode(GL_PROJECTION);
+    // Яблоко
+    float appleOffset = getModelBottomOffset(appleModel);
+    float appleScale = cellSize * 0.6f;
+    glPushMatrix();
+    glTranslatef(1.0f, floorHeight + appleOffset * appleScale + 0.05f, 1.0f);
+    glScalef(appleScale, appleScale, appleScale);
+    if (appleModel.hasTexture) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, appleModel.textureID);
+    }
+    appleModel.draw();
+    if (appleModel.hasTexture) glDisable(GL_TEXTURE_2D);
     glPopMatrix();
+
+    // Источник света (сфера)
+    if (currentConfig.lightType != 0) {
+        glDisable(GL_LIGHTING);
+        glDisable(GL_TEXTURE_2D);
+        glPushMatrix();
+        glTranslatef(currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z);
+        glColor3f(1.0f, 0.8f, 0.2f);
+        GLUquadric* quad = gluNewQuadric();
+        gluSphere(quad, 0.3f, 16, 16);
+        gluDeleteQuadric(quad);
+        glPopMatrix();
+        glEnable(GL_LIGHTING);
+    }
+
+    glDisable(GL_COLOR_MATERIAL);
+
+    // ============================================================
+    // ШАГ 6: ВОЗВРАЩАЕМ МАТРИЦЫ И ВЬЮПОРТ
+    // ============================================================
     glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();  // Убираем камеру
+    glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
     glDisable(GL_SCISSOR_TEST);
     reset2DProjection();
 
-    // Рамка
+    // ============================================================
+    // ШАГ 7: UI
+    // ============================================================
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f((float)previewX, (float)previewY);
@@ -2314,26 +2828,22 @@ void renderShadowPreview3D() {
     sprintf_s(controlsInfo, "ЛКМ+перетаскивание - вращение | Колёсико - Zoom | Пробел - стоп/старт авто");
     drawText((float)(previewX + 10), (float)(previewY + previewH - 25), controlsInfo, 0.6f, 0.6f, 0.8f);
 
-    char floorInfo[150];
-    sprintf_s(floorInfo, "Пол: %dx%d | Ячейка: %.2f | Сетка: %s",
-        currentConfig.gridWidth, currentConfig.gridDepth,
-        currentConfig.cellSize,
-        currentConfig.gridEnabled ? "ВКЛ" : "ВЫКЛ");
-    drawText((float)(previewX + 10), (float)(previewY + 50), floorInfo, 0.7f, 0.8f, 1.0f);
+    const char* lightTypeName = "Направленный";
+    if (currentConfig.lightType == 1) lightTypeName = "Точечный";
+    if (currentConfig.lightType == 2) lightTypeName = "Прожектор";
 
-    const char* lightTypeName = "Направленный (симуляция из конфига)";
-    char lightInfo[150];
-    sprintf_s(lightInfo, "%s | Цвет: (%.2f,%.2f,%.2f)",
+    char infoText[200];
+    sprintf_s(infoText, "Свет: %s | Позиция: (%.1f, %.1f, %.1f) | Тени: %s",
         lightTypeName,
-        currentConfig.lightColor.r, currentConfig.lightColor.g, currentConfig.lightColor.b);
-    drawText((float)(previewX + 10), (float)(previewY + 75), lightInfo, 0.8f, 0.8f, 1.0f);
-
-    drawText((float)(previewX + 10), (float)(previewY + 100), currentConfig.getShadowModeName(), 0.8f, 0.8f, 1.0f);
+        currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z,
+        currentConfig.shadowMapEnabled ? "ВКЛ" : "ВЫКЛ");
+    drawText((float)(previewX + 10), (float)(previewY + 50), infoText, 0.8f, 0.8f, 1.0f);
 
     char distInfo[50];
     sprintf_s(distInfo, "Дист: %.1f | Автовращ: %s", previewCameraDistance, previewAutoRotate ? "ВКЛ" : "ВЫКЛ");
     drawText((float)(previewX + previewW - 150), (float)(previewY + 25), distInfo, 1.0f, 1.0f, 0.0f);
 
+    // Кнопки управления
     int arrowY = (int)(previewY + previewH + 15);
     int arrowCenterX = (int)(previewX + previewW / 2);
 

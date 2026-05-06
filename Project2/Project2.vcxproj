@@ -141,10 +141,32 @@
   <ItemGroup>
     <ClCompile Include="..\ractica\ConfigEditor\ConfigEditor.cpp" />
     <ClCompile Include="..\ractica\ConfigEditor\ConfigManager.cpp" />
+    <ClCompile Include="..\ractica\Graphics\Model.cpp" />
+    <ClCompile Include="..\ractica\Primitives\ApplePrimitive.cpp" />
+    <ClCompile Include="..\ractica\Primitives\BirdPrimitive.cpp" />
+    <ClCompile Include="..\ractica\Primitives\CloudPrimitive.cpp" />
+    <ClCompile Include="..\ractica\Primitives\FencePrimitive.cpp" />
+    <ClCompile Include="..\ractica\Primitives\FlowerPrimitive.cpp" />
+    <ClCompile Include="..\ractica\Primitives\PrimitiveBase.cpp" />
+    <ClCompile Include="..\ractica\Primitives\SnakeBodyPrimitive.cpp" />
+    <ClCompile Include="..\ractica\Primitives\SnakeHeadPrimitive.cpp" />
+    <ClCompile Include="..\ractica\Primitives\SnakeTailPrimitive.cpp" />
+    <ClCompile Include="..\ractica\Primitives\TreePrimitive.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ractica\ConfigEditor\ConfigEditor.h" />
     <ClInclude Include="..\ractica\ConfigEditor\ConfigManager.h" />
+    <ClInclude Include="..\ractica\Graphics\Model.h" />
+    <ClInclude Include="..\ractica\Primitives\ApplePrimitive.h" />
+    <ClInclude Include="..\ractica\Primitives\BirdPrimitive.h" />
+    <ClInclude Include="..\ractica\Primitives\CloudPrimitive.h" />
+    <ClInclude Include="..\ractica\Primitives\FencePrimitive.h" />
+    <ClInclude Include="..\ractica\Primitives\FlowerPrimitive.h" />
+    <ClInclude Include="..\ractica\Primitives\PrimitiveBase.h" />
+    <ClInclude Include="..\ractica\Primitives\SnakeBodyPrimitive.h" />
+    <ClInclude Include="..\ractica\Primitives\SnakeHeadPrimitive.h" />
+    <ClInclude Include="..\ractica\Primitives\SnakeTailPrimitive.h" />
+    <ClInclude Include="..\ractica\Primitives\TreePrimitive.h" />
     <ClInclude Include="..\Shared\ConfigTypes.h" />
   </ItemGroup>
   <ItemGroup>
