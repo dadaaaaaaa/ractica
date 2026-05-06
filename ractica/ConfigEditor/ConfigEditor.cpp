@@ -58,11 +58,122 @@ Model g_previewBirdModel;
 Model g_previewFlowerModel;
 Model g_previewFenceModel;
 Model g_previewFloorModel;
+GameConfig currentConfig;
+
 //=============================================================================
 // ОПРЕДЕЛЕНИЯ СТРУКТУР
 //=============================================================================
 // Добавить после функции loadFBXModel:
 // Добавить после других функций:
+// Функция инициализации света (вызвать ОДИН раз в initOpenGL())
+void initLighting() {
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_NORMALIZE);
+
+    // Начальные настройки (потом обновятся в updateLightPosition)
+    GLfloat light_ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
+    GLfloat light_diffuse[] = { 0.8f, 0.8f, 0.8f, 1.0f };
+    GLfloat light_specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
+
+    // ВАЖНО: НЕ устанавливаем GL_LIGHT_MODEL_LOCAL_VIEWER!
+    // Оставляем по умолчанию GL_FALSE
+}
+
+// ТОЧНАЯ копия GameRenderer::updateLightPosition()
+void updateLightPosition() {
+    // ВАЖНО: Явно включаем освещение
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_NORMALIZE);
+
+    switch (currentConfig.lightType) {
+    case 0: { // Directional
+        GLfloat light0_position[] = {
+            -currentConfig.lightDir.x,
+            -currentConfig.lightDir.y,
+            -currentConfig.lightDir.z,
+            0.0f
+        };
+        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+        break;
+    }
+    case 1: { // Point
+        GLfloat light0_position[] = {
+            currentConfig.lightPos.x,
+            currentConfig.lightPos.y,
+            currentConfig.lightPos.z,
+            1.0f
+        };
+        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.8f);
+        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.07f);
+        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.02f);
+        break;
+    }
+    case 2: { // Spot
+        GLfloat light0_position[] = {
+            currentConfig.lightPos.x,
+            currentConfig.lightPos.y,
+            currentConfig.lightPos.z,
+            1.0f
+        };
+        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+        GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
+        glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
+        glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 45.0f);
+        glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 2.0f);
+
+        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.5f);
+        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.03f);
+        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.01f);
+        break;
+    }
+    }
+
+    // Обновляем global ambient
+    if (currentConfig.ambientEnabled) {
+        GLfloat global_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
+    }
+    else {
+        GLfloat global_ambient[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
+    }
+
+    // Обновляем diffuse color
+    GLfloat light0_diffuse[] = {
+        currentConfig.lightColor.r,
+        currentConfig.lightColor.g,
+        currentConfig.lightColor.b,
+        1.0f
+    };
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+
+    // Обновляем ambient компоненту источника
+    GLfloat light0_ambient[] = {
+        currentConfig.ambientEnabled ? 0.3f : 0.0f,
+        currentConfig.ambientEnabled ? 0.3f : 0.0f,
+        currentConfig.ambientEnabled ? 0.3f : 0.0f,
+        1.0f
+    };
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+
+    // Обновляем specular компоненту
+    GLfloat light0_specular[] = {
+        currentConfig.specularEnabled ? 0.5f : 0.0f,
+        currentConfig.specularEnabled ? 0.5f : 0.0f,
+        currentConfig.specularEnabled ? 0.5f : 0.0f,
+        1.0f
+    };
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+}
 
 bool convertModelDataToModel(const ModelData& modelData, Model& outModel) {
     if (modelData.vertices.empty()) {
@@ -168,7 +279,6 @@ static bool g_fontInitialized = false;
 GLFWwindow* window;
 int windowWidth = 1400;
 int windowHeight = 900;
-GameConfig currentConfig;
 
 // Режимы редактора
 enum EditorMode {
@@ -1429,9 +1539,17 @@ void drawModel(ModelData& model) {
 
     glBegin(GL_TRIANGLES);
     for (size_t i = 0; i < model.vertices.size() / 3; i++) {
-        if (!model.texCoords.empty()) {
+        // ПЕРЕДАЁМ НОРМАЛЬ!
+        if (!model.normals.empty() && i * 3 + 2 < model.normals.size()) {
+            glNormal3f(model.normals[i * 3], model.normals[i * 3 + 1], model.normals[i * 3 + 2]);
+        }
+
+        // Текстурные координаты
+        if (!model.texCoords.empty() && i * 2 + 1 < model.texCoords.size()) {
             glTexCoord2f(model.texCoords[i * 2], model.texCoords[i * 2 + 1]);
         }
+
+        // Вершина
         glVertex3f(model.vertices[i * 3], model.vertices[i * 3 + 1], model.vertices[i * 3 + 2]);
     }
     glEnd();
@@ -2446,40 +2564,70 @@ void renderLightEditor() {
 
     drawText((float)startX, (float)(startY - 30), "ТИП ИСТОЧНИКА СВЕТА", 1.0f, 1.0f, 0.0f);
 
+    bool lightChanged = false;
+
     if (drawButton(startX, startY, 180, 40, "Направленный")) {
         currentConfig.lightType = 0;
+        lightChanged = true;
     }
     if (drawButton(startX + 200, startY, 180, 40, "Точечный")) {
         currentConfig.lightType = 1;
+        lightChanged = true;
     }
     if (drawButton(startX + 400, startY, 180, 40, "Прожектор")) {
         currentConfig.lightType = 2;
+        lightChanged = true;
     }
 
     startY += 60;
 
     drawColorPicker(startX, startY, "Цвет света:", currentConfig.lightColor);
+    if (drawButton(startX + sliderWidth + 20, startY + 50, 100, 30, "СБРОСИТЬ")) {
+        currentConfig.lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
+        lightChanged = true;
+    }
 
     startY += 120;
 
     if (currentConfig.lightType == 0) {
         drawText((float)startX, (float)(startY - 30), "НАПРАВЛЕНИЕ СВЕТА", 1.0f, 1.0f, 0.0f);
-        drawSlider(startX, startY, sliderWidth, &currentConfig.lightDir.x, -1.0f, 1.0f, "X");
-        drawSlider(startX, startY + 50, sliderWidth, &currentConfig.lightDir.y, -1.0f, 1.0f, "Y");
-        drawSlider(startX, startY + 100, sliderWidth, &currentConfig.lightDir.z, -1.0f, 1.0f, "Z");
+        if (drawSlider(startX, startY, sliderWidth, &currentConfig.lightDir.x, -1.0f, 1.0f, "X")) lightChanged = true;
+        if (drawSlider(startX, startY + 50, sliderWidth, &currentConfig.lightDir.y, -1.0f, 1.0f, "Y")) lightChanged = true;
+        if (drawSlider(startX, startY + 100, sliderWidth, &currentConfig.lightDir.z, -1.0f, 1.0f, "Z")) lightChanged = true;
         if (drawButton(startX + sliderWidth + 20, startY, 150, 35, "СБРОСИТЬ")) {
             currentConfig.lightDir = glm::vec3(-1.0f, -1.0f, 0.5f);
             currentConfig.lightDir = glm::normalize(currentConfig.lightDir);
+            lightChanged = true;
         }
     }
     else {
         drawText((float)startX, (float)(startY - 30), "ПОЗИЦИЯ СВЕТА", 1.0f, 1.0f, 0.0f);
-        drawSlider(startX, startY, sliderWidth, &currentConfig.lightPos.x, -10.0f, 10.0f, "X");
-        drawSlider(startX, startY + 50, sliderWidth, &currentConfig.lightPos.y, 0.0f, 15.0f, "Y");
-        drawSlider(startX, startY + 100, sliderWidth, &currentConfig.lightPos.z, -10.0f, 10.0f, "Z");
+        if (drawSlider(startX, startY, sliderWidth, &currentConfig.lightPos.x, -10.0f, 10.0f, "X")) lightChanged = true;
+        if (drawSlider(startX, startY + 50, sliderWidth, &currentConfig.lightPos.y, 0.0f, 15.0f, "Y")) lightChanged = true;
+        if (drawSlider(startX, startY + 100, sliderWidth, &currentConfig.lightPos.z, -10.0f, 10.0f, "Z")) lightChanged = true;
         if (drawButton(startX + sliderWidth + 20, startY, 150, 35, "СБРОСИТЬ")) {
             currentConfig.lightPos = glm::vec3(0.0f, 5.0f, 0.0f);
+            lightChanged = true;
         }
+    }
+
+    // Применяем изменения освещения
+    if (lightChanged) {
+        // Временно включаем 3D режим для обновления света
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+
+        updateLightPosition();
+
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+        glPopMatrix();
     }
 
     if (drawButton((int)(windowWidth * 0.03f), (int)(windowHeight * 0.9f), 150, 50, "НАЗАД")) {
@@ -2516,78 +2664,7 @@ void renderShadowPreview3D() {
     glDepthFunc(GL_LESS);
     glDisable(GL_BLEND);
 
-    // ============================================================
-    // ШАГ 1: УСТАНАВЛИВАЕМ СВЕТ В МИРОВЫХ КООРДИНАТАХ
-    // ============================================================
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();  // ЕДИНИЧНАЯ МАТРИЦА - МИРОВЫЕ КООРДИНАТЫ
-
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
-
-    // ВАЖНО: GL_LIGHT_MODEL_LOCAL_VIEWER = GL_FALSE 
-    // означает что позиция света задаётся в мировых координатах
-    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_FALSE);
-
-    GLfloat light_ambient[] = {
-        currentConfig.ambientEnabled ? 0.3f : 0.0f,
-        currentConfig.ambientEnabled ? 0.3f : 0.0f,
-        currentConfig.ambientEnabled ? 0.3f : 0.0f,
-        1.0f
-    };
-    GLfloat light_diffuse[] = {
-        currentConfig.lightColor.r,
-        currentConfig.lightColor.g,
-        currentConfig.lightColor.b,
-        1.0f
-    };
-    GLfloat light_specular[] = {
-        currentConfig.specularEnabled ? 0.5f : 0.0f,
-        currentConfig.specularEnabled ? 0.5f : 0.0f,
-        currentConfig.specularEnabled ? 0.5f : 0.0f,
-        1.0f
-    };
-
-    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
-    glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
-
-    // Устанавливаем позицию света В МИРОВЫХ КООРДИНАТАХ
-    if (currentConfig.lightType == 0) {
-        // Направленный свет
-        GLfloat light_position[] = {
-            -currentConfig.lightDir.x,
-            -currentConfig.lightDir.y,
-            -currentConfig.lightDir.z,
-            0.0f
-        };
-        glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-    }
-    else {
-        // Точечный или прожектор - фиксированная позиция в мире
-        GLfloat light_position[] = {
-            currentConfig.lightPos.x,
-            currentConfig.lightPos.y,
-            currentConfig.lightPos.z,
-            1.0f
-        };
-        glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-
-        if (currentConfig.lightType == 2) {
-            GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
-            glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
-            glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 45.0f);
-            glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 2.0f);
-        }
-
-        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.8f);
-        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.07f);
-        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.02f);
-    }
-
-    // ============================================================
-    // ШАГ 2: УСТАНАВЛИВАЕМ ПРОЕКЦИЮ
-    // ============================================================
+    // Проекция
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -2595,13 +2672,12 @@ void renderShadowPreview3D() {
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     glLoadMatrixf(glm::value_ptr(projection));
 
-    // ============================================================
-    // ШАГ 3: УСТАНАВЛИВАЕМ КАМЕРУ (ПОВЕРХ СВЕТА)
-    // ============================================================
+    // ModelView
     glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();  // Сохраняем единичную матрицу
-    glLoadIdentity(); // Начинаем с чистого листа для камеры
+    glPushMatrix();
+    glLoadIdentity();
 
+    // Камера
     float radPitch = glm::radians(previewCameraPitch);
     float radYaw = glm::radians(previewRotationAngle);
 
@@ -2612,12 +2688,13 @@ void renderShadowPreview3D() {
     glm::vec3 eye(camX, camY + 1.0f, camZ);
     glm::vec3 up(0.0f, 1.0f, 0.0f);
 
-    glm::mat4 view = glm::lookAt(eye, center, up);
-    glLoadMatrixf(glm::value_ptr(view));
+    gluLookAt(eye.x, eye.y, eye.z,
+        center.x, center.y, center.z,
+        up.x, up.y, up.z);
 
-    // ============================================================
-    // ШАГ 4: РИСУЕМ ПОЛ И ОБЪЕКТЫ
-    // ============================================================
+    // Свет - ПОСЛЕ камеры
+    updateLightPosition();
+    // Теперь GL_LIGHTING включен и будет автоматически затенять модели
 
     float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
     float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
@@ -2625,7 +2702,7 @@ void renderShadowPreview3D() {
     float offsetZ = worldDepth / 2.0f;
     float floorHeight = 0.0f;
 
-    // Сетка
+    // Сетка (без освещения)
     if (currentConfig.gridEnabled) {
         glDisable(GL_LIGHTING);
         glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
@@ -2643,10 +2720,14 @@ void renderShadowPreview3D() {
         }
         glEnd();
         glLineWidth(1.0f);
-        glEnable(GL_LIGHTING);
+        glEnable(GL_LIGHTING);  // Включаем обратно для моделей
     }
 
-    // Текстура пола
+    // ВАЖНО: включаем GL_COLOR_MATERIAL для автоматического затенения
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+
+    // Пол (с освещением)
     bool useFloorTexture = !currentConfig.floorTexture.empty() && floorTexture.id != 0;
     if (useFloorTexture) {
         glEnable(GL_TEXTURE_2D);
@@ -2657,10 +2738,6 @@ void renderShadowPreview3D() {
         glDisable(GL_TEXTURE_2D);
     }
 
-    glEnable(GL_COLOR_MATERIAL);
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-
-    // Рисуем простой однотонный пол
     glColor3f(currentConfig.floorColor.r, currentConfig.floorColor.g, currentConfig.floorColor.b);
     glBegin(GL_QUADS);
     glNormal3f(0.0f, 1.0f, 0.0f);
@@ -2672,10 +2749,7 @@ void renderShadowPreview3D() {
 
     glDisable(GL_TEXTURE_2D);
 
-    // ============================================================
-    // ШАГ 5: ЗАГРУЖАЕМ И РИСУЕМ МОДЕЛИ
-    // ============================================================
-
+    // Загружаем модели
     Model snakeHeadModel, snakeBodyModel, snakeTailModel;
     Model treeModel, appleModel;
 
@@ -2701,90 +2775,57 @@ void renderShadowPreview3D() {
 
     float cellSize = currentConfig.cellSize;
 
-    // Змейка
-    std::vector<glm::vec3> snakePositions = {
-        glm::vec3(0.0f, floorHeight, 0.0f),
-        glm::vec3(-0.8f, floorHeight, 0.0f),
-        glm::vec3(-1.6f, floorHeight, 0.0f)
-    };
+    // Функция рисования с автоматическим затенением
+    auto drawSegmentWithColor = [&](Model& model, const glm::vec3& pos, float offset, float scale, const glm::vec3& color) {
+        glPushMatrix();
+        glTranslatef(pos.x, pos.y + offset * scale + 0.05f, pos.z);
+        glScalef(scale, scale, scale);
 
-    // Голова
-    float headOffset = getModelBottomOffset(snakeHeadModel);
-    float headScale = cellSize * currentConfig.snakeHeadScale;
-    glPushMatrix();
-    glTranslatef(snakePositions[0].x, snakePositions[0].y + headOffset * headScale + 0.05f, snakePositions[0].z);
-    glScalef(headScale, headScale, headScale);
-    if (snakeHeadModel.hasTexture) {
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, snakeHeadModel.textureID);
-    }
-    snakeHeadModel.draw();
-    if (snakeHeadModel.hasTexture) glDisable(GL_TEXTURE_2D);
-    glPopMatrix();
+        if (model.hasTexture && model.textureID != 0) {
+            glColor3f(1.0f, 1.0f, 1.0f);
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, model.textureID);
+        }
+        else {
+            glDisable(GL_TEXTURE_2D);
+            glColor3f(color.r, color.g, color.b);
+        }
 
-    // Тело
-    float bodyOffset = getModelBottomOffset(snakeBodyModel);
-    float bodyScale = cellSize * currentConfig.snakeBodyScale;
-    glPushMatrix();
-    glTranslatef(snakePositions[1].x, snakePositions[1].y + bodyOffset * bodyScale + 0.05f, snakePositions[1].z);
-    glScalef(bodyScale, bodyScale, bodyScale);
-    if (snakeBodyModel.hasTexture) {
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, snakeBodyModel.textureID);
-    }
-    snakeBodyModel.draw();
-    if (snakeBodyModel.hasTexture) glDisable(GL_TEXTURE_2D);
-    glPopMatrix();
+        model.draw();
 
-    // Хвост
-    float tailOffset = getModelBottomOffset(snakeTailModel);
-    float tailScale = cellSize * currentConfig.snakeTailScale;
-    glPushMatrix();
-    glTranslatef(snakePositions[2].x, snakePositions[2].y + tailOffset * tailScale + 0.05f, snakePositions[2].z);
-    glScalef(tailScale, tailScale, tailScale);
-    if (snakeTailModel.hasTexture) {
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, snakeTailModel.textureID);
-    }
-    snakeTailModel.draw();
-    if (snakeTailModel.hasTexture) glDisable(GL_TEXTURE_2D);
-    glPopMatrix();
+        if (model.hasTexture && model.textureID != 0) {
+            glDisable(GL_TEXTURE_2D);
+        }
+        glPopMatrix();
+        };
 
-    // Деревья
+    // Змейка (автоматически затеняется)
+    drawSegmentWithColor(snakeHeadModel, glm::vec3(0.0f, floorHeight, 0.0f),
+        getModelBottomOffset(snakeHeadModel), cellSize * currentConfig.snakeHeadScale,
+        currentConfig.snakeHeadColor);
+
+    drawSegmentWithColor(snakeBodyModel, glm::vec3(-0.8f, floorHeight, 0.0f),
+        getModelBottomOffset(snakeBodyModel), cellSize * currentConfig.snakeBodyScale,
+        currentConfig.snakeBodyColor);
+
+    drawSegmentWithColor(snakeTailModel, glm::vec3(-1.6f, floorHeight, 0.0f),
+        getModelBottomOffset(snakeTailModel), cellSize * currentConfig.snakeTailScale,
+        currentConfig.snakeTailColor);
+
+    // Деревья (автоматически затеняются)
     float treeOffset = getModelBottomOffset(treeModel);
     float treeScale = cellSize * 1.2f;
-    std::vector<glm::vec3> treePositions = {
-        glm::vec3(2.5f, floorHeight, -2.0f),
-        glm::vec3(-2.5f, floorHeight, -2.0f)
-    };
-    for (const auto& pos : treePositions) {
-        glPushMatrix();
-        glTranslatef(pos.x, pos.y + treeOffset * treeScale, pos.z);
-        glScalef(treeScale, treeScale, treeScale);
-        if (treeModel.hasTexture) {
-            glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, treeModel.textureID);
-        }
-        treeModel.draw();
-        if (treeModel.hasTexture) glDisable(GL_TEXTURE_2D);
-        glPopMatrix();
-    }
+    drawSegmentWithColor(treeModel, glm::vec3(2.5f, floorHeight, -2.0f), treeOffset, treeScale,
+        glm::vec3(0.2f, 0.6f, 0.2f));
+    drawSegmentWithColor(treeModel, glm::vec3(-2.5f, floorHeight, -2.0f), treeOffset, treeScale,
+        glm::vec3(0.2f, 0.6f, 0.2f));
 
-    // Яблоко
-    float appleOffset = getModelBottomOffset(appleModel);
-    float appleScale = cellSize * 0.6f;
-    glPushMatrix();
-    glTranslatef(1.0f, floorHeight + appleOffset * appleScale + 0.05f, 1.0f);
-    glScalef(appleScale, appleScale, appleScale);
-    if (appleModel.hasTexture) {
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, appleModel.textureID);
-    }
-    appleModel.draw();
-    if (appleModel.hasTexture) glDisable(GL_TEXTURE_2D);
-    glPopMatrix();
+    // Яблоко (автоматически затеняется)
+    drawSegmentWithColor(appleModel, glm::vec3(1.0f, floorHeight, 1.0f),
+        getModelBottomOffset(appleModel), cellSize * 0.6f,
+        glm::vec3(0.9f, 0.2f, 0.2f));
 
-    // Источник света (сфера)
+    // Источник света (сфера - без освещения)
     if (currentConfig.lightType != 0) {
         glDisable(GL_LIGHTING);
         glDisable(GL_TEXTURE_2D);
@@ -2800,20 +2841,16 @@ void renderShadowPreview3D() {
 
     glDisable(GL_COLOR_MATERIAL);
 
-    // ============================================================
-    // ШАГ 6: ВОЗВРАЩАЕМ МАТРИЦЫ И ВЬЮПОРТ
-    // ============================================================
-    glMatrixMode(GL_MODELVIEW);
-    glPopMatrix();  // Убираем камеру
+    // Возвращаем матрицы
     glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
     glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
     glDisable(GL_SCISSOR_TEST);
     reset2DProjection();
 
-    // ============================================================
-    // ШАГ 7: UI
-    // ============================================================
+    // UI
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f((float)previewX, (float)previewY);
@@ -3205,6 +3242,9 @@ bool initOpenGL() {
 
     ConfigManager::loadGameConfig(g_configPath, currentConfig);
     initElements();
+
+    // ВАЖНО: Инициализируем освещение
+    initLighting();
 
     return true;
 }
