@@ -261,14 +261,12 @@ bool ConfigManager::loadObstacles(const std::string& filename, std::vector<Obsta
     }
 
     file.close();
-    std::cout << "Loaded " << obstacles.size() << " obstacles from " << filename << std::endl;
     return true;
 }
 
 bool ConfigManager::saveObstacles(const std::string& filename, const std::vector<ObstacleData>& obstacles) {
     std::ofstream file(filename, std::ios::binary);
     if (!file.is_open()) {
-        std::cerr << "Cannot save obstacles file: " << filename << std::endl;
         return false;
     }
 
@@ -293,6 +291,5 @@ bool ConfigManager::saveObstacles(const std::string& filename, const std::vector
     }
 
     file.close();
-    std::cout << "Saved " << obstacles.size() << " obstacles to " << filename << std::endl;
     return true;
 }

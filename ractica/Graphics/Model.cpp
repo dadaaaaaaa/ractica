@@ -48,8 +48,6 @@ void Model::setupBuffers() {
     isCompiled = true;
     calculateBounds();
 
-    std::cout << "Model compiled into display list (ID: " << displayList
-        << ") with " << vertices.size() << " vertices" << std::endl;
 }
 
 void Model::cleanup() {
@@ -163,7 +161,6 @@ float Model::getHeightAt(float worldX, float worldZ) const {
 void Model::computeNormals() {
     if (vertices.empty()) return;
 
-    std::cout << "Computing normals for model with " << vertices.size() << " vertices" << std::endl;
 
     // Сначала обнуляем все нормали
     for (auto& vertex : vertices) {
@@ -208,5 +205,4 @@ void Model::computeNormals() {
         }
     }
 
-    std::cout << "Normals computed successfully" << std::endl;
 }

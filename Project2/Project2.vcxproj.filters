@@ -15,6 +15,7 @@
     <ClCompile Include="..\ractica\Primitives\ApplePrimitive.cpp" />
     <ClCompile Include="..\ractica\Primitives\BirdPrimitive.cpp" />
     <ClCompile Include="..\ractica\Graphics\ShadowMapper.cpp" />
+    <ClCompile Include="..\ractica\Graphics\RayTracer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ractica\ConfigEditor\ConfigManager.h" />
@@ -32,5 +33,6 @@
     <ClInclude Include="..\ractica\Primitives\TreePrimitive.h" />
     <ClInclude Include="..\ractica\Primitives\ApplePrimitive.h" />
     <ClInclude Include="..\ractica\Graphics\ShadowMapper.h" />
+    <ClInclude Include="..\ractica\Graphics\RayTracer.h" />
   </ItemGroup>
 </Project>

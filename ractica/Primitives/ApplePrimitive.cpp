@@ -61,5 +61,4 @@ void ApplePrimitive::create(Model& model) {
     model.hasTexture = false;
     model.setupBuffers();
 
-    std::cout << "Apple created with " << model.vertices.size() << " vertices" << std::endl;
 }

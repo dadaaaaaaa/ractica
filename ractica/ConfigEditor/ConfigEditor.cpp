@@ -47,13 +47,13 @@
 #include "../Primitives/SnakeTailPrimitive.h"
 #include <functional>
 #include "../Graphics/ShadowMapper.h"
-
+static std::map<const Model*, std::pair<glm::vec3, float>> g_boundsCache;
+static bool g_forceBoundsRecalc = true;
 // Глобальные переменные для теней в редакторе
 static ShadowMapper g_previewStaticShadow;
 static ShadowMapper g_previewDynamicShadow;
 static ShadowMapper g_previewFoodShadow;
 static bool g_previewShadowsInitialized = false;
-static bool g_previewShadowsDirty = true;
 // После существующих глобальных переменных добавить:
 // Модели для предпросмотра (как в GameRenderer)
 Model g_previewSnakeHeadModel;
@@ -67,7 +67,13 @@ Model g_previewFlowerModel;
 Model g_previewFenceModel;
 Model g_previewFloorModel;
 GameConfig currentConfig;
-
+// После существующих глобальных переменных добавить:
+static bool g_previewShadowsDirty = true;  // Флаг для пересчёта теней
+static int g_lastShadowTraceMode = -1;     // Последний использованный режим
+static bool g_lastShadowMapEnabled = false; // Последнее состояние теней
+static int g_lastShadowStrideX = 0;         // Последний stride X
+static int g_lastShadowStrideZ = 0;         // Последний stride Z
+static int g_lastShadowSubdivisionSize = 0; // Последний размер подразбиения
 //=============================================================================
 // ОПРЕДЕЛЕНИЯ СТРУКТУР
 //=============================================================================
@@ -92,99 +98,35 @@ void initLighting() {
     glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
     glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
-
-    // ВАЖНО: НЕ устанавливаем GL_LIGHT_MODEL_LOCAL_VIEWER!
-    // Оставляем по умолчанию GL_FALSE
 }
-
+// Добавить после функций rayIntersectsSphere
+void clearBoundsCache() {
+    g_boundsCache.clear();
+    g_forceBoundsRecalc = true;
+    std::cout << "Bounds cache cleared" << std::endl;
+}
 // Функция обновления позиции света - должна вызываться с единичной ModelView матрицей
+// Функция обновления позиции света - как в GameRenderer
 void updateLightPosition() {
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
-    glEnable(GL_NORMALIZE);
-
     switch (currentConfig.lightType) {
     case 0: { // Directional
-        GLfloat light0_position[] = {
-            currentConfig.lightDir.x,
-            currentConfig.lightDir.y,
-            currentConfig.lightDir.z,
-            0.0f  // ВАЖНО: 0 для направленного света (мировые координаты)
-        };
+        GLfloat light0_position[] = { -currentConfig.lightDir.x, -currentConfig.lightDir.y, -currentConfig.lightDir.z, 0.0f };
         glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
         break;
     }
     case 1: { // Point
-        GLfloat light0_position[] = {
-            currentConfig.lightPos.x,
-            currentConfig.lightPos.y,
-            currentConfig.lightPos.z,
-            1.0f  // ВАЖНО: 1 для точечного света (мировые координаты)
-        };
+        GLfloat light0_position[] = { currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z, 1.0f };
         glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
-
-        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 1.0f);
-        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.0f);
-        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.0f);
         break;
     }
     case 2: { // Spot
-        GLfloat light0_position[] = {
-            currentConfig.lightPos.x,
-            currentConfig.lightPos.y,
-            currentConfig.lightPos.z,
-            1.0f  // ВАЖНО: 1 для прожектора (мировые координаты)
-        };
+        GLfloat light0_position[] = { currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z, 1.0f };
         glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
-
         GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
         glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
-        glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 45.0f);
-        glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 2.0f);
-
-        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.5f);
-        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.03f);
-        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.01f);
         break;
     }
     }
-
-    // Обновляем global ambient
-    if (currentConfig.ambientEnabled) {
-        GLfloat global_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
-    }
-    else {
-        GLfloat global_ambient[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
-    }
-
-    // Обновляем diffuse color
-    GLfloat light0_diffuse[] = {
-        currentConfig.lightColor.r,
-        currentConfig.lightColor.g,
-        currentConfig.lightColor.b,
-        1.0f
-    };
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
-
-    // Обновляем ambient компоненту источника
-    GLfloat light0_ambient[] = {
-        currentConfig.ambientEnabled ? 0.3f : 0.0f,
-        currentConfig.ambientEnabled ? 0.3f : 0.0f,
-        currentConfig.ambientEnabled ? 0.3f : 0.0f,
-        1.0f
-    };
-    glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
-
-    // Обновляем specular компоненту
-    GLfloat light0_specular[] = {
-        currentConfig.specularEnabled ? 0.5f : 0.0f,
-        currentConfig.specularEnabled ? 0.5f : 0.0f,
-        currentConfig.specularEnabled ? 0.5f : 0.0f,
-        1.0f
-    };
-    glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
 }
 
 bool convertModelDataToModel(const ModelData& modelData, Model& outModel) {
@@ -394,25 +336,21 @@ GLuint loadTextureFromFile(const std::string& path);  // Добавить про
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 //=============================================================================
 // Функция для загрузки модели с fallback на примитив
+// ========== ИСПРАВЛЕННАЯ loadModelWithFallback ==========
 bool loadModelWithFallback(const std::string& filename, Model& targetModel,
     const std::string& subFolder,
     std::function<void(Model&)> createPrimitive) {
+
     if (!filename.empty()) {
         if (loadFBXModel(filename, targetModel, subFolder)) {
-            std::cout << "✓ Loaded FBX model: " << filename << std::endl;
             return true;
         }
-        std::cout << "✗ Failed to load FBX model: " << filename << ", using primitive" << std::endl;
-    }
-    else {
-        std::cout << "No model file specified, using primitive" << std::endl;
     }
 
     if (createPrimitive) {
         createPrimitive(targetModel);
-        targetModel.computeNormals();
-        targetModel.setupBuffers();
-        std::cout << "✓ Created primitive model" << std::endl;
+        targetModel.computeNormals();  // ВАЖНО!
+        targetModel.setupBuffers();     // ВАЖНО!
         return true;
     }
     return false;
@@ -955,16 +893,13 @@ void initElements() {
 //=============================================================================
 
 void initFreeType() {
-    std::cout << "Инициализация шрифта FreeType..." << std::endl;
 
     if (FT_Init_FreeType(&g_ft)) {
-        std::cerr << "ОШИБКА: Не удалось инициализировать FreeType" << std::endl;
         return;
     }
 
     std::string fontPath = "C:/Windows/Fonts/arial.ttf";
     if (FT_New_Face(g_ft, fontPath.c_str(), 0, &g_face)) {
-        std::cerr << "ОШИБКА: Не удалось загрузить шрифт" << std::endl;
         return;
     }
 
@@ -1086,7 +1021,6 @@ void initFreeType() {
         g_characters.insert(std::pair<unsigned char, Character>(0xB8, character));
     }
 
-    std::cout << "Загружено символов: " << g_characters.size() << std::endl;
 
     // Создаём VAO/VBO для текста
     glGenVertexArrays(1, &g_textVAO);
@@ -1102,7 +1036,6 @@ void initFreeType() {
     glBindVertexArray(0);
 
     g_fontInitialized = true;
-    std::cout << "Шрифт успешно инициализирован" << std::endl;
 }
 
 void cleanupFreeType() {
@@ -1396,21 +1329,21 @@ bool loadTexture(const std::string& filename, Texture& texture) {
     return texture.id != 0;
 }
 
+// ========== ИСПРАВЛЕННАЯ ЗАГРУЗКА FBX МОДЕЛИ С ВЫЧИСЛЕНИЕМ НОРМАЛЕЙ ==========
 bool loadFBXModel(const std::string& filename, Model& outModel, const std::string& subFolder) {
     if (filename.empty()) return false;
 
     std::string fullPath = g_modelsPath + subFolder + "\\" + filename;
     if (!std::filesystem::exists(fullPath)) {
-        std::cout << "FBX file not found: " << fullPath << std::endl;
         return false;
     }
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(fullPath,
         aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_FlipUVs |
-        aiProcess_JoinIdenticalVertices);
+        aiProcess_JoinIdenticalVertices | aiProcess_CalcTangentSpace);
+
     if (!scene) {
-        std::cout << "Failed to load FBX: " << importer.GetErrorString() << std::endl;
         return false;
     }
 
@@ -1456,7 +1389,6 @@ bool loadFBXModel(const std::string& filename, Model& outModel, const std::strin
     }
 
     if (outModel.vertices.empty()) {
-        std::cout << "No vertices loaded from FBX" << std::endl;
         return false;
     }
 
@@ -1477,10 +1409,10 @@ bool loadFBXModel(const std::string& filename, Model& outModel, const std::strin
         }
     }
 
-    outModel.computeNormals();
-    outModel.setupBuffers();
+    // ========== ВАЖНО: вычисляем нормали и создаем буферы ==========
+    outModel.computeNormals();  // Пересчитываем нормали на всякий случай
+    outModel.setupBuffers();     // Создаем display list или VBO
 
-    std::cout << "Loaded FBX model: " << filename << " with " << outModel.vertices.size() << " vertices" << std::endl;
     return true;
 }
 
@@ -2652,16 +2584,561 @@ void renderLightEditor() {
 // РЕДАКТОР ТЕНЕЙ
 //=============================================================================
 // Функция для вычисления bounding sphere модели (как в GameRenderer::rayIntersectsModel)
-static void getModelBoundingSphere(const Model& model, float scale, glm::vec3& outCenter, float& outRadius) {
+// ========== ФУНКЦИИ ТОЧНОЙ ГЕОМЕТРИИ ИЗ GAMERENDERER ==========
+// ========== ФУНКЦИИ ТОЧНОЙ ГЕОМЕТРИИ ИЗ GAMERENDERER ==========
+
+// ========== СТРУКТУРА ЛУЧА ==========
+
+
+// ========== ПРОВЕРКА ПЕРЕСЕЧЕНИЯ ЛУЧА СО СФЕРОЙ ==========
+// ========== ПРОВЕРКА ПЕРЕСЕЧЕНИЯ ЛУЧА СО СФЕРОЙ (как в GameRenderer) ==========
+// ИЗ GameRenderer.cpp - точная копия
+bool rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius, float& tHit) {
+    glm::vec3 oc = ray.origin - center;
+    float a = glm::dot(ray.direction, ray.direction);
+    float b = 2.0f * glm::dot(oc, ray.direction);
+    float c = glm::dot(oc, oc) - radius * radius;
+    float discriminant = b * b - 4 * a * c;
+
+    if (discriminant < 0) return false;
+
+    float sqrtD = sqrt(discriminant);
+    float t1 = (-b - sqrtD) / (2.0f * a);
+    float t2 = (-b + sqrtD) / (2.0f * a);
+
+    if (t1 > 0.01f) {
+        tHit = t1;
+        return true;
+    }
+    if (t2 > 0.01f) {
+        tHit = t2;
+        return true;
+    }
+
+    return false;
+}
+// Функция пересечения луча со сферой (уже есть в файле, но продублируем для уверенности)
+bool rayIntersectsSphereEditor(const Ray& ray, const glm::vec3& center, float radius, float& tHit) {
+    glm::vec3 oc = ray.origin - center;
+    float a = glm::dot(ray.direction, ray.direction);
+    float b = 2.0f * glm::dot(oc, ray.direction);
+    float c = glm::dot(oc, oc) - radius * radius;
+    float discriminant = b * b - 4 * a * c;
+
+    if (discriminant < 0) return false;
+
+    float sqrtD = sqrt(discriminant);
+    float t1 = (-b - sqrtD) / (2.0f * a);
+    float t2 = (-b + sqrtD) / (2.0f * a);
+
+    if (t1 > 0.01f) {
+        tHit = t1;
+        return true;
+    }
+    if (t2 > 0.01f) {
+        tHit = t2;
+        return true;
+    }
+
+    return false;
+}float calculateSegmentRotationEditor(const std::vector<glm::vec3>& snakePositions, size_t index) {
+    if (snakePositions.size() <= 1) return 0.0f;
+
+    if (index == 0) {
+        if (snakePositions[0].x > snakePositions[1].x) return 90.0f;
+        if (snakePositions[0].x < snakePositions[1].x) return -90.0f;
+        if (snakePositions[0].z > snakePositions[1].z) return 0.0f;
+        if (snakePositions[0].z < snakePositions[1].z) return 180.0f;
+    }
+    else {
+        if (snakePositions[index].x > snakePositions[index - 1].x) return 90.0f;
+        if (snakePositions[index].x < snakePositions[index - 1].x) return -90.0f;
+        if (snakePositions[index].z > snakePositions[index - 1].z) return 0.0f;
+        if (snakePositions[index].z < snakePositions[index - 1].z) return 180.0f;
+    }
+
+    return 0.0f;
+}
+// ========== ПРОВЕРКА ПЕРЕСЕЧЕНИЯ ЛУЧА С МОДЕЛЬЮ (ТОЧНАЯ ГЕОМЕТРИЯ) ==========
+// ========== ПРОВЕРКА ПЕРЕСЕЧЕНИЯ ЛУЧА С МОДЕЛЬЮ (ТОЧНАЯ ГЕОМЕТРИЯ, как в GameRenderer) ==========
+// ========== ПРОВЕРКА ПЕРЕСЕЧЕНИЯ ЛУЧА С МОДЕЛЬЮ (ТОЧНАЯ ГЕОМЕТРИЯ) ==========
+// ИЗ GameRenderer.cpp - точная копия с кэшем
+bool rayIntersectsModel(const Ray& ray, const Model& model,
+    const glm::mat4& transform,
+    float& hitDistance, glm::vec3& hitPoint) {
+
     if (model.vertices.empty()) {
-        outCenter = glm::vec3(0.0f);
-        outRadius = 0.5f;
+        return false;
+    }
+
+    // Используем глобальный кэш, а не static
+    auto it = g_boundsCache.find(&model);
+    if (it == g_boundsCache.end()) {
+        // Вычисляем локальные границы модели
+        float minX = model.vertices[0].position.x;
+        float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
+
+        for (const auto& vert : model.vertices) {
+            minX = std::min(minX, vert.position.x);
+            maxX = std::max(maxX, vert.position.x);
+            minY = std::min(minY, vert.position.y);
+            maxY = std::max(maxY, vert.position.y);
+            minZ = std::min(minZ, vert.position.z);
+            maxZ = std::max(maxZ, vert.position.z);
+        }
+
+        glm::vec3 localCenter(
+            (minX + maxX) * 0.5f,
+            (minY + maxY) * 0.5f,
+            (minZ + maxZ) * 0.5f
+        );
+
+        float localRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+
+        g_boundsCache[&model] = { localCenter, localRadius };
+        it = g_boundsCache.find(&model);
+
+        std::cout << "Cached model: center=(" << localCenter.x << "," << localCenter.y << "," << localCenter.z
+            << ") radius=" << localRadius << " vertices=" << model.vertices.size() << std::endl;
+    }
+
+    const auto& localBounds = it->second;
+    glm::vec3 localCenter = localBounds.first;
+    float localRadius = localBounds.second;
+
+    // Преобразуем локальный центр в мировые координаты
+    glm::vec4 worldCenter4 = transform * glm::vec4(localCenter, 1.0f);
+    glm::vec3 worldCenter = glm::vec3(worldCenter4);
+
+    // Вычисляем максимальный радиус
+    glm::vec3 scale;
+    scale.x = glm::length(glm::vec3(transform[0]));
+    scale.y = glm::length(glm::vec3(transform[1]));
+    scale.z = glm::length(glm::vec3(transform[2]));
+    float maxScale = std::max({ scale.x, scale.y, scale.z });
+    float worldRadius = localRadius * maxScale;
+
+    // Проверка попадания в bounding sphere
+    float tSphere;
+    if (!rayIntersectsSphere(ray, worldCenter, worldRadius, tSphere)) {
+        return false;
+    }
+
+    // Точная проверка по треугольникам
+    float closestHit = 1000.0f;
+    bool hit = false;
+    const float EPSILON = 0.000001f;
+
+    for (size_t i = 0; i < model.vertices.size(); i += 3) {
+        if (i + 2 >= model.vertices.size()) break;
+
+        glm::vec3 v0_local = model.vertices[i].position;
+        glm::vec3 v1_local = model.vertices[i + 1].position;
+        glm::vec3 v2_local = model.vertices[i + 2].position;
+
+        glm::vec3 v0 = glm::vec3(transform * glm::vec4(v0_local, 1.0f));
+        glm::vec3 v1 = glm::vec3(transform * glm::vec4(v1_local, 1.0f));
+        glm::vec3 v2 = glm::vec3(transform * glm::vec4(v2_local, 1.0f));
+
+        glm::vec3 edge1 = v1 - v0;
+        glm::vec3 edge2 = v2 - v0;
+        glm::vec3 h = glm::cross(ray.direction, edge2);
+        float a = glm::dot(edge1, h);
+
+        if (a > -EPSILON && a < EPSILON) continue;
+
+        float f = 1.0f / a;
+        glm::vec3 s = ray.origin - v0;
+        float u = f * glm::dot(s, h);
+
+        if (u < 0.0f || u > 1.0f) continue;
+
+        glm::vec3 q = glm::cross(s, edge1);
+        float v = f * glm::dot(ray.direction, q);
+
+        if (v < 0.0f || u + v > 1.0f) continue;
+
+        float t = f * glm::dot(edge2, q);
+
+        if (t > EPSILON && t < closestHit) {
+            closestHit = t;
+            hitPoint = ray.pointAt(t);
+            hit = true;
+        }
+    }
+
+    if (hit) {
+        hitDistance = closestHit;
+    }
+
+    return hit;
+}
+HitInfo intersectTreesOnlyEditor(const Ray& ray,
+    const std::vector<glm::vec3>& treePositions,
+    const Model& treeModel, float treeScale, float treeOffset,
+    float offsetX, float offsetZ, float floorHeight, float cellSize) {
+
+    HitInfo closestHit;
+    closestHit.hit = false;
+    closestHit.distance = 1000.0f;
+    float maxDistance = 100.0f;
+    float halfWidth = 120 * cellSize / 2.0f;  // gridWidth * cellSize / 2
+    float halfDepth = 120 * cellSize / 2.0f;   // gridDepth * cellSize / 2
+
+    // Пол
+    float tGround = -ray.origin.y / ray.direction.y;
+    if (tGround > 0.01f && tGround < maxDistance && tGround < closestHit.distance) {
+        glm::vec3 hitPoint = ray.pointAt(tGround);
+        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+            closestHit.hit = true;
+            closestHit.distance = tGround;
+            closestHit.point = hitPoint;
+            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+    }
+
+    // Деревья
+    if (treeModel.vertices.empty()) return closestHit;
+
+    for (const auto& treePos : treePositions) {
+        float x = treePos.x;
+        float z = treePos.z;
+        float y = treePos.y;
+
+        float treeHeight = 2.5f;
+        glm::vec3 treeCenter(
+            x,
+            y + treeHeight * 0.5f,
+            z
+        );
+        float boundingRadius = 1.2f;
+
+        float tSphere;
+        if (rayIntersectsSphereEditor(ray, treeCenter, boundingRadius, tSphere)) {
+            glm::mat4 transform = glm::mat4(1.0f);
+            transform = glm::translate(transform, glm::vec3(x, y, z));
+            transform = glm::scale(transform, glm::vec3(treeScale));
+
+            float hitDist;
+            glm::vec3 hitPt;
+            if (rayIntersectsModel(ray, treeModel, transform, hitDist, hitPt)) {
+                if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = hitDist;
+                    closestHit.point = hitPt;
+                }
+            }
+        }
+    }
+
+    return closestHit;
+}
+
+HitInfo intersectSnakeOnlyEditor(const Ray& ray,
+    const std::vector<glm::vec3>& snakePositions,
+    const Model& snakeHeadModel, const Model& snakeBodyModel, const Model& snakeTailModel,
+    float headScale, float bodyScale, float tailScale,
+    float headOffset, float bodyOffset, float tailOffset,
+    float offsetX, float offsetZ) {
+
+    HitInfo closestHit;
+    closestHit.hit = false;
+    closestHit.distance = 1000.0f;
+
+    if (snakeHeadModel.vertices.empty()) return closestHit;
+
+    for (size_t i = 0; i < snakePositions.size(); i++) {
+        const glm::vec3& pos = snakePositions[i];
+
+        float x = pos.x;
+        float z = pos.z;
+        float y = pos.y;
+
+        float scale;
+        const Model* model = nullptr;
+        float offset;
+
+        if (i == 0) {
+            scale = headScale;
+            model = &snakeHeadModel;
+            offset = headOffset;
+        }
+        else if (i == snakePositions.size() - 1) {
+            scale = tailScale;
+            model = &snakeTailModel;
+            offset = tailOffset;
+        }
+        else {
+            scale = bodyScale;
+            model = &snakeBodyModel;
+            offset = bodyOffset;
+        }
+
+        float segmentRadius = scale * 0.6f;
+        glm::vec3 center(x, y + offset * scale, z);
+
+        float tSphere;
+        if (rayIntersectsSphereEditor(ray, center, segmentRadius, tSphere)) {
+            if (!model->vertices.empty()) {
+                float rotationAngle = calculateSegmentRotationEditor(snakePositions, i);
+                glm::mat4 transform = glm::mat4(1.0f);
+                transform = glm::translate(transform, glm::vec3(x, y + offset * scale, z));
+                transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+                transform = glm::scale(transform, glm::vec3(scale));
+
+                float hitDist;
+                glm::vec3 hitPt;
+                if (rayIntersectsModel(ray, *model, transform, hitDist, hitPt)) {
+                    if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                        closestHit.hit = true;
+                        closestHit.distance = hitDist;
+                        closestHit.point = hitPt;
+                    }
+                }
+            }
+        }
+    }
+
+    return closestHit;
+}
+
+HitInfo intersectFoodOnlyEditor(const Ray& ray,
+    const std::vector<glm::vec3>& applePositions,
+    const Model& appleModel, float appleScale, float appleOffset,
+    float offsetX, float offsetZ, float floorHeight, float cellSize) {
+
+    HitInfo closestHit;
+    closestHit.hit = false;
+    closestHit.distance = 1000.0f;
+    float maxDistance = 100.0f;
+    float halfWidth = 120 * cellSize / 2.0f;
+    float halfDepth = 120 * cellSize / 2.0f;
+
+    // Пол
+    float tGround = -ray.origin.y / ray.direction.y;
+    if (tGround > 0.01f && tGround < maxDistance && tGround < closestHit.distance) {
+        glm::vec3 hitPoint = ray.pointAt(tGround);
+        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+            closestHit.hit = true;
+            closestHit.distance = tGround;
+            closestHit.point = hitPoint;
+            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+    }
+
+    // Яблоки
+    if (appleModel.vertices.empty()) return closestHit;
+
+    // Вычисляем bounding box модели один раз
+    static float minY_local = FLT_MAX;
+    static float maxY_local = -FLT_MAX;
+    static float offsetFromCenterToBottom = 0.0f;
+    static bool boundsComputed = false;
+
+    if (!boundsComputed) {
+        for (const auto& vert : appleModel.vertices) {
+            minY_local = std::min(minY_local, vert.position.y);
+            maxY_local = std::max(maxY_local, vert.position.y);
+        }
+        offsetFromCenterToBottom = -minY_local;
+        boundsComputed = true;
+    }
+
+    for (const auto& applePos : applePositions) {
+        float centerX = applePos.x;
+        float centerZ = applePos.z;
+        float worldBottomOffset = offsetFromCenterToBottom * appleScale;
+        float centerY = floorHeight + worldBottomOffset;
+
+        float modelRadius = (maxY_local - minY_local) * 0.5f * appleScale;
+        glm::vec3 center(centerX, centerY, centerZ);
+
+        float tSphere;
+        if (rayIntersectsSphereEditor(ray, center, modelRadius, tSphere)) {
+            glm::mat4 transform = glm::mat4(1.0f);
+            transform = glm::translate(transform, center);
+            transform = glm::scale(transform, glm::vec3(appleScale));
+
+            float hitDist;
+            glm::vec3 hitPt;
+            if (rayIntersectsModel(ray, appleModel, transform, hitDist, hitPt)) {
+                if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = hitDist;
+                    closestHit.point = hitPt;
+                }
+            }
+        }
+    }
+
+    return closestHit;
+}
+// ========== ВЫЧИСЛЕНИЕ ПОВОРОТА СЕГМЕНТА ЗМЕЙКИ ==========
+// ========== ВЫЧИСЛЕНИЕ ПОВОРОТА СЕГМЕНТА ЗМЕЙКИ (как в GameRenderer) ==========
+// ИЗ GameRenderer.cpp - точная копия
+float calculateSegmentRotation(const std::vector<glm::vec3>& snakePositions, size_t index) {
+    if (snakePositions.size() <= 1) return 0.0f;
+
+    if (index == 0) {
+        if (snakePositions[0].x > snakePositions[1].x) return 90.0f;
+        if (snakePositions[0].x < snakePositions[1].x) return -90.0f;
+        if (snakePositions[0].z > snakePositions[1].z) return 0.0f;
+        if (snakePositions[0].z < snakePositions[1].z) return 180.0f;
+    }
+    else {
+        if (snakePositions[index].x > snakePositions[index - 1].x) return 90.0f;
+        if (snakePositions[index].x < snakePositions[index - 1].x) return -90.0f;
+        if (snakePositions[index].z > snakePositions[index - 1].z) return 0.0f;
+        if (snakePositions[index].z < snakePositions[index - 1].z) return 180.0f;
+    }
+
+    return 0.0f;
+}
+// ИЗ GameRenderer.cpp - точная копия
+void setupDirectionalLight() {
+    GLfloat light0_ambient[] = {
+        currentConfig.ambientEnabled ? 0.3f : 0.0f,
+        currentConfig.ambientEnabled ? 0.3f : 0.0f,
+        currentConfig.ambientEnabled ? 0.3f : 0.0f,
+        1.0f
+    };
+
+    GLfloat light0_diffuse[] = { currentConfig.lightColor.r, currentConfig.lightColor.g, currentConfig.lightColor.b, 1.0f };
+
+    GLfloat light0_specular[] = {
+        currentConfig.specularEnabled ? 0.5f : 0.0f,
+        currentConfig.specularEnabled ? 0.5f : 0.0f,
+        currentConfig.specularEnabled ? 0.5f : 0.0f,
+        1.0f
+    };
+
+    GLfloat light0_position[] = { -currentConfig.lightDir.x, -currentConfig.lightDir.y, -currentConfig.lightDir.z, 0.0f };
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+    glDisable(GL_LIGHT1);
+}
+
+void setupPointLight() {
+    GLfloat light0_ambient[] = {
+        currentConfig.ambientEnabled ? 0.2f : 0.0f,
+        currentConfig.ambientEnabled ? 0.2f : 0.0f,
+        currentConfig.ambientEnabled ? 0.2f : 0.0f,
+        1.0f
+    };
+
+    GLfloat light0_diffuse[] = { currentConfig.lightColor.r * 0.9f, currentConfig.lightColor.g * 0.9f, currentConfig.lightColor.b * 0.9f, 1.0f };
+
+    GLfloat light0_specular[] = {
+        currentConfig.specularEnabled ? 0.4f : 0.0f,
+        currentConfig.specularEnabled ? 0.4f : 0.0f,
+        currentConfig.specularEnabled ? 0.4f : 0.0f,
+        1.0f
+    };
+
+    GLfloat light0_position[] = { currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z, 1.0f };
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+    glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.8f);
+    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.07f);
+    glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.02f);
+
+    glDisable(GL_LIGHT1);
+}
+
+void setupSpotLight() {
+    GLfloat light0_ambient[] = {
+        currentConfig.ambientEnabled ? 0.15f : 0.0f,
+        currentConfig.ambientEnabled ? 0.15f : 0.0f,
+        currentConfig.ambientEnabled ? 0.15f : 0.0f,
+        1.0f
+    };
+
+    GLfloat light0_diffuse[] = { currentConfig.lightColor.r * 1.5f, currentConfig.lightColor.g * 1.5f, currentConfig.lightColor.b * 1.5f, 1.0f };
+
+    GLfloat light0_specular[] = {
+        currentConfig.specularEnabled ? 0.7f : 0.0f,
+        currentConfig.specularEnabled ? 0.7f : 0.0f,
+        currentConfig.specularEnabled ? 0.7f : 0.0f,
+        1.0f
+    };
+
+    GLfloat light0_position[] = { currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z, 1.0f };
+
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+    glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+    GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
+    glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
+    glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 45.0f);
+    glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 2.0f);
+
+    glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.5f);
+    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.03f);
+    glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.01f);
+
+    GLfloat light1_ambient[] = {
+        currentConfig.ambientEnabled ? 0.2f : 0.0f,
+        currentConfig.ambientEnabled ? 0.2f : 0.0f,
+        currentConfig.ambientEnabled ? 0.2f : 0.0f,
+        1.0f
+    };
+    GLfloat light1_diffuse[] = { 0.25f, 0.25f, 0.25f, 1.0f };
+    GLfloat light1_position[] = { 0.0f, 5.0f, 0.0f, 1.0f };
+    glLightfv(GL_LIGHT1, GL_AMBIENT, light1_ambient);
+    glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_diffuse);
+    glLightfv(GL_LIGHT1, GL_POSITION, light1_position);
+}
+// ИЗ GameRenderer.cpp - точная копия
+void setupFixedPipelineLighting() {
+    glEnable(GL_LIGHTING);
+    glEnable(GL_NORMALIZE);
+
+    // Глобальная ambient
+    if (currentConfig.ambientEnabled) {
+        GLfloat global_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
+    }
+    else {
+        GLfloat global_ambient[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
+    }
+
+    // Включаем два источника света
+    glEnable(GL_LIGHT0);
+    glEnable(GL_LIGHT1);
+
+    // Настраиваем в зависимости от типа
+    switch (currentConfig.lightType) {
+    case 0: // Directional
+        setupDirectionalLight();
+        break;
+    case 1: // Points
+        setupPointLight();
+        break;
+    case 2: // Spot
+        setupSpotLight();
+        break;
+    }
+}
+static void getModelBoundingSphere(const Model& model, float scale, glm::vec3& center, float& radius) {
+    if (model.vertices.empty()) {
+        center = glm::vec3(0.0f);
+        radius = 0.5f;
         return;
     }
 
     float minX = model.vertices[0].position.x;
     float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
-
     for (const auto& v : model.vertices) {
         minX = std::min(minX, v.position.x);
         maxX = std::max(maxX, v.position.x);
@@ -2671,10 +3148,12 @@ static void getModelBoundingSphere(const Model& model, float scale, glm::vec3& o
         maxZ = std::max(maxZ, v.position.z);
     }
 
-    outCenter = glm::vec3((minX + maxX) / 2.0f, (minY + maxY) / 2.0f, (minZ + maxZ) / 2.0f) * scale;
-    outRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) / 2.0f * scale;
+    center = glm::vec3((minX + maxX) * 0.5f, (minY + maxY) * 0.5f, (minZ + maxZ) * 0.5f) * scale;
+    radius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f * scale;
 }
 // ИСПРАВЛЕННАЯ ФУНКЦИЯ - свет НЕ зависит от камеры
+// ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ - свет НЕ зависит от камеры ==========
+// ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ - полная копия логики из GameRenderer ==========
 void renderShadowPreview3D() {
     int previewX = (int)(windowWidth * 0.55f);
     int previewY = (int)(windowHeight * 0.12f);
@@ -2699,7 +3178,6 @@ void renderShadowPreview3D() {
     glDepthFunc(GL_LESS);
     glDisable(GL_BLEND);
 
-    // ========== ПРОЕКЦИЯ ==========
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -2707,16 +3185,10 @@ void renderShadowPreview3D() {
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     glLoadMatrixf(glm::value_ptr(projection));
 
-    // ========== MODELVIEW - УСТАНОВКА СВЕТА В МИРОВЫХ КООРДИНАТАХ ==========
     glMatrixMode(GL_MODELVIEW);
-
-    // КЛЮЧЕВОЙ МОМЕНТ: Сначала устанавливаем свет в мировых координатах
     glPushMatrix();
-    glLoadIdentity();  // Сбрасываем матрицу - свет НЕ зависит от камеры!
-   
-    glPopMatrix();
+    glLoadIdentity();
 
-    // ========== КАМЕРА (view transformation) ==========
     float radPitch = glm::radians(previewCameraPitch);
     float radYaw = glm::radians(previewRotationAngle);
 
@@ -2727,34 +3199,164 @@ void renderShadowPreview3D() {
     glm::vec3 eye(camX, camY + 1.0f, camZ);
     glm::vec3 up(0.0f, 1.0f, 0.0f);
 
-    gluLookAt(eye.x, eye.y, eye.z,
-        center.x, center.y, center.z,
-        up.x, up.y, up.z);
+    gluLookAt(eye.x, eye.y, eye.z, center.x, center.y, center.z, up.x, up.y, up.z);
+
     updateLightPosition();
-    // ========== ЗАГРУЖАЕМ МОДЕЛИ ==========
+
+    // ========== ЗАГРУЗКА МОДЕЛЕЙ ==========
     Model snakeHeadModel, snakeBodyModel, snakeTailModel;
     Model treeModel, appleModel;
 
-    loadModelWithFallback(currentConfig.snakeHeadModel, snakeHeadModel, "snake_head",
-        [](Model& m) { SnakeHeadPrimitive::create(m); });
-    loadModelWithFallback(currentConfig.snakeBodyModel, snakeBodyModel, "snake_body",
-        [](Model& m) { SnakeBodyPrimitive::create(m); });
-    loadModelWithFallback(currentConfig.snakeTailModel, snakeTailModel, "snake_tail",
-        [](Model& m) { SnakeTailPrimitive::create(m); });
-    loadModelWithFallback(currentConfig.treeModel, treeModel, "obstacles",
-        [](Model& m) { TreePrimitive::create(m); });
-    loadModelWithFallback(currentConfig.appleModel, appleModel, "food",
-        [](Model& m) { ApplePrimitive::create(m); });
+    // Голова змеи
+    if (!currentConfig.snakeHeadModel.empty()) {
+        loadFBXModel(currentConfig.snakeHeadModel, snakeHeadModel, "snake_head");
+    }
+    if (snakeHeadModel.vertices.empty()) {
+        SnakeHeadPrimitive::create(snakeHeadModel);
+        snakeHeadModel.computeNormals();
+        snakeHeadModel.setupBuffers();
+    }
+
+    // Тело змеи
+    if (!currentConfig.snakeBodyModel.empty()) {
+        loadFBXModel(currentConfig.snakeBodyModel, snakeBodyModel, "snake_body");
+    }
+    if (snakeBodyModel.vertices.empty()) {
+        SnakeBodyPrimitive::create(snakeBodyModel);
+        snakeBodyModel.computeNormals();
+        snakeBodyModel.setupBuffers();
+    }
+
+    // Хвост змеи
+    if (!currentConfig.snakeTailModel.empty()) {
+        loadFBXModel(currentConfig.snakeTailModel, snakeTailModel, "snake_tail");
+    }
+    if (snakeTailModel.vertices.empty()) {
+        SnakeTailPrimitive::create(snakeTailModel);
+        snakeTailModel.computeNormals();
+        snakeTailModel.setupBuffers();
+    }
+
+    // Дерево
+    if (!currentConfig.treeModel.empty()) {
+        loadFBXModel(currentConfig.treeModel, treeModel, "obstacles");
+    }
+    if (treeModel.vertices.empty()) {
+        TreePrimitive::create(treeModel);
+        treeModel.computeNormals();
+        treeModel.setupBuffers();
+    }
+
+    // Яблоко
+    if (!currentConfig.appleModel.empty()) {
+        loadFBXModel(currentConfig.appleModel, appleModel, "food");
+    }
+    if (appleModel.vertices.empty()) {
+        ApplePrimitive::create(appleModel);
+        appleModel.computeNormals();
+        appleModel.setupBuffers();
+    }
 
     float cellSize = currentConfig.cellSize;
     float floorHeight = 0.0f;
+    float worldWidth = currentConfig.gridWidth * cellSize;
+    float worldDepth = currentConfig.gridDepth * cellSize;
+    float offsetX = worldWidth / 2.0f;
+    float offsetZ = worldDepth / 2.0f;
 
-    // ========== СОЗДАЁМ SHADOWMAPPER (как в GameRenderer) ==========
+    // Вычисление offset для посадки на пол
+    auto getBottomOffset = [](const Model& model) -> float {
+        if (model.vertices.empty()) return 0.0f;
+        float minY = FLT_MAX;
+        for (const auto& v : model.vertices) {
+            minY = std::min(minY, v.position.y);
+        }
+        return -minY;
+        };
+
+    float headOffset = getBottomOffset(snakeHeadModel);
+    float bodyOffset = getBottomOffset(snakeBodyModel);
+    float tailOffset = getBottomOffset(snakeTailModel);
+    float treeOffset = getBottomOffset(treeModel);
+    float appleOffset = getBottomOffset(appleModel);
+
+    // Масштабы
+    float headScale = cellSize * currentConfig.snakeHeadScale;
+    float bodyScale = cellSize * currentConfig.snakeBodyScale;
+    float tailScale = cellSize * currentConfig.snakeTailScale;
+    float treeScale = cellSize * 1.2f;
+    float appleScale = cellSize * 0.6f;
+
+    // Позиции в центре поля
+    glm::vec3 headPos(0.0f, floorHeight, 0.0f);
+    glm::vec3 bodyPos(0.0f, floorHeight, -1.5f);
+    glm::vec3 tailPos(0.0f, floorHeight, -3.0f);
+
+    // Деревья
+    float margin = 3.0f * cellSize;
+    float maxX = offsetX - margin;
+    float maxZ = offsetZ - margin;
+    float minX = -offsetX + margin;
+    float minZ = -offsetZ + margin;
+
+    std::vector<glm::vec3> treePositions = {
+        glm::vec3(minX + 2.0f, floorHeight, minZ + 2.0f),
+        glm::vec3(maxX - 2.0f, floorHeight, minZ + 2.0f),
+        glm::vec3(minX + 2.0f, floorHeight, maxZ - 2.0f),
+        glm::vec3(maxX - 2.0f, floorHeight, maxZ - 2.0f),
+        glm::vec3(0.0f, floorHeight, maxZ - 4.0f),
+        glm::vec3(0.0f, floorHeight, minZ + 4.0f),
+        glm::vec3(minX + 4.0f, floorHeight, 0.0f),
+        glm::vec3(maxX - 4.0f, floorHeight, 0.0f)
+    };
+
+    // Яблоки
+    std::vector<glm::vec3> applePositions = {
+        glm::vec3(2.0f, floorHeight, 2.0f),
+        glm::vec3(-2.0f, floorHeight, 2.0f),
+        glm::vec3(2.0f, floorHeight, -2.0f),
+        glm::vec3(-2.0f, floorHeight, -2.0f)
+    };
+
+    std::vector<glm::vec3> snakePositions = { headPos, bodyPos, tailPos };
+
+    // Проверка пола
+    auto checkGround = [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+        if (fabs(ray.direction.y) < 0.0001f) return false;
+        float tGround = -ray.origin.y / ray.direction.y;
+        if (tGround > 0.01f && tGround < 100.0f) {
+            glm::vec3 hit = ray.pointAt(tGround);
+            if (abs(hit.x) <= offsetX && abs(hit.z) <= offsetZ) {
+                hitDist = tGround;
+                hitPoint = hit;
+                return true;
+            }
+        }
+        return false;
+        };
+
+    // ShadowMapper
     static ShadowMapper previewStaticShadow;
-    static bool shadowsInitialized = false;
+    static ShadowMapper previewDynamicShadow;
+    static ShadowMapper previewFoodShadow;
+    static bool shadowsComputed = false;
 
-    if (currentConfig.shadowMapEnabled) {
-        // Создаём ShadowMapper с параметрами из конфига
+    static int lastShadowTraceMode = -1;
+    static bool lastShadowMapEnabled = false;
+    static int lastShadowStrideX = 0;
+    static int lastShadowStrideZ = 0;
+    static int lastShadowSubdivisionSize = 0;
+
+    bool needsRecalc = !shadowsComputed ||
+        lastShadowTraceMode != currentConfig.shadowTraceMode ||
+        lastShadowMapEnabled != currentConfig.shadowMapEnabled ||
+        lastShadowStrideX != currentConfig.shadowStrideX ||
+        lastShadowStrideZ != currentConfig.shadowStrideZ ||
+        lastShadowSubdivisionSize != currentConfig.shadowSubdivisionSize;
+
+    if (needsRecalc && currentConfig.shadowMapEnabled) {
+        std::cout << "RECALCULATING SHADOWS!" << std::endl;
+
         previewStaticShadow = ShadowMapper(
             currentConfig.gridWidth, currentConfig.gridDepth,
             currentConfig.cellSize, floorHeight,
@@ -2763,7 +3365,26 @@ void renderShadowPreview3D() {
             currentConfig.shadowStrideX, currentConfig.shadowStrideZ
         );
 
-        // Устанавливаем режим трассировки
+        previewDynamicShadow = ShadowMapper(
+            currentConfig.gridWidth, currentConfig.gridDepth,
+            currentConfig.cellSize, floorHeight,
+            currentConfig.lightDir, currentConfig.lightColor,
+            static_cast<LightType>(currentConfig.lightType), currentConfig.lightPos,
+            currentConfig.shadowStrideX, currentConfig.shadowStrideZ
+        );
+
+        previewFoodShadow = ShadowMapper(
+            currentConfig.gridWidth, currentConfig.gridDepth,
+            currentConfig.cellSize, floorHeight,
+            currentConfig.lightDir, currentConfig.lightColor,
+            static_cast<LightType>(currentConfig.lightType), currentConfig.lightPos,
+            currentConfig.shadowStrideX, currentConfig.shadowStrideZ
+        );
+
+        previewStaticShadow.setUseSpheres(false);
+        previewDynamicShadow.setUseSpheres(false);
+        previewFoodShadow.setUseSpheres(false);
+
         ShadowMapper::ShadowTraceMode mode;
         switch (currentConfig.shadowTraceMode) {
         case 0: mode = ShadowMapper::TRACE_CENTER; break;
@@ -2772,122 +3393,138 @@ void renderShadowPreview3D() {
         case 3: mode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
         default: mode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
         }
+
         previewStaticShadow.setShadowTraceMode(mode);
+        previewDynamicShadow.setShadowTraceMode(mode);
+        previewFoodShadow.setShadowTraceMode(mode);
 
-        // Отключаем сферы (как в GameRenderer)
-        previewStaticShadow.setUseSpheres(false);
-        previewStaticShadow.clearObjectBounds();
-        previewStaticShadow.setGrid(currentConfig.gridWidth, currentConfig.gridDepth,
-            currentConfig.cellSize, floorHeight);
-
-        // Устанавливаем callback для пересечения (как в GameRenderer)
+        // Callback для статических теней (деревья)
         previewStaticShadow.setIntersectCallback(
-            [&treeModel, &snakeHeadModel, &snakeBodyModel, &snakeTailModel, &appleModel, cellSize, floorHeight]
-            (const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
-
-                float offsetX = currentConfig.gridWidth * cellSize / 2.0f;
-                float offsetZ = currentConfig.gridDepth * cellSize / 2.0f;
-
-                // Позиции объектов (те же, что и при рисовании)
-                std::vector<std::pair<glm::vec3, float>> objects;
-
-                // Функция для вычисления bounding sphere
-                auto getSphere = [](const Model& model, const glm::vec3& pos, float scale, float yOffset)
-                    -> std::pair<glm::vec3, float> {
-                    if (model.vertices.empty()) return { pos, 0.5f };
-
-                    float minX = model.vertices[0].position.x;
-                    float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
-                    for (const auto& v : model.vertices) {
-                        minX = std::min(minX, v.position.x);
-                        maxX = std::max(maxX, v.position.x);
-                        minY = std::min(minY, v.position.y);
-                        maxY = std::max(maxY, v.position.y);
-                        minZ = std::min(minZ, v.position.z);
-                        maxZ = std::max(maxZ, v.position.z);
-                    }
-
-                    glm::vec3 center((minX + maxX) / 2.0f, (minY + maxY) / 2.0f, (minZ + maxZ) / 2.0f);
-                    float radius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) / 2.0f;
-
-                    return { glm::vec3(pos.x + center.x * scale,
-                                      pos.y + center.y * scale + yOffset,
-                                      pos.z + center.z * scale),
-                            radius * scale };
-                    };
-
-                // Деревья
-                float treeScale = cellSize * 1.2f;
-                objects.push_back(getSphere(treeModel, glm::vec3(2.5f, floorHeight, -2.0f), treeScale, 0.0f));
-                objects.push_back(getSphere(treeModel, glm::vec3(-2.5f, floorHeight, -2.0f), treeScale, 0.0f));
-
-                // Змейка
-                float headScale = cellSize * currentConfig.snakeHeadScale;
-                objects.push_back(getSphere(snakeHeadModel, glm::vec3(0.0f, floorHeight, 0.0f), headScale, 0.05f));
-
-                float bodyScale = cellSize * currentConfig.snakeBodyScale;
-                objects.push_back(getSphere(snakeBodyModel, glm::vec3(-0.8f, floorHeight, 0.0f), bodyScale, 0.05f));
-
-                float tailScale = cellSize * currentConfig.snakeTailScale;
-                objects.push_back(getSphere(snakeTailModel, glm::vec3(-1.6f, floorHeight, 0.0f), tailScale, 0.05f));
-
-                // Яблоко
-                float appleScale = cellSize * 0.6f;
-                objects.push_back(getSphere(appleModel, glm::vec3(1.0f, floorHeight, 1.0f), appleScale, 0.05f));
-
-                // Проверяем пересечение со всеми сферами
+            [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float closestDist = 1000.0f;
                 bool hit = false;
 
-                for (const auto& obj : objects) {
-                    float t;
-                    glm::vec3 oc = ray.origin - obj.first;
-                    float a = glm::dot(ray.direction, ray.direction);
-                    float b = 2.0f * glm::dot(oc, ray.direction);
-                    float c = glm::dot(oc, oc) - obj.second * obj.second;
-                    float discriminant = b * b - 4 * a * c;
+                if (checkGround(ray, hitDist, hitPoint)) {
+                    if (hitDist > 0.01f && hitDist < closestDist) {
+                        closestDist = hitDist;
+                        hit = true;
+                    }
+                }
 
-                    if (discriminant >= 0) {
-                        float sqrtD = sqrt(discriminant);
-                        float t1 = (-b - sqrtD) / (2.0f * a);
-                        float t2 = (-b + sqrtD) / (2.0f * a);
+                for (const auto& treePos : treePositions) {
+                    glm::mat4 transform = glm::mat4(1.0f);
+                    transform = glm::translate(transform,
+                        glm::vec3(treePos.x, treePos.y + treeOffset * treeScale, treePos.z));
+                    transform = glm::scale(transform, glm::vec3(treeScale));
 
-                        if (t1 > 0.01f && t1 < closestDist) {
-                            closestDist = t1;
-                            hitPoint = ray.pointAt(t1);
-                            hit = true;
-                        }
-                        if (t2 > 0.01f && t2 < closestDist) {
-                            closestDist = t2;
-                            hitPoint = ray.pointAt(t2);
+                    float tempDist;
+                    glm::vec3 tempPoint;
+                    if (rayIntersectsModel(ray, treeModel, transform, tempDist, tempPoint)) {
+                        if (tempDist > 0.01f && tempDist < closestDist) {
+                            closestDist = tempDist;
+                            hitPoint = tempPoint;
                             hit = true;
                         }
                     }
                 }
 
-                if (hit) {
-                    hitDist = closestDist;
-                    return true;
-                }
-                return false;
+                if (hit) hitDist = closestDist;
+                return hit;
             }
         );
 
-        // Вычисляем тени
+        // Callback для динамических теней (змейка)
+        previewDynamicShadow.setIntersectCallback(
+            [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+                float closestDist = 1000.0f;
+                bool hit = false;
+
+                if (checkGround(ray, hitDist, hitPoint)) {
+                    if (hitDist > 0.01f && hitDist < closestDist) {
+                        closestDist = hitDist;
+                        hit = true;
+                    }
+                }
+
+                auto checkSnakeSegment = [&](const glm::vec3& pos, const Model& model, float scale, float offset, size_t idx) {
+                    glm::mat4 transform = glm::mat4(1.0f);
+                    transform = glm::translate(transform,
+                        glm::vec3(pos.x, pos.y + offset * scale, pos.z));
+                    float rotation = calculateSegmentRotationEditor(snakePositions, idx);
+                    transform = glm::rotate(transform, glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
+                    transform = glm::scale(transform, glm::vec3(scale));
+
+                    float tempDist;
+                    glm::vec3 tempPoint;
+                    if (rayIntersectsModel(ray, model, transform, tempDist, tempPoint)) {
+                        if (tempDist > 0.01f && tempDist < closestDist) {
+                            closestDist = tempDist;
+                            hitPoint = tempPoint;
+                            hit = true;
+                        }
+                    }
+                    };
+
+                checkSnakeSegment(headPos, snakeHeadModel, headScale, headOffset, 0);
+                checkSnakeSegment(bodyPos, snakeBodyModel, bodyScale, bodyOffset, 1);
+                checkSnakeSegment(tailPos, snakeTailModel, tailScale, tailOffset, 2);
+
+                if (hit) hitDist = closestDist;
+                return hit;
+            }
+        );
+
+        // Callback для теней еды (яблоки)
+        previewFoodShadow.setIntersectCallback(
+            [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+                float closestDist = 1000.0f;
+                bool hit = false;
+
+                if (checkGround(ray, hitDist, hitPoint)) {
+                    if (hitDist > 0.01f && hitDist < closestDist) {
+                        closestDist = hitDist;
+                        hit = true;
+                    }
+                }
+
+                for (const auto& applePos : applePositions) {
+                    glm::mat4 transform = glm::mat4(1.0f);
+                    transform = glm::translate(transform,
+                        glm::vec3(applePos.x, applePos.y + appleOffset * appleScale, applePos.z));
+                    transform = glm::scale(transform, glm::vec3(appleScale));
+
+                    float tempDist;
+                    glm::vec3 tempPoint;
+                    if (rayIntersectsModel(ray, appleModel, transform, tempDist, tempPoint)) {
+                        if (tempDist > 0.01f && tempDist < closestDist) {
+                            closestDist = tempDist;
+                            hitPoint = tempPoint;
+                            hit = true;
+                        }
+                    }
+                }
+
+                if (hit) hitDist = closestDist;
+                return hit;
+            }
+        );
+
         previewStaticShadow.computeShadows();
-        shadowsInitialized = true;
+        previewDynamicShadow.computeShadows();
+        previewFoodShadow.computeShadows();
+
+        shadowsComputed = true;
+        lastShadowTraceMode = currentConfig.shadowTraceMode;
+        lastShadowMapEnabled = currentConfig.shadowMapEnabled;
+        lastShadowStrideX = currentConfig.shadowStrideX;
+        lastShadowStrideZ = currentConfig.shadowStrideZ;
+        lastShadowSubdivisionSize = currentConfig.shadowSubdivisionSize;
     }
 
-    // ========== ВКЛЮЧАЕМ GL_COLOR_MATERIAL ==========
     glEnable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
-    float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
-    float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
-    float offsetX = worldWidth / 2.0f;
-    float offsetZ = worldDepth / 2.0f;
-
-    // ========== Сетка ==========
+    // Рисуем сетку
     if (currentConfig.gridEnabled) {
         glDisable(GL_LIGHTING);
         glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
@@ -2908,7 +3545,7 @@ void renderShadowPreview3D() {
         glEnable(GL_LIGHTING);
     }
 
-    // ========== Пол с тенями ==========
+    // Рисуем пол с тенями
     bool useFloorTexture = !currentConfig.floorTexture.empty() && floorTexture.id != 0;
     if (useFloorTexture) {
         glEnable(GL_TEXTURE_2D);
@@ -2928,23 +3565,26 @@ void renderShadowPreview3D() {
             float posX = x * currentConfig.cellSize - offsetX;
             float posZ = z * currentConfig.cellSize - offsetZ;
 
-            float shadowValue = 1.0f;
+            glm::vec3 finalColor = lightColor;
 
-            if (currentConfig.shadowMapEnabled && shadowsInitialized) {
-                shadowValue = previewStaticShadow.getShadowAtCell(x, z);
-                shadowValue = glm::clamp(shadowValue, 0.2f, 1.0f);
-            }
+            if (currentConfig.shadowMapEnabled && shadowsComputed) {
+                float staticShadow = previewStaticShadow.getShadowAtCell(x, z);
+                float dynamicShadow = previewDynamicShadow.getShadowAtCell(x, z);
+                float foodShadow = previewFoodShadow.getShadowAtCell(x, z);
 
-            glm::vec3 finalColor;
-            if (useGradient && currentConfig.shadowMapEnabled) {
-                finalColor = glm::mix(darkColor, lightColor, shadowValue);
-            }
-            else if (currentConfig.shadowMapEnabled) {
-                shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
-                finalColor = lightColor * shadowValue;
-            }
-            else {
-                finalColor = lightColor;
+                if (useGradient) {
+                    float shadowValue = (staticShadow + dynamicShadow + foodShadow) / 3.0f;
+                    finalColor = glm::mix(darkColor, lightColor, shadowValue);
+                }
+                else {
+                    float minShadow = std::min({ staticShadow, dynamicShadow, foodShadow });
+                    if (minShadow < 0.5f) {
+                        finalColor = darkColor;
+                    }
+                    else {
+                        finalColor = lightColor;
+                    }
+                }
             }
 
             glColor3f(finalColor.r, finalColor.g, finalColor.b);
@@ -2974,63 +3614,47 @@ void renderShadowPreview3D() {
 
     glDisable(GL_TEXTURE_2D);
 
-    // ========== РИСУЕМ ОБЪЕКТЫ ==========
-    auto getModelBottomOffset = [](const Model& model) -> float {
-        if (model.vertices.empty()) return 0.0f;
-        float minY = FLT_MAX;
-        for (const auto& v : model.vertices) {
-            minY = std::min(minY, v.position.y);
-        }
-        return -minY;
-        };
+    // Рисуем объекты
+    auto drawModel3D = [&](Model& model, const glm::vec3& pos, float offset,
+        float scale, float rotation, const glm::vec3& color) {
+            if (model.vertices.empty()) return;
 
-    auto drawSegmentWithColor = [&](Model& model, const glm::vec3& pos, float offset, float scale, const glm::vec3& color) {
-        glPushMatrix();
-        glTranslatef(pos.x, pos.y + offset * scale + 0.05f, pos.z);
-        glScalef(scale, scale, scale);
+            glPushMatrix();
+            glTranslatef(pos.x, pos.y + offset * scale, pos.z);
+            if (rotation != 0.0f) glRotatef(rotation, 0.0f, 1.0f, 0.0f);
+            glScalef(scale, scale, scale);
 
-        if (model.hasTexture && model.textureID != 0) {
-            glColor3f(1.0f, 1.0f, 1.0f);
-            glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, model.textureID);
-        }
-        else {
-            glDisable(GL_TEXTURE_2D);
-            glColor3f(color.r, color.g, color.b);
-        }
+            if (model.hasTexture && model.textureID != 0) {
+                glColor3f(1.0f, 1.0f, 1.0f);
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, model.textureID);
+            }
+            else {
+                glDisable(GL_TEXTURE_2D);
+                glColor3f(color.r, color.g, color.b);
+            }
 
-        model.draw();
-
-        if (model.hasTexture && model.textureID != 0) {
-            glDisable(GL_TEXTURE_2D);
-        }
-        glPopMatrix();
+            model.draw();
+            glPopMatrix();
         };
 
     // Змейка
-    drawSegmentWithColor(snakeHeadModel, glm::vec3(0.0f, floorHeight, 0.0f),
-        getModelBottomOffset(snakeHeadModel), cellSize * currentConfig.snakeHeadScale,
-        currentConfig.snakeHeadColor);
-    drawSegmentWithColor(snakeBodyModel, glm::vec3(-0.8f, floorHeight, 0.0f),
-        getModelBottomOffset(snakeBodyModel), cellSize * currentConfig.snakeBodyScale,
-        currentConfig.snakeBodyColor);
-    drawSegmentWithColor(snakeTailModel, glm::vec3(-1.6f, floorHeight, 0.0f),
-        getModelBottomOffset(snakeTailModel), cellSize * currentConfig.snakeTailScale,
-        currentConfig.snakeTailColor);
+    drawModel3D(snakeHeadModel, headPos, headOffset, headScale,
+        calculateSegmentRotationEditor(snakePositions, 0), currentConfig.snakeHeadColor);
+    drawModel3D(snakeBodyModel, bodyPos, bodyOffset, bodyScale,
+        calculateSegmentRotationEditor(snakePositions, 1), currentConfig.snakeBodyColor);
+    drawModel3D(snakeTailModel, tailPos, tailOffset, tailScale,
+        calculateSegmentRotationEditor(snakePositions, 2), currentConfig.snakeTailColor);
 
     // Деревья
-    float treeOffset = getModelBottomOffset(treeModel);
-    float treeScaleDraw = cellSize * 1.2f;
-    drawSegmentWithColor(treeModel, glm::vec3(2.5f, floorHeight, -2.0f), treeOffset, treeScaleDraw,
-        glm::vec3(0.2f, 0.6f, 0.2f));
-    drawSegmentWithColor(treeModel, glm::vec3(-2.5f, floorHeight, -2.0f), treeOffset, treeScaleDraw,
-        glm::vec3(0.2f, 0.6f, 0.2f));
+    for (const auto& treePos : treePositions) {
+        drawModel3D(treeModel, treePos, treeOffset, treeScale, 0.0f, glm::vec3(0.2f, 0.6f, 0.2f));
+    }
 
-    // Яблоко
-    float appleOffset = getModelBottomOffset(appleModel);
-    drawSegmentWithColor(appleModel, glm::vec3(1.0f, floorHeight, 1.0f),
-        appleOffset, cellSize * 0.6f,
-        glm::vec3(0.9f, 0.2f, 0.2f));
+    // Яблоки
+    for (const auto& applePos : applePositions) {
+        drawModel3D(appleModel, applePos, appleOffset, appleScale, 0.0f, glm::vec3(0.9f, 0.2f, 0.2f));
+    }
 
     // Источник света
     if (currentConfig.lightType != 0) {
@@ -3048,7 +3672,6 @@ void renderShadowPreview3D() {
 
     glDisable(GL_COLOR_MATERIAL);
 
-    // Возвращаем матрицы
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
@@ -3058,7 +3681,7 @@ void renderShadowPreview3D() {
     glDisable(GL_SCISSOR_TEST);
     reset2DProjection();
 
-    // UI (без изменений, как в вашем оригинале)
+    // UI
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f((float)previewX, (float)previewY);
@@ -3069,25 +3692,25 @@ void renderShadowPreview3D() {
 
     drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР ТЕНЕЙ", 1.0f, 1.0f, 0.0f);
 
-    char controlsInfo[200];
-    sprintf_s(controlsInfo, "ЛКМ+перетаскивание - вращение | Колёсико - Zoom | Пробел - стоп/старт авто");
-    drawText((float)(previewX + 10), (float)(previewY + previewH - 25), controlsInfo, 0.6f, 0.6f, 0.8f);
+    const char* modeName = "";
+    switch (currentConfig.shadowTraceMode) {
+    case 0: modeName = "CENTER (бинарный)"; break;
+    case 1: modeName = "CORNERS (градиент)"; break;
+    case 2: modeName = "CENTER_SUBDIV (бинарный)"; break;
+    case 3: modeName = "CORNERS_SUBDIV (градиент)"; break;
+    }
 
-    const char* lightTypeName = "Направленный";
-    if (currentConfig.lightType == 1) lightTypeName = "Точечный";
-    if (currentConfig.lightType == 2) lightTypeName = "Прожектор";
-
-    char infoText[200];
-    sprintf_s(infoText, "Свет: %s | Позиция: (%.1f, %.1f, %.1f) | Тени: %s | Режим: %d",
-        lightTypeName,
-        currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z,
+    char infoText[300];
+    sprintf_s(infoText, "Тени: %s | Режим: %s | %s",
         currentConfig.shadowMapEnabled ? "ВКЛ" : "ВЫКЛ",
-        currentConfig.shadowTraceMode);
+        modeName,
+        useGradient ? "градиент" : "бинарный");
     drawText((float)(previewX + 10), (float)(previewY + 50), infoText, 0.8f, 0.8f, 1.0f);
 
-    char distInfo[50];
-    sprintf_s(distInfo, "Дист: %.1f | Автовращ: %s", previewCameraDistance, previewAutoRotate ? "ВКЛ" : "ВЫКЛ");
-    drawText((float)(previewX + previewW - 150), (float)(previewY + 25), distInfo, 1.0f, 1.0f, 0.0f);
+    char objectsInfo[200];
+    sprintf_s(objectsInfo, "Объекты: %zu деревьев, 3 сегмента змеи, %zu яблок",
+        treePositions.size(), applePositions.size());
+    drawText((float)(previewX + 10), (float)(previewY + 75), objectsInfo, 0.7f, 0.7f, 0.7f);
 
     int arrowY = (int)(previewY + previewH + 15);
     int arrowCenterX = (int)(previewX + previewW / 2);
@@ -3095,20 +3718,15 @@ void renderShadowPreview3D() {
     if (drawButton(arrowCenterX - 70, arrowY, 60, 35, "<-")) {
         previewRotationAngle -= 15.0f;
         previewAutoRotate = false;
-        previewLastRotateTime = (float)glfwGetTime();
     }
     if (drawButton(arrowCenterX + 10, arrowY, 60, 35, "->")) {
         previewRotationAngle += 15.0f;
         previewAutoRotate = false;
-        previewLastRotateTime = (float)glfwGetTime();
     }
 
     const char* autoRotateBtnText = previewAutoRotate ? "СТОП" : "СТАРТ";
     if (drawButton(arrowCenterX - 135, arrowY, 55, 35, autoRotateBtnText)) {
         previewAutoRotate = !previewAutoRotate;
-        if (previewAutoRotate) {
-            previewLastRotateTime = (float)glfwGetTime();
-        }
     }
 
     if (drawButton(arrowCenterX + 80, arrowY, 55, 35, "СБРОС")) {
@@ -3118,16 +3736,11 @@ void renderShadowPreview3D() {
         previewAutoRotate = true;
     }
 
-    float currentTime = (float)glfwGetTime();
-    if (!previewAutoRotate && (currentTime - previewLastRotateTime >= autoRotateDelay)) {
-        previewAutoRotate = true;
-    }
     if (previewAutoRotate) {
         previewRotationAngle += rotationSpeed;
     }
     if (previewRotationAngle >= 360) previewRotationAngle -= 360;
 }
-
 void renderShadowEditor() {
     reset2DProjection();
     drawCenteredText((float)(windowHeight * 0.05f), "НАСТРОЙКИ ТЕНЕЙ", 1.0f, 1.0f, 0.0f);
@@ -3150,7 +3763,11 @@ void renderShadowEditor() {
         int modeY = startY + (i / 2) * (modeBtnHeight + 5);
         std::string btnText = std::string(modes[i]) + (currentConfig.shadowTraceMode == i ? " ✓" : "");
         if (drawButton(modeX, modeY, modeBtnWidth, modeBtnHeight, btnText.c_str())) {
-            currentConfig.shadowTraceMode = i;
+            if (currentConfig.shadowTraceMode != i) {
+                currentConfig.shadowTraceMode = i;
+                g_previewShadowsDirty = true;  // ВАЖНО: помечаем тени как грязные
+                std::cout << "Shadow mode changed to " << i << ", marking shadows as DIRTY" << std::endl;
+            }
         }
     }
 
@@ -3161,9 +3778,18 @@ void renderShadowEditor() {
         char subdivText[50];
         sprintf_s(subdivText, "%d x %d", currentConfig.shadowSubdivisionSize, currentConfig.shadowSubdivisionSize);
         drawText((float)(startX + sliderWidth + 100), (float)(startY - 20), subdivText, 1.0f, 1.0f, 0.0f);
+
+        int oldSubdiv = currentConfig.shadowSubdivisionSize;
         drawIntSlider(startX, startY, sliderWidth, &currentConfig.shadowSubdivisionSize, 2, 20, "Подклетки");
+        if (oldSubdiv != currentConfig.shadowSubdivisionSize) {
+            g_previewShadowsDirty = true;
+        }
+
         if (drawButton(startX + sliderWidth + 20, startY - 10, 150, 35, "СБРОСИТЬ (10x10)")) {
-            currentConfig.shadowSubdivisionSize = 10;
+            if (currentConfig.shadowSubdivisionSize != 10) {
+                currentConfig.shadowSubdivisionSize = 10;
+                g_previewShadowsDirty = true;
+            }
         }
         startY += 80;
     }
@@ -3172,11 +3798,21 @@ void renderShadowEditor() {
     char strideText[100];
     sprintf_s(strideText, "Stride X: %d, Stride Z: %d", currentConfig.shadowStrideX, currentConfig.shadowStrideZ);
     drawText((float)(startX + sliderWidth + 100), (float)(startY - 20), strideText, 1.0f, 1.0f, 0.0f);
+
+    int oldStrideX = currentConfig.shadowStrideX;
+    int oldStrideZ = currentConfig.shadowStrideZ;
     drawIntSlider(startX, startY, sliderWidth, &currentConfig.shadowStrideX, 1, 8, "Страйд X");
     drawIntSlider(startX, startY + 45, sliderWidth, &currentConfig.shadowStrideZ, 1, 8, "Страйд Z");
+    if (oldStrideX != currentConfig.shadowStrideX || oldStrideZ != currentConfig.shadowStrideZ) {
+        g_previewShadowsDirty = true;
+    }
+
     if (drawButton(startX + sliderWidth + 20, startY, 150, 35, "СБРОСИТЬ (2x2)")) {
-        currentConfig.shadowStrideX = 2;
-        currentConfig.shadowStrideZ = 2;
+        if (currentConfig.shadowStrideX != 2 || currentConfig.shadowStrideZ != 2) {
+            currentConfig.shadowStrideX = 2;
+            currentConfig.shadowStrideZ = 2;
+            g_previewShadowsDirty = true;
+        }
     }
 
     startY += 110;
@@ -3185,17 +3821,23 @@ void renderShadowEditor() {
 
     std::string shadowBtnText = std::string("Тени: ") + (currentConfig.shadowMapEnabled ? "ВКЛ" : "ВЫКЛ");
     if (drawButton(startX, startY, 150, 40, shadowBtnText.c_str())) {
-        currentConfig.shadowMapEnabled = !currentConfig.shadowMapEnabled;
+        bool newState = !currentConfig.shadowMapEnabled;
+        if (currentConfig.shadowMapEnabled != newState) {
+            currentConfig.shadowMapEnabled = newState;
+            g_previewShadowsDirty = true;
+        }
     }
 
     std::string ambientBtnText = std::string("Ambient: ") + (currentConfig.ambientEnabled ? "ВКЛ" : "ВЫКЛ");
     if (drawButton(startX + 170, startY, 150, 40, ambientBtnText.c_str())) {
         currentConfig.ambientEnabled = !currentConfig.ambientEnabled;
+        updateLightPosition();  // Обновляем свет сразу
     }
 
     std::string specularBtnText = std::string("Specular: ") + (currentConfig.specularEnabled ? "ВКЛ" : "ВЫКЛ");
     if (drawButton(startX + 340, startY, 150, 40, specularBtnText.c_str())) {
         currentConfig.specularEnabled = !currentConfig.specularEnabled;
+        updateLightPosition();  // Обновляем свет сразу
     }
 
     // 3D предпросмотр с управлением
@@ -3309,7 +3951,6 @@ void saveConfig() {
     }
 
     ConfigManager::saveGameConfig(g_configPath, currentConfig);
-    std::cout << "✓ Config saved to: " << g_configPath << std::endl;
 }
 
 //=============================================================================
@@ -3452,7 +4093,7 @@ bool initOpenGL() {
     initElements();
 
     // ВАЖНО: Инициализируем освещение
-    initLighting();
+    setupFixedPipelineLighting();
 
     return true;
 }
@@ -3465,9 +4106,6 @@ int main() {
     SetConsoleCP(1251);
     SetConsoleOutputCP(1251);
 
-    std::cout << "\n=========================================" << std::endl;
-    std::cout << "=     РЕДАКТОР КОНФИГУРАЦИИ ИГРЫ      =" << std::endl;
-    std::cout << "=========================================\n" << std::endl;
 
     if (!initOpenGL()) return -1;
 
@@ -3495,9 +4133,6 @@ int main() {
     glfwDestroyWindow(window);
     glfwTerminate();
 
-    std::cout << "\n=========================================" << std::endl;
-    std::cout << "=         РАБОТА ЗАВЕРШЕНА             =" << std::endl;
-    std::cout << "=========================================\n" << std::endl;
 
     return 0;
 }
