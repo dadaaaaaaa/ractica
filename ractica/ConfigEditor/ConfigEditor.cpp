@@ -537,7 +537,6 @@ void updatePreviewForCurrentMode() {
                 (selectedPart == 1) ? "snake_body" : "snake_tail";
             std::string filename = snakeElements[selectedPart]->modelFile;
 
-            // Пытаемся загрузить FBX модель
             bool loaded = false;
             if (!filename.empty()) {
                 Model tempModel;
@@ -553,13 +552,21 @@ void updatePreviewForCurrentMode() {
                         previewModel.texCoords.push_back(v.texCoords.x);
                         previewModel.texCoords.push_back(v.texCoords.y);
                     }
+
+                    // Сохраняем информацию о текстуре
+                    if (tempModel.hasTexture && tempModel.textureID != 0) {
+                        Material mat;
+                        mat.textureID = tempModel.textureID;
+                        previewModel.materials.push_back(mat);
+                        std::cout << "Texture loaded with ID: " << tempModel.textureID << std::endl;
+                    }
+
                     previewModel.loaded = true;
                     loaded = true;
-                    std::cout << "Loaded FBX model: " << filename << " from folder: " << folder << std::endl;
+                    std::cout << "Loaded FBX model: " << filename << " with " << previewModel.vertices.size() / 3 << " vertices" << std::endl;
                 }
             }
 
-            // Если не загрузилась - создаём примитив
             if (!loaded) {
                 Model tempModel;
                 if (selectedPart == 0) SnakeHeadPrimitive::create(tempModel);
@@ -569,7 +576,6 @@ void updatePreviewForCurrentMode() {
                 tempModel.computeNormals();
                 tempModel.setupBuffers();
 
-                // Конвертируем в ModelData
                 for (const auto& v : tempModel.vertices) {
                     previewModel.vertices.push_back(v.position.x);
                     previewModel.vertices.push_back(v.position.y);
@@ -588,12 +594,21 @@ void updatePreviewForCurrentMode() {
     }
     case MODE_GROUND_SKY_EDITOR: {
         if (selectedGroundSky == 0 && !groundSkyElements.empty()) {
-            std::string filename = groundSkyElements[0]->modelFile;
+            VisualElement* ground = groundSkyElements[0];
+            std::string filename = ground->modelFile;
             bool loaded = false;
+
+            std::cout << "=== LOADING FLOOR MODEL ===" << std::endl;
+            std::cout << "Filename: " << filename << std::endl;
+            std::cout << "Texture file: " << ground->textureFile << std::endl;
 
             if (!filename.empty()) {
                 Model tempModel;
+                // Пробуем загрузить модель пола
                 if (loadFBXModel(filename, tempModel, "floor")) {
+                    std::cout << "FBX model loaded successfully, vertices: " << tempModel.vertices.size() << std::endl;
+
+                    // Конвертируем Model в ModelData для предпросмотра
                     for (const auto& v : tempModel.vertices) {
                         previewModel.vertices.push_back(v.position.x);
                         previewModel.vertices.push_back(v.position.y);
@@ -604,14 +619,100 @@ void updatePreviewForCurrentMode() {
                         previewModel.texCoords.push_back(v.texCoords.x);
                         previewModel.texCoords.push_back(v.texCoords.y);
                     }
+
+                    // Сначала проверяем, есть ли текстура в модели
+                    bool textureFound = false;
+                    if (tempModel.hasTexture && tempModel.textureID != 0) {
+                        Material mat;
+                        mat.textureID = tempModel.textureID;
+                        previewModel.materials.push_back(mat);
+                        textureFound = true;
+                        std::cout << "Floor texture from model loaded with ID: " << tempModel.textureID << std::endl;
+                    }
+
+                    // Если текстуры нет в модели, пробуем найти JPG/PNG по имени модели
+                    if (!textureFound && !filename.empty()) {
+                        // Получаем имя файла без расширения
+                        std::string baseName = filename;
+                        size_t dotPos = baseName.find_last_of(".");
+                        if (dotPos != std::string::npos) {
+                            baseName = baseName.substr(0, dotPos);
+                        }
+
+                        std::cout << "Searching for texture by name: " << baseName << std::endl;
+
+                        // Расширенный поиск текстуры
+                        std::vector<std::string> searchPaths = {
+                            // Основные пути
+                            g_texturesPath + baseName + ".jpg",
+                            g_texturesPath + baseName + ".png",
+                            g_texturesPath + baseName + ".jpeg",
+                            g_texturesPath + baseName + ".tga",
+                            g_texturesPath + baseName + ".bmp",
+                            // Путь с подпапкой floor
+                            g_texturesPath + "floor\\" + baseName + ".jpg",
+                            g_texturesPath + "floor\\" + baseName + ".png",
+                            g_texturesPath + "floor\\" + baseName + ".jpeg",
+                            // Путь с подпапкой textures
+                            g_assetsPath + "textures\\" + baseName + ".jpg",
+                            g_assetsPath + "textures\\" + baseName + ".png",
+                            // Путь рядом с моделью
+                            g_modelsPath + "floor\\" + baseName + ".jpg",
+                            g_modelsPath + "floor\\" + baseName + ".png",
+                            // Путь с сохранением оригинального имени (с расширением)
+                            g_texturesPath + filename + ".jpg",
+                            g_texturesPath + filename + ".png",
+                            g_modelsPath + "floor\\" + filename + ".jpg",
+                            g_modelsPath + "floor\\" + filename + ".png"
+                        };
+
+                        for (const auto& texPath : searchPaths) {
+                            if (std::filesystem::exists(texPath)) {
+                                GLuint texID = loadTextureFromFile(texPath);
+                                if (texID != 0) {
+                                    Material mat;
+                                    mat.textureID = texID;
+                                    previewModel.materials.push_back(mat);
+                                    textureFound = true;
+                                    std::cout << "Floor texture loaded from: " << texPath << std::endl;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!textureFound) {
+                            std::cout << "No texture found for: " << baseName << std::endl;
+                            std::cout << "Searched paths:" << std::endl;
+                            for (const auto& path : searchPaths) {
+                                std::cout << "  - " << path << std::endl;
+                            }
+                        }
+                    }
+
+                    // Если всё ещё нет текстуры, проверяем отдельно загруженную текстуру
+                    if (!textureFound && !ground->textureFile.empty() && floorTexture.id != 0) {
+                        Material mat;
+                        mat.textureID = floorTexture.id;
+                        previewModel.materials.push_back(mat);
+                        textureFound = true;
+                        std::cout << "Floor texture from separate file loaded with ID: " << floorTexture.id << std::endl;
+                    }
+
                     previewModel.loaded = true;
                     loaded = true;
-                    std::cout << "Loaded floor model: " << filename << std::endl;
+                    std::cout << "Floor model loaded and converted to previewModel" << std::endl;
                 }
+                else {
+                    std::cout << "Failed to load FBX model: " << filename << std::endl;
+                }
+            }
+            else {
+                std::cout << "Filename is empty, will use primitive" << std::endl;
             }
 
             if (!loaded) {
-                // Создаём простой квадрат для пола
+                // Создаём простой квадрат для пола (примитив)
+                std::cout << "Creating floor primitive" << std::endl;
                 Model tempModel;
                 Vertex v1, v2, v3, v4;
                 v1.position = glm::vec3(-0.5f, 0.0f, -0.5f);
@@ -632,8 +733,12 @@ void updatePreviewForCurrentMode() {
                     previewModel.normals.push_back(v.normal.z);
                 }
                 previewModel.loaded = true;
-                std::cout << "Created floor primitive" << std::endl;
+                std::cout << "Floor primitive created" << std::endl;
             }
+
+            std::cout << "Final previewModel state: loaded=" << previewModel.loaded
+                << ", vertices=" << previewModel.vertices.size()
+                << ", textures=" << previewModel.materials.size() << std::endl;
         }
         break;
     }
@@ -655,6 +760,14 @@ void updatePreviewForCurrentMode() {
                         previewModel.texCoords.push_back(v.texCoords.x);
                         previewModel.texCoords.push_back(v.texCoords.y);
                     }
+
+                    if (tempModel.hasTexture && tempModel.textureID != 0) {
+                        Material mat;
+                        mat.textureID = tempModel.textureID;
+                        previewModel.materials.push_back(mat);
+                        std::cout << "Texture loaded for obstacle with ID: " << tempModel.textureID << std::endl;
+                    }
+
                     previewModel.loaded = true;
                     loaded = true;
                     std::cout << "Loaded obstacle model: " << filename << std::endl;
@@ -667,7 +780,6 @@ void updatePreviewForCurrentMode() {
                     TreePrimitive::create(tempModel);
                 }
                 else if (selectedObstacle == 1) {
-                    // Rock primitive - простой куб
                     Vertex v;
                     v.position = glm::vec3(0.0f, 0.0f, 0.0f);
                     v.normal = glm::vec3(0.0f, 1.0f, 0.0f);
@@ -723,9 +835,17 @@ void updatePreviewForCurrentMode() {
                         previewModel.texCoords.push_back(v.texCoords.x);
                         previewModel.texCoords.push_back(v.texCoords.y);
                     }
+
+                    if (tempModel.hasTexture && tempModel.textureID != 0) {
+                        Material mat;
+                        mat.textureID = tempModel.textureID;
+                        previewModel.materials.push_back(mat);
+                        std::cout << "Texture loaded for environment with ID: " << tempModel.textureID << std::endl;
+                    }
+
                     previewModel.loaded = true;
                     loaded = true;
-                    std::cout << "Loaded environment model: " << filename << " from folder: " << folder << std::endl;
+                    std::cout << "Loaded environment model: " << filename << std::endl;
                 }
             }
 
@@ -1515,7 +1635,10 @@ void drawColorPicker(int x, int y, const char* label, glm::vec3& color) {
 //=============================================================================
 
 GLuint loadTextureFromFile(const std::string& path) {
-    if (!std::filesystem::exists(path)) return 0;
+    if (!std::filesystem::exists(path)) {
+        std::cout << "Texture file not found: " << path << std::endl;
+        return 0;
+    }
 
     GLuint textureID;
     glGenTextures(1, &textureID);
@@ -1532,8 +1655,10 @@ GLuint loadTextureFromFile(const std::string& path) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         stbi_image_free(data);
+        std::cout << "Texture loaded successfully: " << path << " (" << width << "x" << height << ")" << std::endl;
         return textureID;
     }
+    std::cout << "Failed to load texture: " << path << " - " << stbi_failure_reason() << std::endl;
     stbi_image_free(data);
     return 0;
 }
@@ -1621,22 +1746,104 @@ bool loadFBXModel(const std::string& filename, Model& outModel, const std::strin
 
     std::cout << "loadFBXModel: loaded " << outModel.vertices.size() << " vertices" << std::endl;
 
-    // Загружаем текстуры
-    for (unsigned int i = 0; i < scene->mNumMaterials && outModel.textureID == 0; i++) {
-        aiMaterial* mat = scene->mMaterials[i];
-        aiString texturePath;
-        if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &texturePath) == AI_SUCCESS) {
-            std::string texFile = texturePath.C_Str();
-            size_t pos = texFile.find_last_of("\\/");
-            if (pos != std::string::npos) texFile = texFile.substr(pos + 1);
+    // ========== РАСШИРЕННЫЙ ПОИСК ТЕКСТУР ==========
+    std::cout << "Searching for textures in FBX file..." << std::endl;
 
-            std::string fullTexPath = g_texturesPath + texFile;
-            if (std::filesystem::exists(fullTexPath)) {
-                outModel.textureID = loadTextureFromFile(fullTexPath);
-                outModel.hasTexture = (outModel.textureID != 0);
-                std::cout << "Loaded texture: " << fullTexPath << std::endl;
+    // Проверяем все материалы
+    for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
+        aiMaterial* mat = scene->mMaterials[i];
+
+        // Проверяем разные типы текстур
+        aiTextureType textureTypes[] = {
+            aiTextureType_DIFFUSE,
+            aiTextureType_SPECULAR,
+            aiTextureType_AMBIENT,
+            aiTextureType_EMISSIVE,
+            aiTextureType_HEIGHT,
+            aiTextureType_NORMALS,
+            aiTextureType_SHININESS,
+            aiTextureType_OPACITY,
+            aiTextureType_DISPLACEMENT,
+            aiTextureType_LIGHTMAP,
+            aiTextureType_REFLECTION,
+            aiTextureType_BASE_COLOR,
+            aiTextureType_NORMAL_CAMERA,
+            aiTextureType_EMISSION_COLOR,
+            aiTextureType_METALNESS,
+            aiTextureType_DIFFUSE_ROUGHNESS,
+            aiTextureType_AMBIENT_OCCLUSION
+        };
+
+        for (int typeIdx = 0; typeIdx < sizeof(textureTypes) / sizeof(textureTypes[0]); typeIdx++) {
+            for (unsigned int texIdx = 0; texIdx < mat->GetTextureCount(textureTypes[typeIdx]); texIdx++) {
+                aiString texturePath;
+                if (mat->GetTexture(textureTypes[typeIdx], texIdx, &texturePath) == AI_SUCCESS) {
+                    std::string texFile = texturePath.C_Str();
+                    std::cout << "Found texture reference: " << texFile << " (type: " << typeIdx << ")" << std::endl;
+
+                    // Очищаем путь от папок и обратных слэшей
+                    size_t pos = texFile.find_last_of("\\/");
+                    if (pos != std::string::npos) texFile = texFile.substr(pos + 1);
+
+                    // Убираем возможные относительные пути
+                    if (texFile.find("..") != std::string::npos) {
+                        pos = texFile.find_last_of("\\/");
+                        if (pos != std::string::npos) texFile = texFile.substr(pos + 1);
+                    }
+
+                    std::cout << "Cleaned texture name: " << texFile << std::endl;
+
+                    // Расширенный поиск файла текстуры
+                    std::vector<std::string> searchPaths = {
+                        g_texturesPath + texFile,
+                        g_texturesPath + subFolder + "\\" + texFile,
+                        g_texturesPath + "models\\" + subFolder + "\\" + texFile,
+                        g_modelsPath + subFolder + "\\" + texFile,
+                        g_assetsPath + texFile,
+                        g_assetsPath + "textures\\" + texFile,
+                        "assets\\textures\\" + texFile,
+                        // Поиск без расширения, пробуем добавить расширения
+                        g_texturesPath + texFile + ".png",
+                        g_texturesPath + texFile + ".jpg",
+                        g_texturesPath + texFile + ".jpeg",
+                        g_texturesPath + texFile + ".tga",
+                        g_texturesPath + texFile + ".bmp",
+                        g_texturesPath + subFolder + "\\" + texFile + ".png",
+                        g_texturesPath + subFolder + "\\" + texFile + ".jpg",
+                    };
+
+                    bool textureLoaded = false;
+                    for (const auto& fullTexPath : searchPaths) {
+                        if (std::filesystem::exists(fullTexPath)) {
+                            GLuint texID = loadTextureFromFile(fullTexPath);
+                            if (texID != 0) {
+                                outModel.textureID = texID;
+                                outModel.hasTexture = true;
+                                std::cout << "SUCCESS: Loaded texture from: " << fullTexPath << std::endl;
+                                textureLoaded = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!textureLoaded) {
+                        std::cout << "WARNING: Could not find texture file for: " << texFile << std::endl;
+                        std::cout << "Searched in:" << std::endl;
+                        for (const auto& path : searchPaths) {
+                            std::cout << "  - " << path << std::endl;
+                        }
+                    }
+
+                    if (outModel.hasTexture) break;
+                }
             }
+            if (outModel.hasTexture) break;
         }
+        if (outModel.hasTexture) break;
+    }
+
+    if (!outModel.hasTexture) {
+        std::cout << "No textures found in FBX file" << std::endl;
     }
 
     outModel.computeNormals();
@@ -1744,33 +1951,40 @@ void openTextureFileDialog(std::string& destVar, Texture& texture) {
 //=============================================================================
 
 // Измените функцию drawModel - добавьте параметр цвета:
-void drawModel(ModelData& model, const glm::vec3& customColor) {
+void drawModel(ModelData& model, const glm::vec3& customColor, bool useTextureColor = true) {
     if (!model.loaded || model.vertices.empty()) return;
 
-    if (!model.materials.empty() && model.materials[0].textureID != 0) {
+    // Решение: использовать текстуру или цвет
+    bool hasTexture = (!model.materials.empty() && model.materials[0].textureID != 0);
+
+    if (hasTexture) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, model.materials[0].textureID);
-        glColor3f(1.0f, 1.0f, 1.0f);
+
+        if (useTextureColor) {
+            // Смешиваем цвет с текстурой (умножаем)
+            glColor3f(customColor.r, customColor.g, customColor.b);
+        }
+        else {
+            // Только текстура, без цвета
+            glColor3f(1.0f, 1.0f, 1.0f);
+        }
     }
     else {
         glDisable(GL_TEXTURE_2D);
-        // Используем переданный цвет вместо серого
         glColor3f(customColor.r, customColor.g, customColor.b);
     }
 
     glBegin(GL_TRIANGLES);
     for (size_t i = 0; i < model.vertices.size() / 3; i++) {
-        // ПЕРЕДАЁМ НОРМАЛЬ!
         if (!model.normals.empty() && i * 3 + 2 < model.normals.size()) {
             glNormal3f(model.normals[i * 3], model.normals[i * 3 + 1], model.normals[i * 3 + 2]);
         }
 
-        // Текстурные координаты
-        if (!model.texCoords.empty() && i * 2 + 1 < model.texCoords.size()) {
+        if (hasTexture && !model.texCoords.empty() && i * 2 + 1 < model.texCoords.size()) {
             glTexCoord2f(model.texCoords[i * 2], model.texCoords[i * 2 + 1]);
         }
 
-        // Вершина
         glVertex3f(model.vertices[i * 3], model.vertices[i * 3 + 1], model.vertices[i * 3 + 2]);
     }
     glEnd();
@@ -1797,7 +2011,7 @@ void reset2DProjection() {
 //=============================================================================
 void renderModelPreview(ModelData& model, const char* title, float x, float y, float w, float h,
     float& rotation, bool& autoRotate, float& lastTime, float scale, bool isFloor,
-    const glm::vec3& customColor) {
+    const glm::vec3& customColor, bool useTextureColor = true) {
 
     previewHoverX = (int)x;
     previewHoverY = (int)y;
@@ -1840,15 +2054,15 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
     glm::mat4 view = glm::lookAt(eye, center, up);
     glLoadMatrixf(glm::value_ptr(view));
 
-    // ========== ОТКЛЮЧАЕМ ОСВЕЩЕНИЕ ДЛЯ ПРЕДПРОСМОТРА МОДЕЛИ ==========
+    // Отключаем освещение для предпросмотра
     glDisable(GL_LIGHTING);
 
-    // Пол (простой, без освещения)
     float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
     float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
     float offsetX = worldWidth / 2.0f;
     float offsetZ = worldDepth / 2.0f;
 
+    // Пол
     glColor3f(currentConfig.floorColor.r, currentConfig.floorColor.g, currentConfig.floorColor.b);
     glBegin(GL_QUADS);
     glVertex3f(-offsetX, -0.02f, -offsetZ);
@@ -1876,7 +2090,7 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
         glLineWidth(1.0f);
     }
 
-    // ========== МОДЕЛЬ С ЯРКИМ ПОДСВЕЧИВАНИЕМ ==========
+    // Модель
     if (model.loaded && !model.vertices.empty()) {
         glPushMatrix();
 
@@ -1894,29 +2108,35 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
             glScalef(scale, scale, scale);
         }
 
-        // Используем яркий цвет без затенения
-        if (model.materials.empty() || model.materials[0].textureID == 0) {
-            // Увеличиваем яркость цвета для лучшей видимости
-            glm::vec3 brightColor = customColor;
-            // Немного увеличиваем яркость для тёмных цветов
-            if (brightColor.r < 0.3f && brightColor.g < 0.3f && brightColor.b < 0.3f) {
-                brightColor = glm::vec3(0.5f, 0.5f, 0.5f);
-            }
-            glColor3f(brightColor.r, brightColor.g, brightColor.b);
-        }
-        else {
-            glColor3f(1.0f, 1.0f, 1.0f);
+        // Рисуем модель с учётом флага использования цвета текстуры
+        bool hasTexture = (!model.materials.empty() && model.materials[0].textureID != 0);
+
+        if (hasTexture) {
             glEnable(GL_TEXTURE_2D);
             glBindTexture(GL_TEXTURE_2D, model.materials[0].textureID);
+
+            if (useTextureColor) {
+                glColor3f(customColor.r, customColor.g, customColor.b);
+            }
+            else {
+                glColor3f(1.0f, 1.0f, 1.0f);
+            }
+        }
+        else {
+            glDisable(GL_TEXTURE_2D);
+            glColor3f(customColor.r, customColor.g, customColor.b);
         }
 
-        // Рисуем модель
         glBegin(GL_TRIANGLES);
         for (size_t i = 0; i < model.vertices.size() / 3; i++) {
-            // Нормали не нужны при выключенном освещении
-            if (!model.texCoords.empty() && i * 2 + 1 < model.texCoords.size()) {
+            if (!model.normals.empty() && i * 3 + 2 < model.normals.size()) {
+                glNormal3f(model.normals[i * 3], model.normals[i * 3 + 1], model.normals[i * 3 + 2]);
+            }
+
+            if (hasTexture && !model.texCoords.empty() && i * 2 + 1 < model.texCoords.size()) {
                 glTexCoord2f(model.texCoords[i * 2], model.texCoords[i * 2 + 1]);
             }
+
             glVertex3f(model.vertices[i * 3], model.vertices[i * 3 + 1], model.vertices[i * 3 + 2]);
         }
         glEnd();
@@ -1927,7 +2147,6 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
         glPopMatrix();
     }
 
-    // Включаем обратно (на всякий случай)
     glEnable(GL_LIGHTING);
 
     glMatrixMode(GL_PROJECTION);
@@ -1973,6 +2192,15 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
         char colorInfo[100];
         sprintf_s(colorInfo, "Цвет: R=%.2f G=%.2f B=%.2f", customColor.r, customColor.g, customColor.b);
         drawText(x + w - 250, y + 25, colorInfo, customColor.r, customColor.g, customColor.b);
+
+        // Информация о текстуре
+        bool hasTexture = (!model.materials.empty() && model.materials[0].textureID != 0);
+        if (hasTexture) {
+            char texInfo[100];
+            sprintf_s(texInfo, "Текстура: %s цвет", useTextureColor ? "использует" : "игнорирует");
+            drawText(x + 10, y + h - 75, texInfo, useTextureColor ? 0.0f : 1.0f,
+                useTextureColor ? 1.0f : 0.5f, 0.0f);
+        }
     }
 
     int arrowY = (int)(y + h + 25);
@@ -2091,7 +2319,24 @@ void renderSnakeEditor() {
             else el->color = glm::vec3(0.0f, 0.5f, 0.0f);
         }
 
-        int scaleY = colorY + 80;
+        int texColorY = colorY + 80;
+        // Кнопка для переключения режима текстуры
+        bool hasTexture = (previewModel.loaded && !previewModel.materials.empty() && previewModel.materials[0].textureID != 0);
+        if (hasTexture) {
+            drawText((float)editX, (float)texColorY, "Режим текстуры:", 1.0f, 1.0f, 1.0f);
+
+            std::string texBtnText = std::string("Цвет для текстуры: ") +
+                (el->useTextureColor ? "ВКЛ" : "ВЫКЛ");
+            if (drawButton(editX, texColorY + 20, 200, 35, texBtnText.c_str())) {
+                el->useTextureColor = !el->useTextureColor;
+            }
+
+            if (drawButton(editX + 220, texColorY + 20, 100, 35, "СБРОСИТЬ")) {
+                el->useTextureColor = true;
+            }
+        }
+
+        int scaleY = hasTexture ? texColorY + 80 : texColorY;
         drawText((float)editX, (float)scaleY, "Масштаб:", 1.0f, 1.0f, 1.0f);
 
         char scaleText[20];
@@ -2109,16 +2354,19 @@ void renderSnakeEditor() {
                 el->modelFile = "snake_head.fbx";
                 el->color = glm::vec3(0.0f, 1.0f, 0.0f);
                 el->scale = 0.8f;
+                el->useTextureColor = true;
             }
             else if (selectedPart == 1) {
                 el->modelFile = "snake_body.fbx";
                 el->color = glm::vec3(0.0f, 0.7f, 0.0f);
                 el->scale = 0.8f;
+                el->useTextureColor = true;
             }
             else {
                 el->modelFile = "snake_tail.fbx";
                 el->color = glm::vec3(0.0f, 0.5f, 0.0f);
                 el->scale = 0.8f;
+                el->useTextureColor = true;
             }
             updatePreviewForCurrentMode();
         }
@@ -2130,7 +2378,8 @@ void renderSnakeEditor() {
             (float)(windowWidth * 0.36f), (float)(windowHeight * 0.5f),
             previewRotation, autoRotate, lastRotationTime,
             snakeElements[selectedPart]->scale, false,
-            snakeElements[selectedPart]->color);  // Передаём цвет!
+            snakeElements[selectedPart]->color,
+            snakeElements[selectedPart]->useTextureColor);
     }
 
     if (drawButton((int)(windowWidth * 0.03f), (int)(windowHeight * 0.9f), 150, 50, "НАЗАД")) {
@@ -2252,7 +2501,7 @@ void renderFloorPreview3D() {
             glBindTexture(GL_TEXTURE_2D, previewModel.materials[0].textureID);
         }
 
-        drawModel(previewModel, currentConfig.floorColor);
+        drawModel(previewModel, currentConfig.floorColor, obstaclesElements[selectedObstacle]->useTextureColor);
         glPopMatrix();
         glDisable(GL_TEXTURE_2D);
     }
@@ -2318,6 +2567,7 @@ void renderGroundSkyEditor() {
 
         if (drawButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openFileDialog(ground->modelFile, "floor");
+            updatePreviewForCurrentMode();
         }
 
         if (drawButton(editX + buttonSpacing, modelY + 40, buttonWidth, 30, "СБРОСИТЬ")) {
@@ -2327,21 +2577,40 @@ void renderGroundSkyEditor() {
 
         int textureY = modelY + 90;
         drawText((float)editX, (float)textureY, "Текстура:", 1.0f, 1.0f, 1.0f);
-        drawText((float)(editX + 100), (float)textureY, truncateFilename(ground->textureFile, 20).c_str(), 0.0f, 1.0f, 0.0f);
+
+        // Отображаем информацию о текстуре из модели или из отдельного файла
+        bool hasModelTexture = (previewModel.loaded && !previewModel.materials.empty() && previewModel.materials[0].textureID != 0);
+        if (hasModelTexture) {
+            drawText((float)(editX + 100), (float)textureY, "Из модели: " + truncateFilename(ground->textureFile, 20), 0.0f, 1.0f, 0.0f);
+        }
+        else if (!ground->textureFile.empty()) {
+            drawText((float)(editX + 100), (float)textureY, truncateFilename(ground->textureFile, 20).c_str(), 0.0f, 1.0f, 0.0f);
+        }
+        else {
+            drawText((float)(editX + 100), (float)textureY, "Нет текстуры", 1.0f, 0.5f, 0.0f);
+        }
 
         if (drawButton(editX, textureY + 20, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
             openTextureFileDialog(ground->textureFile, floorTexture);
+            // Если загрузили текстуру отдельно, добавляем её в previewModel
+            if (floorTexture.id != 0 && previewModel.loaded) {
+                previewModel.materials.clear();
+                Material mat;
+                mat.textureID = floorTexture.id;
+                previewModel.materials.push_back(mat);
+            }
         }
 
-        if (drawButton(editX + buttonSpacing, textureY + 20, buttonWidth, 30, "СБРОСИТЬ")) {
+        if (drawButton(editX + buttonSpacing, textureY + 20, buttonWidth, 30, "СБРОСИТЬ ТЕКСТУРУ")) {
             ground->textureFile = "";
             if (floorTexture.id != 0) {
                 glDeleteTextures(1, &floorTexture.id);
                 floorTexture.id = 0;
             }
+            // Если была текстура из модели, она останется
         }
 
-        int colorY = textureY + 70;
+        int colorY = textureY + 80;
         drawText((float)editX, (float)colorY, "Цвет пола:", 1.0f, 1.0f, 1.0f);
 
         glColor3f(ground->color.r, ground->color.g, ground->color.b);
@@ -2365,7 +2634,7 @@ void renderGroundSkyEditor() {
 
         currentConfig.floorColor = ground->color;
 
-        if (drawButton(editX + 200, colorY + 30, 80, 30, "СБРОСИТЬ")) {
+        if (drawButton(editX + 200, colorY + 30, 80, 30, "СБРОСИТЬ ЦВЕТ")) {
             ground->color = glm::vec3(0.3f, 0.6f, 0.2f);
             currentConfig.floorColor = ground->color;
         }
@@ -2422,7 +2691,6 @@ void renderGroundSkyEditor() {
         glm::mat4 view = glm::lookAt(eye, center, up);
         glLoadMatrixf(glm::value_ptr(view));
 
-        // Отключаем освещение для предпросмотра пола
         glDisable(GL_LIGHTING);
 
         float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
@@ -2430,7 +2698,7 @@ void renderGroundSkyEditor() {
         float offsetX = worldWidth / 2.0f;
         float offsetZ = worldDepth / 2.0f;
 
-        // Рисуем базовый пол (всегда на случай если модель не загружена или прозрачная)
+        // Рисуем базовый пол (всегда)
         glColor3f(ground->color.r, ground->color.g, ground->color.b);
         glBegin(GL_QUADS);
         glVertex3f(-offsetX, -0.05f, -offsetZ);
@@ -2443,24 +2711,40 @@ void renderGroundSkyEditor() {
         if (previewModel.loaded && !previewModel.vertices.empty()) {
             glPushMatrix();
 
-            // Для пола обычно нужно повернуть и уменьшить модель
-            glRotatef(-90.0f, 1.0f, 0.0f, 0.0f); // Поворачиваем горизонтально
-            glScalef(0.01f, 0.01f, 0.01f); // Масштабируем так как FBX модели обычно большие
+            // Поворачиваем и масштабируем модель пола
+            glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
+            glScalef(0.01f, 0.01f, 0.01f);
 
-            // Если есть текстура
-            if (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0) {
+            // Определяем, есть ли текстура
+            bool hasTexture = (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0);
+
+            if (hasTexture) {
                 glEnable(GL_TEXTURE_2D);
                 glBindTexture(GL_TEXTURE_2D, previewModel.materials[0].textureID);
                 glColor3f(1.0f, 1.0f, 1.0f);
+                std::cout << "Drawing floor model WITH texture ID: " << previewModel.materials[0].textureID << std::endl;
+            }
+            else if (floorTexture.id != 0) {
+                // Используем отдельно загруженную текстуру
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, floorTexture.id);
+                glColor3f(1.0f, 1.0f, 1.0f);
+                std::cout << "Drawing floor model WITH separate texture ID: " << floorTexture.id << std::endl;
             }
             else {
                 glDisable(GL_TEXTURE_2D);
                 glColor3f(ground->color.r, ground->color.g, ground->color.b);
+                std::cout << "Drawing floor model WITHOUT texture, using color" << std::endl;
             }
 
             // Рисуем модель
             glBegin(GL_TRIANGLES);
             for (size_t i = 0; i < previewModel.vertices.size() / 3; i++) {
+                if (hasTexture || floorTexture.id != 0) {
+                    if (!previewModel.texCoords.empty() && i * 2 + 1 < previewModel.texCoords.size()) {
+                        glTexCoord2f(previewModel.texCoords[i * 2], previewModel.texCoords[i * 2 + 1]);
+                    }
+                }
                 glVertex3f(previewModel.vertices[i * 3],
                     previewModel.vertices[i * 3 + 1],
                     previewModel.vertices[i * 3 + 2]);
@@ -2471,6 +2755,9 @@ void renderGroundSkyEditor() {
             glDisable(GL_TEXTURE_2D);
 
             glPopMatrix();
+        }
+        else {
+            std::cout << "No floor model loaded, drawing only base floor" << std::endl;
         }
 
         // Сетка
@@ -2513,8 +2800,18 @@ void renderGroundSkyEditor() {
 
         drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР ПОЛА", 1.0f, 1.0f, 0.0f);
 
+        // Информация о состоянии
         if (previewModel.loaded && !previewModel.vertices.empty()) {
-            drawText((float)(previewX + 10), (float)(previewY + 50), "3D МОДЕЛЬ ЗАГРУЖЕНА", 0.0f, 1.0f, 0.0f);
+            bool hasTexture = (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0);
+            if (hasTexture) {
+                drawText((float)(previewX + 10), (float)(previewY + 50), "3D МОДЕЛЬ ЗАГРУЖЕНА + ТЕКСТУРА", 0.0f, 1.0f, 0.0f);
+            }
+            else if (floorTexture.id != 0) {
+                drawText((float)(previewX + 10), (float)(previewY + 50), "3D МОДЕЛЬ + ОТДЕЛЬНАЯ ТЕКСТУРА", 0.0f, 1.0f, 0.0f);
+            }
+            else {
+                drawText((float)(previewX + 10), (float)(previewY + 50), "3D МОДЕЛЬ (без текстуры)", 1.0f, 0.5f, 0.0f);
+            }
         }
         else {
             drawText((float)(previewX + 10), (float)(previewY + 50), "БАЗОВЫЙ ПОЛ (без модели)", 1.0f, 0.5f, 0.0f);
@@ -2701,7 +2998,24 @@ void renderObstaclesEditor() {
             else el->color = glm::vec3(1.0f, 0.0f, 0.0f);
         }
 
-        int scaleY = colorY + 80;
+        int texColorY = colorY + 80;
+        // Кнопка для переключения режима текстуры
+        bool hasTexture = (previewModel.loaded && !previewModel.materials.empty() && previewModel.materials[0].textureID != 0);
+        if (hasTexture) {
+            drawText((float)editX, (float)texColorY, "Режим текстуры:", 1.0f, 1.0f, 1.0f);
+
+            std::string texBtnText = std::string("Цвет для текстуры: ") +
+                (el->useTextureColor ? "ВКЛ" : "ВЫКЛ");
+            if (drawButton(editX, texColorY + 20, 200, 35, texBtnText.c_str())) {
+                el->useTextureColor = !el->useTextureColor;
+            }
+
+            if (drawButton(editX + 220, texColorY + 20, 100, 35, "СБРОСИТЬ")) {
+                el->useTextureColor = true;
+            }
+        }
+
+        int scaleY = hasTexture ? texColorY + 80 : texColorY;
         drawText((float)editX, (float)scaleY, "Масштаб:", 1.0f, 1.0f, 1.0f);
 
         char scaleText[20];
@@ -2739,24 +3053,28 @@ void renderObstaclesEditor() {
                 el->color = glm::vec3(0.1f, 0.4f, 0.1f);
                 el->scale = 1.5f;
                 el->count = 10;
+                el->useTextureColor = true;
             }
             else if (selectedObstacle == 1) {
                 el->modelFile = "rock.fbx";
                 el->color = glm::vec3(0.5f, 0.5f, 0.5f);
                 el->scale = 1.2f;
                 el->count = 5;
+                el->useTextureColor = true;
             }
             else if (selectedObstacle == 2) {
                 el->modelFile = "fence.fbx";
                 el->color = glm::vec3(0.6f, 0.4f, 0.2f);
                 el->scale = 1.0f;
                 el->count = 8;
+                el->useTextureColor = true;
             }
             else {
                 el->modelFile = "apple.fbx";
                 el->color = glm::vec3(1.0f, 0.0f, 0.0f);
                 el->scale = 0.8f;
                 el->count = 10;
+                el->useTextureColor = true;
             }
             updatePreviewForCurrentMode();
         }
@@ -2768,7 +3086,8 @@ void renderObstaclesEditor() {
             (float)(windowWidth * 0.36f), (float)(windowHeight * 0.5f),
             previewRotation, autoRotate, lastRotationTime,
             obstaclesElements[selectedObstacle]->scale, false,
-            obstaclesElements[selectedObstacle]->color);  // Передаём цвет!
+            obstaclesElements[selectedObstacle]->color,
+            obstaclesElements[selectedObstacle]->useTextureColor);
     }
 
     if (drawButton((int)(windowWidth * 0.03f), (int)(windowHeight * 0.9f), 150, 50, "НАЗАД")) {
@@ -2857,7 +3176,24 @@ void renderEnvironmentEditor() {
             else el->color = glm::vec3(1.0f, 1.0f, 1.0f);
         }
 
-        int scaleY = colorY + 80;
+        int texColorY = colorY + 80;
+        // Кнопка для переключения режима текстуры
+        bool hasTexture = (previewModel.loaded && !previewModel.materials.empty() && previewModel.materials[0].textureID != 0);
+        if (hasTexture) {
+            drawText((float)editX, (float)texColorY, "Режим текстуры:", 1.0f, 1.0f, 1.0f);
+
+            std::string texBtnText = std::string("Цвет для текстуры: ") +
+                (el->useTextureColor ? "ВКЛ" : "ВЫКЛ");
+            if (drawButton(editX, texColorY + 20, 200, 35, texBtnText.c_str())) {
+                el->useTextureColor = !el->useTextureColor;
+            }
+
+            if (drawButton(editX + 220, texColorY + 20, 100, 35, "СБРОСИТЬ")) {
+                el->useTextureColor = true;
+            }
+        }
+
+        int scaleY = hasTexture ? texColorY + 80 : texColorY;
         drawText((float)editX, (float)scaleY, "Масштаб:", 1.0f, 1.0f, 1.0f);
 
         char scaleText[20];
@@ -2893,18 +3229,21 @@ void renderEnvironmentEditor() {
                 el->color = glm::vec3(1.0f, 0.0f, 1.0f);
                 el->scale = 0.7f;
                 el->count = 25;
+                el->useTextureColor = true;
             }
             else if (selectedEnv == 1) {
                 el->modelFile = "bird.fbx";
                 el->color = glm::vec3(0.5f, 0.5f, 0.5f);
                 el->scale = 0.6f;
                 el->count = 15;
+                el->useTextureColor = true;
             }
             else {
                 el->modelFile = "cloud.fbx";
                 el->color = glm::vec3(1.0f, 1.0f, 1.0f);
                 el->scale = 1.5f;
                 el->count = 20;
+                el->useTextureColor = true;
             }
             updatePreviewForCurrentMode();
         }
@@ -2916,7 +3255,8 @@ void renderEnvironmentEditor() {
             (float)(windowWidth * 0.36f), (float)(windowHeight * 0.5f),
             previewRotation, autoRotate, lastRotationTime,
             environmentElements[selectedEnv]->scale, false,
-            environmentElements[selectedEnv]->color);  // Передаём цвет!
+            environmentElements[selectedEnv]->color,
+            environmentElements[selectedEnv]->useTextureColor);
     }
 
     if (drawButton((int)(windowWidth * 0.03f), (int)(windowHeight * 0.9f), 150, 50, "НАЗАД")) {
