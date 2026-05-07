@@ -3335,8 +3335,8 @@ void renderShadowPreview3D() {
 
     // Позиции объектов
     glm::vec3 headPos(0.0f, floorHeight, 0.0f);
-    glm::vec3 bodyPos(0.0f, floorHeight, -cellSize * 15.0f);
-    glm::vec3 tailPos(0.0f, floorHeight, -cellSize * 30.0f);
+    glm::vec3 bodyPos(0.0f, floorHeight, -cellSize);   // Ближе к голове
+    glm::vec3 tailPos(0.0f, floorHeight, 2 * -cellSize);  // Ближе к телу
     std::vector<glm::vec3> snakePositions = { headPos, bodyPos, tailPos };
 
     // Позиции деревьев
