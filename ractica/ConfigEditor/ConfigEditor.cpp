@@ -2565,12 +2565,12 @@ void renderGroundSkyEditor() {
         std::string displayFile = truncateFilename(ground->modelFile, 30);
         drawText((float)(editX + 80), (float)(modelY + 20), displayFile.c_str(), 0.0f, 1.0f, 0.0f);
 
-        if (drawButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
+        if (drawButton(editX, modelY + 40, buttonWidth, 30, "ЗАГРУЗИТЬ МОДЕЛЬ")) {
             openFileDialog(ground->modelFile, "floor");
             updatePreviewForCurrentMode();
         }
 
-        if (drawButton(editX + buttonSpacing, modelY + 40, buttonWidth, 30, "СБРОСИТЬ")) {
+        if (drawButton(editX + buttonSpacing, modelY + 40, buttonWidth, 30, "СБРОСИТЬ МОДЕЛЬ")) {
             ground->modelFile = "";
             updatePreviewForCurrentMode();
         }
@@ -2578,26 +2578,27 @@ void renderGroundSkyEditor() {
         int textureY = modelY + 90;
         drawText((float)editX, (float)textureY, "Текстура:", 1.0f, 1.0f, 1.0f);
 
-        // Отображаем информацию о текстуре из модели или из отдельного файла
-        bool hasModelTexture = (previewModel.loaded && !previewModel.materials.empty() && previewModel.materials[0].textureID != 0);
-        if (hasModelTexture) {
-            drawText((float)(editX + 100), (float)textureY, "Из модели: " + truncateFilename(ground->textureFile, 20), 0.0f, 1.0f, 0.0f);
-        }
-        else if (!ground->textureFile.empty()) {
+        // Отображаем информацию о текущей текстуре
+        if (floorTexture.id != 0) {
             drawText((float)(editX + 100), (float)textureY, truncateFilename(ground->textureFile, 20).c_str(), 0.0f, 1.0f, 0.0f);
+        }
+        else if (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0) {
+            drawText((float)(editX + 100), (float)textureY, "Текстура из модели", 0.0f, 1.0f, 0.0f);
         }
         else {
             drawText((float)(editX + 100), (float)textureY, "Нет текстуры", 1.0f, 0.5f, 0.0f);
         }
 
-        if (drawButton(editX, textureY + 20, buttonWidth, 30, "ЗАГРУЗИТЬ")) {
+        if (drawButton(editX, textureY + 20, buttonWidth, 30, "ЗАГРУЗИТЬ ТЕКСТУРУ")) {
             openTextureFileDialog(ground->textureFile, floorTexture);
-            // Если загрузили текстуру отдельно, добавляем её в previewModel
-            if (floorTexture.id != 0 && previewModel.loaded) {
+            // После загрузки текстуры, добавляем её в previewModel
+            if (floorTexture.id != 0) {
+                // Очищаем старые материалы
                 previewModel.materials.clear();
                 Material mat;
                 mat.textureID = floorTexture.id;
                 previewModel.materials.push_back(mat);
+                std::cout << "Added separate texture to previewModel with ID: " << floorTexture.id << std::endl;
             }
         }
 
@@ -2607,7 +2608,10 @@ void renderGroundSkyEditor() {
                 glDeleteTextures(1, &floorTexture.id);
                 floorTexture.id = 0;
             }
-            // Если была текстура из модели, она останется
+            // Очищаем материалы в previewModel, если это была отдельная текстура
+            if (!previewModel.materials.empty() && previewModel.materials[0].textureID == floorTexture.id) {
+                previewModel.materials.clear();
+            }
         }
 
         int colorY = textureY + 80;
@@ -2648,6 +2652,7 @@ void renderGroundSkyEditor() {
                 glDeleteTextures(1, &floorTexture.id);
                 floorTexture.id = 0;
             }
+            previewModel.materials.clear();
             updatePreviewForCurrentMode();
         }
 
@@ -2698,12 +2703,43 @@ void renderGroundSkyEditor() {
         float offsetX = worldWidth / 2.0f;
         float offsetZ = worldDepth / 2.0f;
 
-        // Рисуем базовый пол (всегда)
-        glColor3f(ground->color.r, ground->color.g, ground->color.b);
+        // Определяем, есть ли текстура
+        bool hasTexture = false;
+        GLuint textureID = 0;
+
+        // Сначала проверяем отдельно загруженную текстуру
+        if (floorTexture.id != 0) {
+            hasTexture = true;
+            textureID = floorTexture.id;
+            std::cout << "Using separate floor texture ID: " << textureID << std::endl;
+        }
+        // Затем проверяем текстуру из модели
+        else if (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0) {
+            hasTexture = true;
+            textureID = previewModel.materials[0].textureID;
+            std::cout << "Using model texture ID: " << textureID << std::endl;
+        }
+
+        // Рисуем базовый пол (всегда, на случай если модель не загружена)
+        if (hasTexture) {
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, textureID);
+            glColor3f(1.0f, 1.0f, 1.0f);
+        }
+        else {
+            glDisable(GL_TEXTURE_2D);
+            glColor3f(ground->color.r, ground->color.g, ground->color.b);
+        }
+
         glBegin(GL_QUADS);
+        glNormal3f(0.0f, 1.0f, 0.0f);
+        glTexCoord2f(0.0f, 0.0f);
         glVertex3f(-offsetX, -0.05f, -offsetZ);
+        glTexCoord2f(1.0f, 0.0f);
         glVertex3f(offsetX, -0.05f, -offsetZ);
+        glTexCoord2f(1.0f, 1.0f);
         glVertex3f(offsetX, -0.05f, offsetZ);
+        glTexCoord2f(0.0f, 1.0f);
         glVertex3f(-offsetX, -0.05f, offsetZ);
         glEnd();
 
@@ -2715,35 +2751,22 @@ void renderGroundSkyEditor() {
             glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
             glScalef(0.01f, 0.01f, 0.01f);
 
-            // Определяем, есть ли текстура
-            bool hasTexture = (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0);
-
+            // Для 3D модели используем ту же текстуру или цвет
             if (hasTexture) {
                 glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, previewModel.materials[0].textureID);
+                glBindTexture(GL_TEXTURE_2D, textureID);
                 glColor3f(1.0f, 1.0f, 1.0f);
-                std::cout << "Drawing floor model WITH texture ID: " << previewModel.materials[0].textureID << std::endl;
-            }
-            else if (floorTexture.id != 0) {
-                // Используем отдельно загруженную текстуру
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, floorTexture.id);
-                glColor3f(1.0f, 1.0f, 1.0f);
-                std::cout << "Drawing floor model WITH separate texture ID: " << floorTexture.id << std::endl;
             }
             else {
                 glDisable(GL_TEXTURE_2D);
                 glColor3f(ground->color.r, ground->color.g, ground->color.b);
-                std::cout << "Drawing floor model WITHOUT texture, using color" << std::endl;
             }
 
             // Рисуем модель
             glBegin(GL_TRIANGLES);
             for (size_t i = 0; i < previewModel.vertices.size() / 3; i++) {
-                if (hasTexture || floorTexture.id != 0) {
-                    if (!previewModel.texCoords.empty() && i * 2 + 1 < previewModel.texCoords.size()) {
-                        glTexCoord2f(previewModel.texCoords[i * 2], previewModel.texCoords[i * 2 + 1]);
-                    }
+                if (hasTexture && !previewModel.texCoords.empty() && i * 2 + 1 < previewModel.texCoords.size()) {
+                    glTexCoord2f(previewModel.texCoords[i * 2], previewModel.texCoords[i * 2 + 1]);
                 }
                 glVertex3f(previewModel.vertices[i * 3],
                     previewModel.vertices[i * 3 + 1],
@@ -2751,17 +2774,17 @@ void renderGroundSkyEditor() {
             }
             glEnd();
 
-            glBindTexture(GL_TEXTURE_2D, 0);
-            glDisable(GL_TEXTURE_2D);
-
             glPopMatrix();
         }
-        else {
-            std::cout << "No floor model loaded, drawing only base floor" << std::endl;
+
+        if (hasTexture) {
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glDisable(GL_TEXTURE_2D);
         }
 
         // Сетка
         if (currentConfig.gridEnabled) {
+            glDisable(GL_TEXTURE_2D);
             glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
             glLineWidth(currentConfig.gridLineWidth);
             glBegin(GL_LINES);
@@ -2801,20 +2824,14 @@ void renderGroundSkyEditor() {
         drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР ПОЛА", 1.0f, 1.0f, 0.0f);
 
         // Информация о состоянии
-        if (previewModel.loaded && !previewModel.vertices.empty()) {
-            bool hasTexture = (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0);
-            if (hasTexture) {
-                drawText((float)(previewX + 10), (float)(previewY + 50), "3D МОДЕЛЬ ЗАГРУЖЕНА + ТЕКСТУРА", 0.0f, 1.0f, 0.0f);
-            }
-            else if (floorTexture.id != 0) {
-                drawText((float)(previewX + 10), (float)(previewY + 50), "3D МОДЕЛЬ + ОТДЕЛЬНАЯ ТЕКСТУРА", 0.0f, 1.0f, 0.0f);
-            }
-            else {
-                drawText((float)(previewX + 10), (float)(previewY + 50), "3D МОДЕЛЬ (без текстуры)", 1.0f, 0.5f, 0.0f);
-            }
+        if (hasTexture) {
+            drawText((float)(previewX + 10), (float)(previewY + 50), "ТЕКСТУРА ЗАГРУЖЕНА", 0.0f, 1.0f, 0.0f);
+        }
+        else if (previewModel.loaded && !previewModel.vertices.empty()) {
+            drawText((float)(previewX + 10), (float)(previewY + 50), "МОДЕЛЬ ЗАГРУЖЕНА (без текстуры)", 1.0f, 0.5f, 0.0f);
         }
         else {
-            drawText((float)(previewX + 10), (float)(previewY + 50), "БАЗОВЫЙ ПОЛ (без модели)", 1.0f, 0.5f, 0.0f);
+            drawText((float)(previewX + 10), (float)(previewY + 50), "БАЗОВЫЙ ПОЛ", 1.0f, 0.5f, 0.0f);
         }
 
         char colorInfo[100];
@@ -2839,7 +2856,7 @@ void renderGroundSkyEditor() {
         }
     }
     else {
-        // Небо (без изменений)
+        // Небо (без изменений)...
         VisualElement* sky = groundSkyElements[1];
 
         int editX = (int)(windowWidth * 0.18f);
@@ -2900,7 +2917,6 @@ void renderGroundSkyEditor() {
             }
         }
 
-        // Сообщение для неба
         glColor3f(1.0f, 1.0f, 1.0f);
         glBegin(GL_LINE_LOOP);
         glVertex2f((float)(windowWidth * 0.46f), (float)(windowHeight * 0.12f));
