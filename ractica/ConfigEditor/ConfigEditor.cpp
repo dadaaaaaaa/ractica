@@ -225,7 +225,7 @@ struct VisualElement {
     float scale;
     int count;
     bool enabled;
-
+    bool useTextureColor;
     VisualElement(const std::string& n = "") : name(n), modelFile(""), textureFile(""),
         color(1.0f, 1.0f, 1.0f), scale(1.0f), count(1), enabled(true) {
     }
@@ -527,6 +527,7 @@ void updatePreviewForCurrentMode() {
     previewModel.vertices.clear();
     previewModel.normals.clear();
     previewModel.texCoords.clear();
+    previewModel.materials.clear();
     previewModel.loaded = false;
 
     switch (currentMode) {
@@ -536,25 +537,39 @@ void updatePreviewForCurrentMode() {
                 (selectedPart == 1) ? "snake_body" : "snake_tail";
             std::string filename = snakeElements[selectedPart]->modelFile;
 
-            Model tempModel;
+            // Пытаемся загрузить FBX модель
             bool loaded = false;
-
             if (!filename.empty()) {
-                loaded = loadFBXModel(filename, tempModel, folder);
+                Model tempModel;
+                if (loadFBXModel(filename, tempModel, folder)) {
+                    // Конвертируем Model в ModelData для предпросмотра
+                    for (const auto& v : tempModel.vertices) {
+                        previewModel.vertices.push_back(v.position.x);
+                        previewModel.vertices.push_back(v.position.y);
+                        previewModel.vertices.push_back(v.position.z);
+                        previewModel.normals.push_back(v.normal.x);
+                        previewModel.normals.push_back(v.normal.y);
+                        previewModel.normals.push_back(v.normal.z);
+                        previewModel.texCoords.push_back(v.texCoords.x);
+                        previewModel.texCoords.push_back(v.texCoords.y);
+                    }
+                    previewModel.loaded = true;
+                    loaded = true;
+                    std::cout << "Loaded FBX model: " << filename << " from folder: " << folder << std::endl;
+                }
             }
 
+            // Если не загрузилась - создаём примитив
             if (!loaded) {
-                // Создаём примитив
+                Model tempModel;
                 if (selectedPart == 0) SnakeHeadPrimitive::create(tempModel);
                 else if (selectedPart == 1) SnakeBodyPrimitive::create(tempModel);
                 else SnakeTailPrimitive::create(tempModel);
+
                 tempModel.computeNormals();
                 tempModel.setupBuffers();
-                loaded = true;
-            }
 
-            if (loaded) {
-                // Конвертируем Model в ModelData
+                // Конвертируем в ModelData
                 for (const auto& v : tempModel.vertices) {
                     previewModel.vertices.push_back(v.position.x);
                     previewModel.vertices.push_back(v.position.y);
@@ -566,6 +581,7 @@ void updatePreviewForCurrentMode() {
                     previewModel.texCoords.push_back(v.texCoords.y);
                 }
                 previewModel.loaded = true;
+                std::cout << "Created primitive for: " << snakeElements[selectedPart]->name << std::endl;
             }
         }
         break;
@@ -573,15 +589,30 @@ void updatePreviewForCurrentMode() {
     case MODE_GROUND_SKY_EDITOR: {
         if (selectedGroundSky == 0 && !groundSkyElements.empty()) {
             std::string filename = groundSkyElements[0]->modelFile;
-            Model tempModel;
             bool loaded = false;
 
             if (!filename.empty()) {
-                loaded = loadFBXModel(filename, tempModel, "floor");
+                Model tempModel;
+                if (loadFBXModel(filename, tempModel, "floor")) {
+                    for (const auto& v : tempModel.vertices) {
+                        previewModel.vertices.push_back(v.position.x);
+                        previewModel.vertices.push_back(v.position.y);
+                        previewModel.vertices.push_back(v.position.z);
+                        previewModel.normals.push_back(v.normal.x);
+                        previewModel.normals.push_back(v.normal.y);
+                        previewModel.normals.push_back(v.normal.z);
+                        previewModel.texCoords.push_back(v.texCoords.x);
+                        previewModel.texCoords.push_back(v.texCoords.y);
+                    }
+                    previewModel.loaded = true;
+                    loaded = true;
+                    std::cout << "Loaded floor model: " << filename << std::endl;
+                }
             }
 
             if (!loaded) {
                 // Создаём простой квадрат для пола
+                Model tempModel;
                 Vertex v1, v2, v3, v4;
                 v1.position = glm::vec3(-0.5f, 0.0f, -0.5f);
                 v2.position = glm::vec3(0.5f, 0.0f, -0.5f);
@@ -591,10 +622,7 @@ void updatePreviewForCurrentMode() {
                 tempModel.vertices = { v1, v2, v3, v1, v3, v4 };
                 tempModel.computeNormals();
                 tempModel.setupBuffers();
-                loaded = true;
-            }
 
-            if (loaded) {
                 for (const auto& v : tempModel.vertices) {
                     previewModel.vertices.push_back(v.position.x);
                     previewModel.vertices.push_back(v.position.y);
@@ -604,6 +632,7 @@ void updatePreviewForCurrentMode() {
                     previewModel.normals.push_back(v.normal.z);
                 }
                 previewModel.loaded = true;
+                std::cout << "Created floor primitive" << std::endl;
             }
         }
         break;
@@ -611,14 +640,29 @@ void updatePreviewForCurrentMode() {
     case MODE_OBSTACLES_EDITOR: {
         if (selectedObstacle >= 0 && selectedObstacle < (int)obstaclesElements.size()) {
             std::string filename = obstaclesElements[selectedObstacle]->modelFile;
-            Model tempModel;
             bool loaded = false;
 
             if (!filename.empty()) {
-                loaded = loadFBXModel(filename, tempModel, "obstacles");
+                Model tempModel;
+                if (loadFBXModel(filename, tempModel, "obstacles")) {
+                    for (const auto& v : tempModel.vertices) {
+                        previewModel.vertices.push_back(v.position.x);
+                        previewModel.vertices.push_back(v.position.y);
+                        previewModel.vertices.push_back(v.position.z);
+                        previewModel.normals.push_back(v.normal.x);
+                        previewModel.normals.push_back(v.normal.y);
+                        previewModel.normals.push_back(v.normal.z);
+                        previewModel.texCoords.push_back(v.texCoords.x);
+                        previewModel.texCoords.push_back(v.texCoords.y);
+                    }
+                    previewModel.loaded = true;
+                    loaded = true;
+                    std::cout << "Loaded obstacle model: " << filename << std::endl;
+                }
             }
 
             if (!loaded) {
+                Model tempModel;
                 if (selectedObstacle == 0) {
                     TreePrimitive::create(tempModel);
                 }
@@ -644,10 +688,7 @@ void updatePreviewForCurrentMode() {
                 }
                 tempModel.computeNormals();
                 tempModel.setupBuffers();
-                loaded = true;
-            }
 
-            if (loaded) {
                 for (const auto& v : tempModel.vertices) {
                     previewModel.vertices.push_back(v.position.x);
                     previewModel.vertices.push_back(v.position.y);
@@ -657,6 +698,7 @@ void updatePreviewForCurrentMode() {
                     previewModel.normals.push_back(v.normal.z);
                 }
                 previewModel.loaded = true;
+                std::cout << "Created primitive for obstacle: " << obstaclesElements[selectedObstacle]->name << std::endl;
             }
         }
         break;
@@ -666,14 +708,29 @@ void updatePreviewForCurrentMode() {
             std::string folder = (selectedEnv == 0) ? "flowers" :
                 (selectedEnv == 1) ? "birds" : "clouds";
             std::string filename = environmentElements[selectedEnv]->modelFile;
-            Model tempModel;
             bool loaded = false;
 
             if (!filename.empty()) {
-                loaded = loadFBXModel(filename, tempModel, folder);
+                Model tempModel;
+                if (loadFBXModel(filename, tempModel, folder)) {
+                    for (const auto& v : tempModel.vertices) {
+                        previewModel.vertices.push_back(v.position.x);
+                        previewModel.vertices.push_back(v.position.y);
+                        previewModel.vertices.push_back(v.position.z);
+                        previewModel.normals.push_back(v.normal.x);
+                        previewModel.normals.push_back(v.normal.y);
+                        previewModel.normals.push_back(v.normal.z);
+                        previewModel.texCoords.push_back(v.texCoords.x);
+                        previewModel.texCoords.push_back(v.texCoords.y);
+                    }
+                    previewModel.loaded = true;
+                    loaded = true;
+                    std::cout << "Loaded environment model: " << filename << " from folder: " << folder << std::endl;
+                }
             }
 
             if (!loaded) {
+                Model tempModel;
                 if (selectedEnv == 0) {
                     FlowerPrimitive::create(tempModel);
                 }
@@ -685,10 +742,7 @@ void updatePreviewForCurrentMode() {
                 }
                 tempModel.computeNormals();
                 tempModel.setupBuffers();
-                loaded = true;
-            }
 
-            if (loaded) {
                 for (const auto& v : tempModel.vertices) {
                     previewModel.vertices.push_back(v.position.x);
                     previewModel.vertices.push_back(v.position.y);
@@ -700,6 +754,7 @@ void updatePreviewForCurrentMode() {
                     previewModel.texCoords.push_back(v.texCoords.y);
                 }
                 previewModel.loaded = true;
+                std::cout << "Created primitive for environment: " << environmentElements[selectedEnv]->name << std::endl;
             }
         }
         break;
@@ -946,18 +1001,21 @@ void initElements() {
     head->modelFile = currentConfig.snakeHeadModel;
     head->color = currentConfig.snakeHeadColor;
     head->scale = currentConfig.snakeHeadScale;
+    head->useTextureColor = true;
     snakeElements.push_back(head);
 
     VisualElement* body = new VisualElement("ТЕЛО");
     body->modelFile = currentConfig.snakeBodyModel;
     body->color = currentConfig.snakeBodyColor;
     body->scale = currentConfig.snakeBodyScale;
+    head->useTextureColor = true;
     snakeElements.push_back(body);
 
     VisualElement* tail = new VisualElement("ХВОСТ");
     tail->modelFile = currentConfig.snakeTailModel;
     tail->color = currentConfig.snakeTailColor;
     tail->scale = currentConfig.snakeTailScale;
+    head->useTextureColor = true;
     snakeElements.push_back(tail);
 
     // Пол и небо
@@ -965,11 +1023,13 @@ void initElements() {
     ground->modelFile = currentConfig.floorModel;
     ground->textureFile = currentConfig.floorTexture;
     ground->color = currentConfig.floorColor;
+    head->useTextureColor = true;
     groundSkyElements.push_back(ground);
 
     VisualElement* sky = new VisualElement("НЕБО");
     sky->textureFile = "";
     sky->color = currentConfig.skyColor;
+    head->useTextureColor = true;
     groundSkyElements.push_back(sky);
 
     // Преграды
@@ -977,18 +1037,21 @@ void initElements() {
     tree->modelFile = currentConfig.treeModel;
     tree->color = glm::vec3(0.1f, 0.4f, 0.1f);
     tree->scale = 1.5f;
+    head->useTextureColor = true;
     obstaclesElements.push_back(tree);
 
     VisualElement* rock = new VisualElement("КАМЕНЬ");
     rock->modelFile = currentConfig.rockModel;
     rock->color = glm::vec3(0.5f, 0.5f, 0.5f);
     rock->scale = 1.2f;
+    head->useTextureColor = true;
     obstaclesElements.push_back(rock);
 
     VisualElement* fence = new VisualElement("ЗАБОР");
     fence->modelFile = currentConfig.fenceModel;
     fence->color = glm::vec3(0.6f, 0.4f, 0.2f);
     fence->scale = 1.0f;
+    head->useTextureColor = true;
     obstaclesElements.push_back(fence);
 
     VisualElement* apple = new VisualElement("ЯБЛОКО");
@@ -996,6 +1059,7 @@ void initElements() {
     apple->color = glm::vec3(1.0f, 0.0f, 0.0f);
     apple->scale = 0.8f;
     apple->count = currentConfig.initialFoodCount;
+    head->useTextureColor = true;
     obstaclesElements.push_back(apple);
 
     // Окружение
@@ -1004,6 +1068,7 @@ void initElements() {
     flower->color = glm::vec3(1.0f, 0.0f, 1.0f);
     flower->scale = 0.7f;
     flower->count = currentConfig.flowerCount;
+    head->useTextureColor = true;
     environmentElements.push_back(flower);
 
     VisualElement* bird = new VisualElement("ПТИЦА");
@@ -1011,6 +1076,7 @@ void initElements() {
     bird->color = glm::vec3(0.5f, 0.5f, 0.5f);
     bird->scale = 0.6f;
     bird->count = currentConfig.birdCount;
+    head->useTextureColor = true;
     environmentElements.push_back(bird);
 
     VisualElement* cloud = new VisualElement("ОБЛАКО");
@@ -1018,6 +1084,7 @@ void initElements() {
     cloud->color = glm::vec3(1.0f, 1.0f, 1.0f);
     cloud->scale = 1.5f;
     cloud->count = currentConfig.cloudCount;
+    head->useTextureColor = true;
     environmentElements.push_back(cloud);
 }
 
@@ -1482,12 +1549,18 @@ bool loadTexture(const std::string& filename, Texture& texture) {
 
 // ========== ИСПРАВЛЕННАЯ ЗАГРУЗКА FBX МОДЕЛИ С ВЫЧИСЛЕНИЕМ НОРМАЛЕЙ ==========
 bool loadFBXModel(const std::string& filename, Model& outModel, const std::string& subFolder) {
-    if (filename.empty()) return false;
+    if (filename.empty()) {
+        std::cout << "loadFBXModel: filename is empty" << std::endl;
+        return false;
+    }
 
     std::string fullPath = g_modelsPath + subFolder + "\\" + filename;
     if (!std::filesystem::exists(fullPath)) {
+        std::cout << "loadFBXModel: file not found - " << fullPath << std::endl;
         return false;
     }
+
+    std::cout << "loadFBXModel: loading - " << fullPath << std::endl;
 
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(fullPath,
@@ -1495,6 +1568,7 @@ bool loadFBXModel(const std::string& filename, Model& outModel, const std::strin
         aiProcess_JoinIdenticalVertices | aiProcess_CalcTangentSpace);
 
     if (!scene) {
+        std::cout << "loadFBXModel: failed to load - " << importer.GetErrorString() << std::endl;
         return false;
     }
 
@@ -1505,6 +1579,7 @@ bool loadFBXModel(const std::string& filename, Model& outModel, const std::strin
     // Загружаем меши
     for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
         aiMesh* mesh = scene->mMeshes[i];
+        std::cout << "Mesh " << i << " has " << mesh->mNumFaces << " faces" << std::endl;
 
         for (unsigned int j = 0; j < mesh->mNumFaces; j++) {
             aiFace face = mesh->mFaces[j];
@@ -1540,8 +1615,11 @@ bool loadFBXModel(const std::string& filename, Model& outModel, const std::strin
     }
 
     if (outModel.vertices.empty()) {
+        std::cout << "loadFBXModel: no vertices loaded" << std::endl;
         return false;
     }
+
+    std::cout << "loadFBXModel: loaded " << outModel.vertices.size() << " vertices" << std::endl;
 
     // Загружаем текстуры
     for (unsigned int i = 0; i < scene->mNumMaterials && outModel.textureID == 0; i++) {
@@ -1556,13 +1634,13 @@ bool loadFBXModel(const std::string& filename, Model& outModel, const std::strin
             if (std::filesystem::exists(fullTexPath)) {
                 outModel.textureID = loadTextureFromFile(fullTexPath);
                 outModel.hasTexture = (outModel.textureID != 0);
+                std::cout << "Loaded texture: " << fullTexPath << std::endl;
             }
         }
     }
 
-    // ========== ВАЖНО: вычисляем нормали и создаем буферы ==========
-    outModel.computeNormals();  // Пересчитываем нормали на всякий случай
-    outModel.setupBuffers();     // Создаем display list или VBO
+    outModel.computeNormals();
+    outModel.setupBuffers();
 
     return true;
 }
@@ -1762,27 +1840,24 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
     glm::mat4 view = glm::lookAt(eye, center, up);
     glLoadMatrixf(glm::value_ptr(view));
 
-    // Включаем освещение для цветных объектов
-    glEnable(GL_LIGHTING);
-    glEnable(GL_COLOR_MATERIAL);
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+    // ========== ОТКЛЮЧАЕМ ОСВЕЩЕНИЕ ДЛЯ ПРЕДПРОСМОТРА МОДЕЛИ ==========
+    glDisable(GL_LIGHTING);
 
-    // Пол
+    // Пол (простой, без освещения)
     float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
     float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
     float offsetX = worldWidth / 2.0f;
     float offsetZ = worldDepth / 2.0f;
 
-    glDisable(GL_LIGHTING);
     glColor3f(currentConfig.floorColor.r, currentConfig.floorColor.g, currentConfig.floorColor.b);
     glBegin(GL_QUADS);
-    glNormal3f(0.0f, 1.0f, 0.0f);
     glVertex3f(-offsetX, -0.02f, -offsetZ);
     glVertex3f(offsetX, -0.02f, -offsetZ);
     glVertex3f(offsetX, -0.02f, offsetZ);
     glVertex3f(-offsetX, -0.02f, offsetZ);
     glEnd();
 
+    // Сетка
     if (currentConfig.gridEnabled) {
         glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
         glLineWidth(currentConfig.gridLineWidth);
@@ -1801,8 +1876,7 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
         glLineWidth(1.0f);
     }
 
-    // Модель с цветом
-    glEnable(GL_LIGHTING);
+    // ========== МОДЕЛЬ С ЯРКИМ ПОДСВЕЧИВАНИЕМ ==========
     if (model.loaded && !model.vertices.empty()) {
         glPushMatrix();
 
@@ -1820,10 +1894,41 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
             glScalef(scale, scale, scale);
         }
 
-        // Передаём цвет в drawModel
-        drawModel(model, customColor);
+        // Используем яркий цвет без затенения
+        if (model.materials.empty() || model.materials[0].textureID == 0) {
+            // Увеличиваем яркость цвета для лучшей видимости
+            glm::vec3 brightColor = customColor;
+            // Немного увеличиваем яркость для тёмных цветов
+            if (brightColor.r < 0.3f && brightColor.g < 0.3f && brightColor.b < 0.3f) {
+                brightColor = glm::vec3(0.5f, 0.5f, 0.5f);
+            }
+            glColor3f(brightColor.r, brightColor.g, brightColor.b);
+        }
+        else {
+            glColor3f(1.0f, 1.0f, 1.0f);
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, model.materials[0].textureID);
+        }
+
+        // Рисуем модель
+        glBegin(GL_TRIANGLES);
+        for (size_t i = 0; i < model.vertices.size() / 3; i++) {
+            // Нормали не нужны при выключенном освещении
+            if (!model.texCoords.empty() && i * 2 + 1 < model.texCoords.size()) {
+                glTexCoord2f(model.texCoords[i * 2], model.texCoords[i * 2 + 1]);
+            }
+            glVertex3f(model.vertices[i * 3], model.vertices[i * 3 + 1], model.vertices[i * 3 + 2]);
+        }
+        glEnd();
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glDisable(GL_TEXTURE_2D);
+
         glPopMatrix();
     }
+
+    // Включаем обратно (на всякий случай)
+    glEnable(GL_LIGHTING);
 
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -1865,7 +1970,6 @@ void renderModelPreview(ModelData& model, const char* title, float x, float y, f
             previewAutoRotate ? 1.0f : 0.5f,
             previewAutoRotate ? 0.0f : 0.5f);
 
-        // Показываем текущий цвет модели
         char colorInfo[100];
         sprintf_s(colorInfo, "Цвет: R=%.2f G=%.2f B=%.2f", customColor.r, customColor.g, customColor.b);
         drawText(x + w - 250, y + 25, colorInfo, customColor.r, customColor.g, customColor.b);
@@ -2240,7 +2344,6 @@ void renderGroundSkyEditor() {
         int colorY = textureY + 70;
         drawText((float)editX, (float)colorY, "Цвет пола:", 1.0f, 1.0f, 1.0f);
 
-        // Показываем текущий цвет
         glColor3f(ground->color.r, ground->color.g, ground->color.b);
         glBegin(GL_QUADS);
         glVertex2f((float)(editX + 100), (float)(colorY - 12));
@@ -2256,12 +2359,10 @@ void renderGroundSkyEditor() {
         glVertex2f((float)(editX + 100), (float)(colorY + 12));
         glEnd();
 
-        // Слайдеры цвета
         drawSlider(editX, colorY + 15, 180, &ground->color.r, 0.0f, 1.0f, "R");
         drawSlider(editX, colorY + 45, 180, &ground->color.g, 0.0f, 1.0f, "G");
         drawSlider(editX, colorY + 75, 180, &ground->color.b, 0.0f, 1.0f, "B");
 
-        // Обновляем currentConfig при изменении цвета
         currentConfig.floorColor = ground->color;
 
         if (drawButton(editX + 200, colorY + 30, 80, 30, "СБРОСИТЬ")) {
@@ -2281,12 +2382,164 @@ void renderGroundSkyEditor() {
             updatePreviewForCurrentMode();
         }
 
-        // Предпросмотр
-        renderModelPreview(previewModel, "ПРЕДПРОСМОТР ПОЛА",
-            (float)(windowWidth * 0.46f), (float)(windowHeight * 0.12f),
-            (float)(windowWidth * 0.36f), (float)(windowHeight * 0.5f),
-            previewRotation, autoRotate, lastRotationTime,
-            1.0f, true, ground->color);  // Добавлен цвет пола
+        // ========== 3D ПРЕДПРОСМОТР ПОЛА ==========
+        int previewX = (int)(windowWidth * 0.46f);
+        int previewY = (int)(windowHeight * 0.12f);
+        int previewW = (int)(windowWidth * 0.36f);
+        int previewH = (int)(windowHeight * 0.5f);
+
+        GLint viewport[4];
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        glViewport(previewX, windowHeight - previewY - previewH, previewW, previewH);
+        glScissor(previewX, windowHeight - previewY - previewH, previewW, previewH);
+        glEnable(GL_SCISSOR_TEST);
+        glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glDisable(GL_BLEND);
+
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        float aspect = (float)previewW / previewH;
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+        glLoadMatrixf(glm::value_ptr(projection));
+
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+
+        float radPitch = glm::radians(previewCameraPitch);
+        float radYaw = glm::radians(previewRotationAngle);
+
+        glm::vec3 center(0.0f, 0.0f, 0.0f);
+        float camX = sin(radYaw) * cos(radPitch) * previewCameraDistance;
+        float camY = sin(radPitch) * previewCameraDistance;
+        float camZ = cos(radYaw) * cos(radPitch) * previewCameraDistance;
+        glm::vec3 eye(camX, camY + 1.0f, camZ);
+        glm::vec3 up(0.0f, 1.0f, 0.0f);
+
+        glm::mat4 view = glm::lookAt(eye, center, up);
+        glLoadMatrixf(glm::value_ptr(view));
+
+        // Отключаем освещение для предпросмотра пола
+        glDisable(GL_LIGHTING);
+
+        float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
+        float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
+        float offsetX = worldWidth / 2.0f;
+        float offsetZ = worldDepth / 2.0f;
+
+        // Рисуем базовый пол (всегда на случай если модель не загружена или прозрачная)
+        glColor3f(ground->color.r, ground->color.g, ground->color.b);
+        glBegin(GL_QUADS);
+        glVertex3f(-offsetX, -0.05f, -offsetZ);
+        glVertex3f(offsetX, -0.05f, -offsetZ);
+        glVertex3f(offsetX, -0.05f, offsetZ);
+        glVertex3f(-offsetX, -0.05f, offsetZ);
+        glEnd();
+
+        // Рисуем 3D модель пола если она загружена
+        if (previewModel.loaded && !previewModel.vertices.empty()) {
+            glPushMatrix();
+
+            // Для пола обычно нужно повернуть и уменьшить модель
+            glRotatef(-90.0f, 1.0f, 0.0f, 0.0f); // Поворачиваем горизонтально
+            glScalef(0.01f, 0.01f, 0.01f); // Масштабируем так как FBX модели обычно большие
+
+            // Если есть текстура
+            if (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0) {
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, previewModel.materials[0].textureID);
+                glColor3f(1.0f, 1.0f, 1.0f);
+            }
+            else {
+                glDisable(GL_TEXTURE_2D);
+                glColor3f(ground->color.r, ground->color.g, ground->color.b);
+            }
+
+            // Рисуем модель
+            glBegin(GL_TRIANGLES);
+            for (size_t i = 0; i < previewModel.vertices.size() / 3; i++) {
+                glVertex3f(previewModel.vertices[i * 3],
+                    previewModel.vertices[i * 3 + 1],
+                    previewModel.vertices[i * 3 + 2]);
+            }
+            glEnd();
+
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glDisable(GL_TEXTURE_2D);
+
+            glPopMatrix();
+        }
+
+        // Сетка
+        if (currentConfig.gridEnabled) {
+            glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
+            glLineWidth(currentConfig.gridLineWidth);
+            glBegin(GL_LINES);
+            for (int i = -currentConfig.gridWidth / 2; i <= currentConfig.gridWidth / 2; i++) {
+                float xPos = (float)i * currentConfig.cellSize;
+                glVertex3f(xPos, -0.03f, -offsetZ);
+                glVertex3f(xPos, -0.03f, offsetZ);
+            }
+            for (int i = -currentConfig.gridDepth / 2; i <= currentConfig.gridDepth / 2; i++) {
+                float zPos = (float)i * currentConfig.cellSize;
+                glVertex3f(-offsetX, -0.03f, zPos);
+                glVertex3f(offsetX, -0.03f, zPos);
+            }
+            glEnd();
+            glLineWidth(1.0f);
+        }
+
+        glEnable(GL_LIGHTING);
+
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+        glPopMatrix();
+        glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+        glDisable(GL_SCISSOR_TEST);
+        reset2DProjection();
+
+        // UI рамка
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f((float)previewX, (float)previewY);
+        glVertex2f((float)(previewX + previewW), (float)previewY);
+        glVertex2f((float)(previewX + previewW), (float)(previewY + previewH));
+        glVertex2f((float)previewX, (float)(previewY + previewH));
+        glEnd();
+
+        drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР ПОЛА", 1.0f, 1.0f, 0.0f);
+
+        if (previewModel.loaded && !previewModel.vertices.empty()) {
+            drawText((float)(previewX + 10), (float)(previewY + 50), "3D МОДЕЛЬ ЗАГРУЖЕНА", 0.0f, 1.0f, 0.0f);
+        }
+        else {
+            drawText((float)(previewX + 10), (float)(previewY + 50), "БАЗОВЫЙ ПОЛ (без модели)", 1.0f, 0.5f, 0.0f);
+        }
+
+        char colorInfo[100];
+        sprintf_s(colorInfo, "Цвет пола: R=%.2f G=%.2f B=%.2f",
+            ground->color.r, ground->color.g, ground->color.b);
+        drawText((float)(previewX + 10), (float)(previewY + 75), colorInfo, 1.0f, 1.0f, 0.5f);
+
+        // Кнопки управления вращением
+        int arrowY = (int)(previewY + previewH + 15);
+        int arrowCenterX = (int)(previewX + previewW / 2);
+
+        if (drawButton(arrowCenterX - 70, arrowY, 60, 35, "<-")) {
+            previewRotationAngle -= 15.0f;
+        }
+        if (drawButton(arrowCenterX + 10, arrowY, 60, 35, "->")) {
+            previewRotationAngle += 15.0f;
+        }
+        if (drawButton(arrowCenterX - 135, arrowY, 55, 35, "СБРОС")) {
+            previewRotationAngle = 0.0f;
+            previewCameraPitch = 25.0f;
+            previewCameraDistance = 6.0f;
+        }
     }
     else {
         // Небо (без изменений)
@@ -3644,13 +3897,9 @@ void renderShadowPreview3D() {
     glm::vec3 up(0.0f, 1.0f, 0.0f);
     gluLookAt(eye.x, eye.y, eye.z, center.x, center.y, center.z, up.x, up.y, up.z);
 
+    // Включаем освещение
+    setupFixedPipelineLighting();
     updateLightPosition();
-
-    static bool modelsInitialized = false;
-    if (!modelsInitialized) {
-        initShadowModels();
-        modelsInitialized = true;
-    }
 
     float cellSize = currentConfig.cellSize;
     float floorHeight = 0.0f;
@@ -3659,335 +3908,35 @@ void renderShadowPreview3D() {
     float offsetX = worldWidth / 2.0f;
     float offsetZ = worldDepth / 2.0f;
 
-    float headOffset = getModelBottomOffset(g_previewSnakeHeadModel);
-    float bodyOffset = getModelBottomOffset(g_previewSnakeBodyModel);
-    float tailOffset = getModelBottomOffset(g_previewSnakeTailModel);
-    float treeOffset = getModelBottomOffset(g_previewTreeModel);
-    float appleOffset = getModelBottomOffset(g_previewAppleModel);
-
-    float headScale = cellSize * currentConfig.snakeHeadScale;
-    float bodyScale = cellSize * currentConfig.snakeBodyScale;
-    float tailScale = cellSize * currentConfig.snakeTailScale;
-    float treeScale = cellSize * 1.2f;
-    float appleScale = cellSize * 0.6f;
-
-    // ========== ОБЪЕКТЫ ==========
-    glm::vec3 headPos(0.0f, floorHeight, 0.0f);
-    glm::vec3 bodyPos(0.0f, floorHeight, -cellSize);
-    glm::vec3 tailPos(0.0f, floorHeight, -cellSize * 2.0f);
-    std::vector<glm::vec3> snakePositions = { headPos, bodyPos, tailPos };
-    float midOffset = worldWidth / 4.0f;
-    float edgeOffset = worldWidth / 2.5f;
-
-    std::vector<glm::vec3> treePositions = {
-        glm::vec3(0.0f, floorHeight, 3.0f * cellSize),
-        glm::vec3(midOffset, floorHeight, midOffset),
-        glm::vec3(edgeOffset, floorHeight, edgeOffset)
-    };
-
-    std::vector<glm::vec3> applePositions = {
-        glm::vec3(1.5f * cellSize, floorHeight, 1.5f * cellSize),
-        glm::vec3(0.8f * midOffset, floorHeight, 0.8f * midOffset),
-        glm::vec3(0.8f * edgeOffset, floorHeight, 0.8f * edgeOffset)
-    };
-
-    auto checkGround = [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
-        if (fabs(ray.direction.y) < 0.0001f) return false;
-        float tGround = -ray.origin.y / ray.direction.y;
-        if (tGround > 0.01f && tGround < 100.0f) {
-            glm::vec3 hit = ray.pointAt(tGround);
-            if (abs(hit.x) <= offsetX && abs(hit.z) <= offsetZ) {
-                hitDist = tGround;
-                hitPoint = hit;
-                return true;
-            }
-        }
-        return false;
-        };
-
-    auto calcRotation = [](const std::vector<glm::vec3>& positions, size_t idx) -> float {
-        if (positions.size() <= 1) return 0.0f;
-        if (idx == 0) {
-            if (positions[0].x > positions[1].x) return 90.0f;
-            if (positions[0].x < positions[1].x) return -90.0f;
-            if (positions[0].z > positions[1].z) return 0.0f;
-            if (positions[0].z < positions[1].z) return 180.0f;
-        }
-        else {
-            if (positions[idx].x > positions[idx - 1].x) return 90.0f;
-            if (positions[idx].x < positions[idx - 1].x) return -90.0f;
-            if (positions[idx].z > positions[idx - 1].z) return 0.0f;
-            if (positions[idx].z < positions[idx - 1].z) return 180.0f;
-        }
-        return 0.0f;
-        };
-
-    LightType lightType = static_cast<LightType>(currentConfig.lightType);
-    glm::vec3 lightDir = glm::normalize(currentConfig.lightDir);
-    glm::vec3 lightPos = currentConfig.lightPos;
-
-    bool isSubdivided = (currentConfig.shadowTraceMode == 2 || currentConfig.shadowTraceMode == 3);
-    bool useGradient = (currentConfig.shadowTraceMode == 1 || currentConfig.shadowTraceMode == 3);
-    int subDivSize = SHADOW_SUBDIVISION_SIZE;
-
-    // Только для режима теней пересчитываем ShadowMapper
-    if (g_currentPreviewMode == PREVIEW_SHADOWS) {
-        bool needsRecalc = !g_previewShadowsInitialized ||
-            g_lastShadowTraceMode != currentConfig.shadowTraceMode ||
-            g_lastShadowMapEnabled != currentConfig.shadowMapEnabled ||
-            g_lastShadowStrideX != currentConfig.shadowStrideX ||
-            g_lastShadowStrideZ != currentConfig.shadowStrideZ ||
-            g_forceBoundsRecalc;
-
-        if (needsRecalc && currentConfig.shadowMapEnabled) {
-            std::cout << "Reinitializing ShadowMappers for preview..." << std::endl;
-
-            g_previewStaticShadow = ShadowMapper(
-                currentConfig.gridWidth, currentConfig.gridDepth,
-                cellSize, floorHeight,
-                lightDir, currentConfig.lightColor,
-                lightType, lightPos,
-                currentConfig.shadowStrideX, currentConfig.shadowStrideZ
-            );
-
-            g_previewDynamicShadow = ShadowMapper(
-                currentConfig.gridWidth, currentConfig.gridDepth,
-                cellSize, floorHeight,
-                lightDir, currentConfig.lightColor,
-                lightType, lightPos,
-                currentConfig.shadowStrideX, currentConfig.shadowStrideZ
-            );
-
-            g_previewFoodShadow = ShadowMapper(
-                currentConfig.gridWidth, currentConfig.gridDepth,
-                cellSize, floorHeight,
-                lightDir, currentConfig.lightColor,
-                lightType, lightPos,
-                currentConfig.shadowStrideX, currentConfig.shadowStrideZ
-            );
-
-            g_previewStaticShadow.setUseSpheres(false);
-            g_previewDynamicShadow.setUseSpheres(false);
-            g_previewFoodShadow.setUseSpheres(false);
-
-            ShadowMapper::ShadowTraceMode traceMode;
-            switch (currentConfig.shadowTraceMode) {
-            case 0: traceMode = ShadowMapper::TRACE_CENTER; break;
-            case 1: traceMode = ShadowMapper::TRACE_CORNERS; break;
-            case 2: traceMode = ShadowMapper::TRACE_CENTER_SUBDIVIDED; break;
-            case 3: traceMode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
-            default: traceMode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
-            }
-
-            g_previewStaticShadow.setShadowTraceMode(traceMode);
-            g_previewDynamicShadow.setShadowTraceMode(traceMode);
-            g_previewFoodShadow.setShadowTraceMode(traceMode);
-
-            auto universalIntersect = [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint, bool trees, bool snake, bool food) -> bool {
-                float closestDist = 1000.0f;
-                bool hit = false;
-
-                if (checkGround(ray, hitDist, hitPoint)) {
-                    if (hitDist > 0.01f && hitDist < closestDist) {
-                        closestDist = hitDist;
-                        hit = true;
-                    }
-                }
-
-                if (trees) {
-                    for (const auto& treePos : treePositions) {
-                        glm::mat4 transform = glm::mat4(1.0f);
-                        transform = glm::translate(transform,
-                            glm::vec3(treePos.x, treePos.y + treeOffset * treeScale, treePos.z));
-                        transform = glm::scale(transform, glm::vec3(treeScale));
-
-                        float tempDist;
-                        glm::vec3 tempPoint;
-                        if (rayIntersectsModel(ray, g_previewTreeModel, transform, tempDist, tempPoint)) {
-                            if (tempDist > 0.01f && tempDist < closestDist) {
-                                closestDist = tempDist;
-                                hitPoint = tempPoint;
-                                hit = true;
-                            }
-                        }
-                    }
-                }
-
-                if (snake) {
-                    auto checkSnakeSegment = [&](const glm::vec3& pos, const Model& model, float scale, float offset, size_t idx) {
-                        if (model.vertices.empty()) return;
-                        glm::mat4 transform = glm::mat4(1.0f);
-                        transform = glm::translate(transform,
-                            glm::vec3(pos.x, pos.y + offset * scale, pos.z));
-                        float rotation = calcRotation(snakePositions, idx);
-                        transform = glm::rotate(transform, glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
-                        transform = glm::scale(transform, glm::vec3(scale));
-
-                        float tempDist;
-                        glm::vec3 tempPoint;
-                        if (rayIntersectsModel(ray, model, transform, tempDist, tempPoint)) {
-                            if (tempDist > 0.01f && tempDist < closestDist) {
-                                closestDist = tempDist;
-                                hitPoint = tempPoint;
-                                hit = true;
-                            }
-                        }
-                        };
-                    checkSnakeSegment(headPos, g_previewSnakeHeadModel, headScale, headOffset, 0);
-                    checkSnakeSegment(bodyPos, g_previewSnakeBodyModel, bodyScale, bodyOffset, 1);
-                    checkSnakeSegment(tailPos, g_previewSnakeTailModel, tailScale, tailOffset, 2);
-                }
-
-                if (food) {
-                    for (const auto& applePos : applePositions) {
-                        glm::vec3 center(applePos.x, applePos.y + appleOffset * appleScale, applePos.z);
-                        glm::mat4 transform = glm::mat4(1.0f);
-                        transform = glm::translate(transform, center);
-                        transform = glm::scale(transform, glm::vec3(appleScale));
-
-                        float tempDist;
-                        glm::vec3 tempPoint;
-                        if (rayIntersectsModel(ray, g_previewAppleModel, transform, tempDist, tempPoint)) {
-                            if (tempDist > 0.01f && tempDist < closestDist) {
-                                closestDist = tempDist;
-                                hitPoint = tempPoint;
-                                hit = true;
-                            }
-                        }
-                    }
-                }
-
-                if (hit) hitDist = closestDist;
-                return hit;
-                };
-
-            g_previewStaticShadow.setIntersectCallback(
-                [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
-                    return universalIntersect(ray, hitDist, hitPoint, true, false, false);
-                }
-            );
-
-            g_previewDynamicShadow.setIntersectCallback(
-                [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
-                    return universalIntersect(ray, hitDist, hitPoint, false, true, false);
-                }
-            );
-
-            g_previewFoodShadow.setIntersectCallback(
-                [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
-                    return universalIntersect(ray, hitDist, hitPoint, false, false, true);
-                }
-            );
-
-            g_previewStaticShadow.computeShadows();
-            g_previewDynamicShadow.computeShadows();
-            g_previewFoodShadow.computeShadows();
-
-            g_previewShadowsInitialized = true;
-            g_forceBoundsRecalc = false;
-
-            g_lastShadowTraceMode = currentConfig.shadowTraceMode;
-            g_lastShadowMapEnabled = currentConfig.shadowMapEnabled;
-            g_lastShadowStrideX = currentConfig.shadowStrideX;
-            g_lastShadowStrideZ = currentConfig.shadowStrideZ;
-
-            std::cout << "Shadows recalculated with mode: " << g_previewStaticShadow.getCurrentModeName() << std::endl;
-        }
-    }
-
-    glEnable(GL_COLOR_MATERIAL);
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-    setupFixedPipelineLighting();
-
-    glm::vec3 darkColor = currentConfig.floorColor * 0.15f;
     glm::vec3 lightColor = currentConfig.floorColor;
+    glm::vec3 darkColor = currentConfig.floorColor * 0.15f;
 
-    // ========== ОТРИСОВКА ПОЛА С ТЕНЯМИ ИЛИ БЕЗ ==========
-    if (g_currentPreviewMode == PREVIEW_SHADOWS && currentConfig.shadowMapEnabled && g_previewShadowsInitialized) {
-        // Рисуем с тенями
-        if (isSubdivided) {
-            float subCellSizeX = cellSize / subDivSize;
-            float subCellSizeZ = cellSize / subDivSize;
-
-            for (int z = 0; z < currentConfig.gridDepth; z++) {
-                for (int x = 0; x < currentConfig.gridWidth; x++) {
-                    float posX = x * cellSize - offsetX;
-                    float posZ = z * cellSize - offsetZ;
-
-                    for (int subZ = 0; subZ < subDivSize; subZ++) {
-                        for (int subX = 0; subX < subDivSize; subX++) {
-                            float subPosX = posX + subX * subCellSizeX;
-                            float subPosZ = posZ + subZ * subCellSizeZ;
-                            float subCenterX = subPosX + subCellSizeX / 2.0f;
-                            float subCenterZ = subPosZ + subCellSizeZ / 2.0f;
-                            glm::vec3 subCenter(subCenterX, 0.05f, subCenterZ);
-
-                            float staticShadow = g_previewStaticShadow.getShadowAtPointWithSubdivision(subCenter, nullptr);
-                            float snakeShadow = g_previewDynamicShadow.getShadowAtPointWithSubdivision(subCenter, nullptr);
-                            float foodShadow = g_previewFoodShadow.getShadowAtPointWithSubdivision(subCenter, nullptr);
-
-                            float shadowValue = std::min({ staticShadow, snakeShadow, foodShadow });
-
-                            glm::vec3 finalColor;
-                            if (useGradient) {
-                                finalColor = glm::mix(darkColor, lightColor, shadowValue);
-                            }
-                            else {
-                                finalColor = (shadowValue >= 0.5f) ? lightColor : darkColor;
-                            }
-
-                            glColor3f(finalColor.r, finalColor.g, finalColor.b);
-                            glBegin(GL_QUADS);
-                            glNormal3f(0.0f, 1.0f, 0.0f);
-                            glVertex3f(subPosX, -0.02f, subPosZ);
-                            glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ);
-                            glVertex3f(subPosX + subCellSizeX, -0.02f, subPosZ + subCellSizeZ);
-                            glVertex3f(subPosX, -0.02f, subPosZ + subCellSizeZ);
-                            glEnd();
-                        }
-                    }
-                }
-            }
-        }
-        else {
-            for (int z = 0; z < currentConfig.gridDepth; z++) {
-                for (int x = 0; x < currentConfig.gridWidth; x++) {
-                    float posX = x * cellSize - offsetX;
-                    float posZ = z * cellSize - offsetZ;
-
-                    float staticShadow = g_previewStaticShadow.getShadowAtCell(x, z);
-                    float snakeShadow = g_previewDynamicShadow.getShadowAtCell(x, z);
-                    float foodShadow = g_previewFoodShadow.getShadowAtCell(x, z);
-                    float shadowValue = std::min({ staticShadow, snakeShadow, foodShadow });
-
-                    glm::vec3 finalColor;
-                    if (useGradient) {
-                        finalColor = glm::mix(darkColor, lightColor, shadowValue);
-                    }
-                    else {
-                        finalColor = (shadowValue >= 0.5f) ? lightColor : darkColor;
-                    }
-
-                    glColor3f(finalColor.r, finalColor.g, finalColor.b);
-                    glBegin(GL_QUADS);
-                    glNormal3f(0.0f, 1.0f, 0.0f);
-                    glVertex3f(posX, -0.02f, posZ);
-                    glVertex3f(posX + cellSize, -0.02f, posZ);
-                    glVertex3f(posX + cellSize, -0.02f, posZ + cellSize);
-                    glVertex3f(posX, -0.02f, posZ + cellSize);
-                    glEnd();
-                }
-            }
-        }
-    }
-    else {
-        // Рисуем без теней (обычный пол)
+    // ========== ОТРИСОВКА ПОЛА С УЧЁТОМ ОСВЕЩЕНИЯ ==========
+    if (g_currentPreviewMode == PREVIEW_LIGHT) {
+        // Для режима света - просто рисуем пол с освещением через OpenGL
         glColor3f(lightColor.r, lightColor.g, lightColor.b);
         for (int z = 0; z < currentConfig.gridDepth; z++) {
             for (int x = 0; x < currentConfig.gridWidth; x++) {
                 float posX = x * cellSize - offsetX;
                 float posZ = z * cellSize - offsetZ;
 
+                glBegin(GL_QUADS);
+                glNormal3f(0.0f, 1.0f, 0.0f);
+                glVertex3f(posX, -0.02f, posZ);
+                glVertex3f(posX + cellSize, -0.02f, posZ);
+                glVertex3f(posX + cellSize, -0.02f, posZ + cellSize);
+                glVertex3f(posX, -0.02f, posZ + cellSize);
+                glEnd();
+            }
+        }
+    }
+    else {
+        // Для режима теней - стандартная отрисовка
+        glColor3f(lightColor.r, lightColor.g, lightColor.b);
+        for (int z = 0; z < currentConfig.gridDepth; z++) {
+            for (int x = 0; x < currentConfig.gridWidth; x++) {
+                float posX = x * cellSize - offsetX;
+                float posZ = z * cellSize - offsetZ;
                 glBegin(GL_QUADS);
                 glNormal3f(0.0f, 1.0f, 0.0f);
                 glVertex3f(posX, -0.02f, posZ);
@@ -4020,89 +3969,101 @@ void renderShadowPreview3D() {
         glEnable(GL_LIGHTING);
     }
 
-    // ========== ОТРИСОВКА ОБЪЕКТОВ ==========
-    auto drawModel3D = [&](Model& model, const glm::vec3& pos, float offset,
-        float scale, float rotation, const glm::vec3& color) {
-            if (model.vertices.empty()) return;
+    // Для режима теней рисуем объекты
+    if (g_currentPreviewMode == PREVIEW_SHADOWS) {
+        static bool modelsInitialized = false;
+        if (!modelsInitialized) {
+            initShadowModels();
+            modelsInitialized = true;
+        }
 
-            glPushMatrix();
-            glTranslatef(pos.x, pos.y + offset * scale, pos.z);
-            if (rotation != 0.0f) glRotatef(rotation, 0.0f, 1.0f, 0.0f);
-            glScalef(scale, scale, scale);
+        float headOffset = getModelBottomOffset(g_previewSnakeHeadModel);
+        float bodyOffset = getModelBottomOffset(g_previewSnakeBodyModel);
+        float tailOffset = getModelBottomOffset(g_previewSnakeTailModel);
+        float treeOffset = getModelBottomOffset(g_previewTreeModel);
+        float appleOffset = getModelBottomOffset(g_previewAppleModel);
 
-            if (model.hasTexture && model.textureID != 0) {
-                glColor3f(1.0f, 1.0f, 1.0f);
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, model.textureID);
-            }
-            else {
-                glDisable(GL_TEXTURE_2D);
-                glColor3f(color.r, color.g, color.b);
-            }
+        float headScale = cellSize * currentConfig.snakeHeadScale;
+        float bodyScale = cellSize * currentConfig.snakeBodyScale;
+        float tailScale = cellSize * currentConfig.snakeTailScale;
+        float treeScale = cellSize * 1.2f;
+        float appleScale = cellSize * 0.6f;
 
-            model.draw();
-            glPopMatrix();
+        glm::vec3 headPos(0.0f, floorHeight, 0.0f);
+        glm::vec3 bodyPos(0.0f, floorHeight, -cellSize);
+        glm::vec3 tailPos(0.0f, floorHeight, -cellSize * 2.0f);
+        std::vector<glm::vec3> snakePositions = { headPos, bodyPos, tailPos };
+
+        float midOffset = worldWidth / 4.0f;
+        float edgeOffset = worldWidth / 2.5f;
+
+        std::vector<glm::vec3> treePositions = {
+            glm::vec3(0.0f, floorHeight, 3.0f * cellSize),
+            glm::vec3(midOffset, floorHeight, midOffset),
+            glm::vec3(edgeOffset, floorHeight, edgeOffset)
         };
 
-    // Змейка
-    drawModel3D(g_previewSnakeHeadModel, headPos, headOffset, headScale,
-        calcRotation(snakePositions, 0), currentConfig.snakeHeadColor);
-    drawModel3D(g_previewSnakeBodyModel, bodyPos, bodyOffset, bodyScale,
-        calcRotation(snakePositions, 1), currentConfig.snakeBodyColor);
-    drawModel3D(g_previewSnakeTailModel, tailPos, tailOffset, tailScale,
-        calcRotation(snakePositions, 2), currentConfig.snakeTailColor);
+        std::vector<glm::vec3> applePositions = {
+            glm::vec3(1.5f * cellSize, floorHeight, 1.5f * cellSize),
+            glm::vec3(0.8f * midOffset, floorHeight, 0.8f * midOffset),
+            glm::vec3(0.8f * edgeOffset, floorHeight, 0.8f * edgeOffset)
+        };
 
-    // Деревья
-    for (const auto& treePos : treePositions) {
-        drawModel3D(g_previewTreeModel, treePos, treeOffset, treeScale, 0.0f, glm::vec3(0.2f, 0.6f, 0.2f));
-    }
+        auto calcRotation = [](const std::vector<glm::vec3>& positions, size_t idx) -> float {
+            if (positions.size() <= 1) return 0.0f;
+            if (idx == 0) {
+                if (positions[0].x > positions[1].x) return 90.0f;
+                if (positions[0].x < positions[1].x) return -90.0f;
+                if (positions[0].z > positions[1].z) return 0.0f;
+                if (positions[0].z < positions[1].z) return 180.0f;
+            }
+            else {
+                if (positions[idx].x > positions[idx - 1].x) return 90.0f;
+                if (positions[idx].x < positions[idx - 1].x) return -90.0f;
+                if (positions[idx].z > positions[idx - 1].z) return 0.0f;
+                if (positions[idx].z < positions[idx - 1].z) return 180.0f;
+            }
+            return 0.0f;
+            };
 
-    // Яблоки
-    for (const auto& applePos : applePositions) {
-        drawModel3D(g_previewAppleModel, applePos, appleOffset, appleScale, 0.0f, glm::vec3(0.9f, 0.2f, 0.2f));
-    }
+        auto drawModel3D = [&](Model& model, const glm::vec3& pos, float offset,
+            float scale, float rotation, const glm::vec3& color) {
+                if (model.vertices.empty()) return;
 
-    // ========== ВИЗУАЛИЗАЦИЯ ИСТОЧНИКА СВЕТА ==========
-    if (g_currentPreviewMode == PREVIEW_LIGHT || currentConfig.lightType != 0) {
-        glDisable(GL_LIGHTING);
-        glDisable(GL_TEXTURE_2D);
-        glPushMatrix();
+                glPushMatrix();
+                glTranslatef(pos.x, pos.y + offset * scale, pos.z);
+                if (rotation != 0.0f) glRotatef(rotation, 0.0f, 1.0f, 0.0f);
+                glScalef(scale, scale, scale);
 
-        if (currentConfig.lightType == 0) {
-            // Направленный свет - рисуем стрелку или линию
-            glm::vec3 lightDirNormalized = glm::normalize(currentConfig.lightDir);
-            glm::vec3 lightSourcePos = glm::vec3(
-                lightDirNormalized.x * 5.0f,
-                5.0f,
-                lightDirNormalized.z * 5.0f
-            );
-            glTranslatef(lightSourcePos.x, lightSourcePos.y, lightSourcePos.z);
-            glColor3f(1.0f, 0.8f, 0.2f);
+                if (model.hasTexture && model.textureID != 0) {
+                    glColor3f(1.0f, 1.0f, 1.0f);
+                    glEnable(GL_TEXTURE_2D);
+                    glBindTexture(GL_TEXTURE_2D, model.textureID);
+                }
+                else {
+                    glDisable(GL_TEXTURE_2D);
+                    glColor3f(color.r, color.g, color.b);
+                }
+
+                model.draw();
+                glPopMatrix();
+            };
+
+        drawModel3D(g_previewSnakeHeadModel, headPos, headOffset, headScale,
+            calcRotation(snakePositions, 0), currentConfig.snakeHeadColor);
+        drawModel3D(g_previewSnakeBodyModel, bodyPos, bodyOffset, bodyScale,
+            calcRotation(snakePositions, 1), currentConfig.snakeBodyColor);
+        drawModel3D(g_previewSnakeTailModel, tailPos, tailOffset, tailScale,
+            calcRotation(snakePositions, 2), currentConfig.snakeTailColor);
+
+        for (const auto& treePos : treePositions) {
+            drawModel3D(g_previewTreeModel, treePos, treeOffset, treeScale, 0.0f, glm::vec3(0.2f, 0.6f, 0.2f));
         }
-        else {
-            // Точечный свет или прожектор - рисуем сферу в позиции источника
-            glTranslatef(currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z);
-            glColor3f(1.0f, 0.8f, 0.2f);
+
+        for (const auto& applePos : applePositions) {
+            drawModel3D(g_previewAppleModel, applePos, appleOffset, appleScale, 0.0f, glm::vec3(0.9f, 0.2f, 0.2f));
         }
-
-        GLUquadric* quad = gluNewQuadric();
-        gluSphere(quad, 0.3f, 16, 16);
-        gluDeleteQuadric(quad);
-
-        // Добавляем свечение (маленькая сфера с альфа)
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glColor4f(1.0f, 0.9f, 0.3f, 0.3f);
-        GLUquadric* glowQuad = gluNewQuadric();
-        gluSphere(glowQuad, 0.5f, 16, 16);
-        gluDeleteQuadric(glowQuad);
-        glDisable(GL_BLEND);
-
-        glPopMatrix();
-        glEnable(GL_LIGHTING);
     }
-
-    glDisable(GL_COLOR_MATERIAL);
 
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
@@ -4122,35 +4083,16 @@ void renderShadowPreview3D() {
     glVertex2f((float)previewX, (float)(previewY + previewH));
     glEnd();
 
-    if (g_currentPreviewMode == PREVIEW_SHADOWS) {
-        drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР ТЕНЕЙ", 1.0f, 1.0f, 0.0f);
-        const char* modeName = "";
-        switch (currentConfig.shadowTraceMode) {
-        case 0: modeName = "CENTER"; break;
-        case 1: modeName = "CORNERS"; break;
-        case 2: modeName = "CENTER_SUBDIV"; break;
-        case 3: modeName = "CORNERS_SUBDIV"; break;
-        }
-        char infoText[300];
-        sprintf_s(infoText, "Тени: %s | Режим: %s | %s | Подклетки: %dx%d | Stride: %dx%d | Zoom: %.1f",
-            currentConfig.shadowMapEnabled ? "ВКЛ" : "ВЫКЛ",
-            modeName,
-            (currentConfig.shadowTraceMode == 1 || currentConfig.shadowTraceMode == 3) ? "градиент" : "бинарный",
-            (currentConfig.shadowTraceMode == 2 || currentConfig.shadowTraceMode == 3) ? SHADOW_SUBDIVISION_SIZE : 1,
-            (currentConfig.shadowTraceMode == 2 || currentConfig.shadowTraceMode == 3) ? SHADOW_SUBDIVISION_SIZE : 1,
-            currentConfig.shadowStrideX, currentConfig.shadowStrideZ,
-            camDistance);
-        drawText((float)(previewX + 10), (float)(previewY + 50), infoText, 0.7f, 0.7f, 0.7f);
-    }
-    else if (g_currentPreviewMode == PREVIEW_LIGHT) {
+    if (g_currentPreviewMode == PREVIEW_LIGHT) {
         drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР ОСВЕЩЕНИЯ", 1.0f, 1.0f, 0.0f);
-        char lightInfo[200];
+
         const char* lightTypeName = currentConfig.lightType == 0 ? "Направленный" :
             (currentConfig.lightType == 1 ? "Точечный" : "Прожектор");
-        sprintf_s(lightInfo, "Тип: %s | Цвет: R=%.2f G=%.2f B=%.2f | Zoom: %.1f",
+
+        char lightInfo[200];
+        sprintf_s(lightInfo, "Тип: %s | Цвет: R=%.2f G=%.2f B=%.2f",
             lightTypeName,
-            currentConfig.lightColor.r, currentConfig.lightColor.g, currentConfig.lightColor.b,
-            camDistance);
+            currentConfig.lightColor.r, currentConfig.lightColor.g, currentConfig.lightColor.b);
         drawText((float)(previewX + 10), (float)(previewY + 50), lightInfo, 0.7f, 0.7f, 0.7f);
 
         if (currentConfig.lightType != 0) {
@@ -4165,6 +4107,14 @@ void renderShadowPreview3D() {
                 currentConfig.lightDir.x, currentConfig.lightDir.y, currentConfig.lightDir.z);
             drawText((float)(previewX + 10), (float)(previewY + 75), dirInfo, 0.7f, 0.7f, 0.7f);
         }
+    }
+    else if (g_currentPreviewMode == PREVIEW_SHADOWS) {
+        drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР ТЕНЕЙ", 1.0f, 1.0f, 0.0f);
+        char shadowInfo[200];
+        sprintf_s(shadowInfo, "Режим: %s | Тени: %s",
+            currentConfig.getShadowModeName(),
+            currentConfig.shadowMapEnabled ? "ВКЛ" : "ВЫКЛ");
+        drawText((float)(previewX + 10), (float)(previewY + 50), shadowInfo, 0.7f, 0.7f, 0.7f);
     }
 
     drawText((float)(previewX + 10), (float)(previewY + previewH - 20),
