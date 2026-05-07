@@ -142,6 +142,7 @@
     <ClCompile Include="..\ractica\ConfigEditor\ConfigEditor.cpp" />
     <ClCompile Include="..\ractica\ConfigEditor\ConfigManager.cpp" />
     <ClCompile Include="..\ractica\Graphics\Model.cpp" />
+    <ClCompile Include="..\ractica\Graphics\ShadowMapper.cpp" />
     <ClCompile Include="..\ractica\Primitives\ApplePrimitive.cpp" />
     <ClCompile Include="..\ractica\Primitives\BirdPrimitive.cpp" />
     <ClCompile Include="..\ractica\Primitives\CloudPrimitive.cpp" />
@@ -157,6 +158,7 @@
     <ClInclude Include="..\ractica\ConfigEditor\ConfigEditor.h" />
     <ClInclude Include="..\ractica\ConfigEditor\ConfigManager.h" />
     <ClInclude Include="..\ractica\Graphics\Model.h" />
+    <ClInclude Include="..\ractica\Graphics\ShadowMapper.h" />
     <ClInclude Include="..\ractica\Primitives\ApplePrimitive.h" />
     <ClInclude Include="..\ractica\Primitives\BirdPrimitive.h" />
     <ClInclude Include="..\ractica\Primitives\CloudPrimitive.h" />

@@ -46,6 +46,14 @@
 #include "../Primitives/SnakeBodyPrimitive.h"
 #include "../Primitives/SnakeTailPrimitive.h"
 #include <functional>
+#include "../Graphics/ShadowMapper.h"
+
+// Глобальные переменные для теней в редакторе
+static ShadowMapper g_previewStaticShadow;
+static ShadowMapper g_previewDynamicShadow;
+static ShadowMapper g_previewFoodShadow;
+static bool g_previewShadowsInitialized = false;
+static bool g_previewShadowsDirty = true;
 // После существующих глобальных переменных добавить:
 // Модели для предпросмотра (как в GameRenderer)
 Model g_previewSnakeHeadModel;
@@ -66,10 +74,15 @@ GameConfig currentConfig;
 // Добавить после функции loadFBXModel:
 // Добавить после других функций:
 // Функция инициализации света (вызвать ОДИН раз в initOpenGL())
+
 void initLighting() {
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_NORMALIZE);
+
+    // Включаем GL_COLOR_MATERIAL для автоматического затенения
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
     // Начальные настройки (потом обновятся в updateLightPosition)
     GLfloat light_ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
@@ -84,7 +97,7 @@ void initLighting() {
     // Оставляем по умолчанию GL_FALSE
 }
 
-// ТОЧНАЯ копия GameRenderer::updateLightPosition()
+// Функция обновления позиции света - должна вызываться с единичной ModelView матрицей
 void updateLightPosition() {
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
@@ -110,9 +123,9 @@ void updateLightPosition() {
         };
         glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
 
-        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.8f);
-        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.07f);
-        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.02f);
+        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 1.0f);
+        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.0f);
+        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.0f);
         break;
     }
     case 2: { // Spot
@@ -2638,7 +2651,30 @@ void renderLightEditor() {
 //=============================================================================
 // РЕДАКТОР ТЕНЕЙ
 //=============================================================================
-// Добавьте эту функцию перед renderShadowEditor()
+// Функция для вычисления bounding sphere модели (как в GameRenderer::rayIntersectsModel)
+static void getModelBoundingSphere(const Model& model, float scale, glm::vec3& outCenter, float& outRadius) {
+    if (model.vertices.empty()) {
+        outCenter = glm::vec3(0.0f);
+        outRadius = 0.5f;
+        return;
+    }
+
+    float minX = model.vertices[0].position.x;
+    float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
+
+    for (const auto& v : model.vertices) {
+        minX = std::min(minX, v.position.x);
+        maxX = std::max(maxX, v.position.x);
+        minY = std::min(minY, v.position.y);
+        maxY = std::max(maxY, v.position.y);
+        minZ = std::min(minZ, v.position.z);
+        maxZ = std::max(maxZ, v.position.z);
+    }
+
+    outCenter = glm::vec3((minX + maxX) / 2.0f, (minY + maxY) / 2.0f, (minZ + maxZ) / 2.0f) * scale;
+    outRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) / 2.0f * scale;
+}
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ - свет НЕ зависит от камеры
 void renderShadowPreview3D() {
     int previewX = (int)(windowWidth * 0.55f);
     int previewY = (int)(windowHeight * 0.12f);
@@ -2663,7 +2699,7 @@ void renderShadowPreview3D() {
     glDepthFunc(GL_LESS);
     glDisable(GL_BLEND);
 
-    // Проекция
+    // ========== ПРОЕКЦИЯ ==========
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -2671,16 +2707,20 @@ void renderShadowPreview3D() {
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     glLoadMatrixf(glm::value_ptr(projection));
 
-    // ModelView
+    // ========== MODELVIEW - УСТАНОВКА СВЕТА В МИРОВЫХ КООРДИНАТАХ ==========
     glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
 
-    // Камера
+    // КЛЮЧЕВОЙ МОМЕНТ: Сначала устанавливаем свет в мировых координатах
+    glPushMatrix();
+    glLoadIdentity();  // Сбрасываем матрицу - свет НЕ зависит от камеры!
+   
+    glPopMatrix();
+
+    // ========== КАМЕРА (view transformation) ==========
     float radPitch = glm::radians(previewCameraPitch);
     float radYaw = glm::radians(previewRotationAngle);
 
-    glm::vec3 center(0.0f, 0.5f, 0.0f);
+    glm::vec3 center(0.0f, 0.0f, 0.0f);
     float camX = sin(radYaw) * cos(radPitch) * previewCameraDistance;
     float camY = sin(radPitch) * previewCameraDistance;
     float camZ = cos(radYaw) * cos(radPitch) * previewCameraDistance;
@@ -2690,18 +2730,164 @@ void renderShadowPreview3D() {
     gluLookAt(eye.x, eye.y, eye.z,
         center.x, center.y, center.z,
         up.x, up.y, up.z);
-
-    // Свет - ПОСЛЕ камеры
     updateLightPosition();
-    // Теперь GL_LIGHTING включен и будет автоматически затенять модели
+    // ========== ЗАГРУЖАЕМ МОДЕЛИ ==========
+    Model snakeHeadModel, snakeBodyModel, snakeTailModel;
+    Model treeModel, appleModel;
+
+    loadModelWithFallback(currentConfig.snakeHeadModel, snakeHeadModel, "snake_head",
+        [](Model& m) { SnakeHeadPrimitive::create(m); });
+    loadModelWithFallback(currentConfig.snakeBodyModel, snakeBodyModel, "snake_body",
+        [](Model& m) { SnakeBodyPrimitive::create(m); });
+    loadModelWithFallback(currentConfig.snakeTailModel, snakeTailModel, "snake_tail",
+        [](Model& m) { SnakeTailPrimitive::create(m); });
+    loadModelWithFallback(currentConfig.treeModel, treeModel, "obstacles",
+        [](Model& m) { TreePrimitive::create(m); });
+    loadModelWithFallback(currentConfig.appleModel, appleModel, "food",
+        [](Model& m) { ApplePrimitive::create(m); });
+
+    float cellSize = currentConfig.cellSize;
+    float floorHeight = 0.0f;
+
+    // ========== СОЗДАЁМ SHADOWMAPPER (как в GameRenderer) ==========
+    static ShadowMapper previewStaticShadow;
+    static bool shadowsInitialized = false;
+
+    if (currentConfig.shadowMapEnabled) {
+        // Создаём ShadowMapper с параметрами из конфига
+        previewStaticShadow = ShadowMapper(
+            currentConfig.gridWidth, currentConfig.gridDepth,
+            currentConfig.cellSize, floorHeight,
+            currentConfig.lightDir, currentConfig.lightColor,
+            static_cast<LightType>(currentConfig.lightType), currentConfig.lightPos,
+            currentConfig.shadowStrideX, currentConfig.shadowStrideZ
+        );
+
+        // Устанавливаем режим трассировки
+        ShadowMapper::ShadowTraceMode mode;
+        switch (currentConfig.shadowTraceMode) {
+        case 0: mode = ShadowMapper::TRACE_CENTER; break;
+        case 1: mode = ShadowMapper::TRACE_CORNERS; break;
+        case 2: mode = ShadowMapper::TRACE_CENTER_SUBDIVIDED; break;
+        case 3: mode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
+        default: mode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
+        }
+        previewStaticShadow.setShadowTraceMode(mode);
+
+        // Отключаем сферы (как в GameRenderer)
+        previewStaticShadow.setUseSpheres(false);
+        previewStaticShadow.clearObjectBounds();
+        previewStaticShadow.setGrid(currentConfig.gridWidth, currentConfig.gridDepth,
+            currentConfig.cellSize, floorHeight);
+
+        // Устанавливаем callback для пересечения (как в GameRenderer)
+        previewStaticShadow.setIntersectCallback(
+            [&treeModel, &snakeHeadModel, &snakeBodyModel, &snakeTailModel, &appleModel, cellSize, floorHeight]
+            (const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+
+                float offsetX = currentConfig.gridWidth * cellSize / 2.0f;
+                float offsetZ = currentConfig.gridDepth * cellSize / 2.0f;
+
+                // Позиции объектов (те же, что и при рисовании)
+                std::vector<std::pair<glm::vec3, float>> objects;
+
+                // Функция для вычисления bounding sphere
+                auto getSphere = [](const Model& model, const glm::vec3& pos, float scale, float yOffset)
+                    -> std::pair<glm::vec3, float> {
+                    if (model.vertices.empty()) return { pos, 0.5f };
+
+                    float minX = model.vertices[0].position.x;
+                    float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
+                    for (const auto& v : model.vertices) {
+                        minX = std::min(minX, v.position.x);
+                        maxX = std::max(maxX, v.position.x);
+                        minY = std::min(minY, v.position.y);
+                        maxY = std::max(maxY, v.position.y);
+                        minZ = std::min(minZ, v.position.z);
+                        maxZ = std::max(maxZ, v.position.z);
+                    }
+
+                    glm::vec3 center((minX + maxX) / 2.0f, (minY + maxY) / 2.0f, (minZ + maxZ) / 2.0f);
+                    float radius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) / 2.0f;
+
+                    return { glm::vec3(pos.x + center.x * scale,
+                                      pos.y + center.y * scale + yOffset,
+                                      pos.z + center.z * scale),
+                            radius * scale };
+                    };
+
+                // Деревья
+                float treeScale = cellSize * 1.2f;
+                objects.push_back(getSphere(treeModel, glm::vec3(2.5f, floorHeight, -2.0f), treeScale, 0.0f));
+                objects.push_back(getSphere(treeModel, glm::vec3(-2.5f, floorHeight, -2.0f), treeScale, 0.0f));
+
+                // Змейка
+                float headScale = cellSize * currentConfig.snakeHeadScale;
+                objects.push_back(getSphere(snakeHeadModel, glm::vec3(0.0f, floorHeight, 0.0f), headScale, 0.05f));
+
+                float bodyScale = cellSize * currentConfig.snakeBodyScale;
+                objects.push_back(getSphere(snakeBodyModel, glm::vec3(-0.8f, floorHeight, 0.0f), bodyScale, 0.05f));
+
+                float tailScale = cellSize * currentConfig.snakeTailScale;
+                objects.push_back(getSphere(snakeTailModel, glm::vec3(-1.6f, floorHeight, 0.0f), tailScale, 0.05f));
+
+                // Яблоко
+                float appleScale = cellSize * 0.6f;
+                objects.push_back(getSphere(appleModel, glm::vec3(1.0f, floorHeight, 1.0f), appleScale, 0.05f));
+
+                // Проверяем пересечение со всеми сферами
+                float closestDist = 1000.0f;
+                bool hit = false;
+
+                for (const auto& obj : objects) {
+                    float t;
+                    glm::vec3 oc = ray.origin - obj.first;
+                    float a = glm::dot(ray.direction, ray.direction);
+                    float b = 2.0f * glm::dot(oc, ray.direction);
+                    float c = glm::dot(oc, oc) - obj.second * obj.second;
+                    float discriminant = b * b - 4 * a * c;
+
+                    if (discriminant >= 0) {
+                        float sqrtD = sqrt(discriminant);
+                        float t1 = (-b - sqrtD) / (2.0f * a);
+                        float t2 = (-b + sqrtD) / (2.0f * a);
+
+                        if (t1 > 0.01f && t1 < closestDist) {
+                            closestDist = t1;
+                            hitPoint = ray.pointAt(t1);
+                            hit = true;
+                        }
+                        if (t2 > 0.01f && t2 < closestDist) {
+                            closestDist = t2;
+                            hitPoint = ray.pointAt(t2);
+                            hit = true;
+                        }
+                    }
+                }
+
+                if (hit) {
+                    hitDist = closestDist;
+                    return true;
+                }
+                return false;
+            }
+        );
+
+        // Вычисляем тени
+        previewStaticShadow.computeShadows();
+        shadowsInitialized = true;
+    }
+
+    // ========== ВКЛЮЧАЕМ GL_COLOR_MATERIAL ==========
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
     float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
     float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
     float offsetX = worldWidth / 2.0f;
     float offsetZ = worldDepth / 2.0f;
-    float floorHeight = 0.0f;
 
-    // Сетка (без освещения)
+    // ========== Сетка ==========
     if (currentConfig.gridEnabled) {
         glDisable(GL_LIGHTING);
         glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
@@ -2719,14 +2905,10 @@ void renderShadowPreview3D() {
         }
         glEnd();
         glLineWidth(1.0f);
-        glEnable(GL_LIGHTING);  // Включаем обратно для моделей
+        glEnable(GL_LIGHTING);
     }
 
-    // ВАЖНО: включаем GL_COLOR_MATERIAL для автоматического затенения
-    glEnable(GL_COLOR_MATERIAL);
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-
-    // Пол (с освещением)
+    // ========== Пол с тенями ==========
     bool useFloorTexture = !currentConfig.floorTexture.empty() && floorTexture.id != 0;
     if (useFloorTexture) {
         glEnable(GL_TEXTURE_2D);
@@ -2737,32 +2919,62 @@ void renderShadowPreview3D() {
         glDisable(GL_TEXTURE_2D);
     }
 
-    glColor3f(currentConfig.floorColor.r, currentConfig.floorColor.g, currentConfig.floorColor.b);
-    glBegin(GL_QUADS);
-    glNormal3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(-offsetX, floorHeight - 0.02f, -offsetZ);
-    glVertex3f(offsetX, floorHeight - 0.02f, -offsetZ);
-    glVertex3f(offsetX, floorHeight - 0.02f, offsetZ);
-    glVertex3f(-offsetX, floorHeight - 0.02f, offsetZ);
-    glEnd();
+    bool useGradient = (currentConfig.shadowTraceMode == 1 || currentConfig.shadowTraceMode == 3);
+    glm::vec3 darkColor = currentConfig.floorColor * 0.15f;
+    glm::vec3 lightColor = currentConfig.floorColor;
+
+    for (int z = 0; z < currentConfig.gridDepth; z++) {
+        for (int x = 0; x < currentConfig.gridWidth; x++) {
+            float posX = x * currentConfig.cellSize - offsetX;
+            float posZ = z * currentConfig.cellSize - offsetZ;
+
+            float shadowValue = 1.0f;
+
+            if (currentConfig.shadowMapEnabled && shadowsInitialized) {
+                shadowValue = previewStaticShadow.getShadowAtCell(x, z);
+                shadowValue = glm::clamp(shadowValue, 0.2f, 1.0f);
+            }
+
+            glm::vec3 finalColor;
+            if (useGradient && currentConfig.shadowMapEnabled) {
+                finalColor = glm::mix(darkColor, lightColor, shadowValue);
+            }
+            else if (currentConfig.shadowMapEnabled) {
+                shadowValue = (shadowValue >= 0.5f) ? 1.0f : 0.0f;
+                finalColor = lightColor * shadowValue;
+            }
+            else {
+                finalColor = lightColor;
+            }
+
+            glColor3f(finalColor.r, finalColor.g, finalColor.b);
+
+            glBegin(GL_QUADS);
+            glNormal3f(0.0f, 1.0f, 0.0f);
+
+            if (useFloorTexture && floorTexture.id != 0) {
+                float u1 = (float)x / currentConfig.gridWidth;
+                float v1 = (float)z / currentConfig.gridDepth;
+                float u2 = (float)(x + 1) / currentConfig.gridWidth;
+                float v2 = (float)(z + 1) / currentConfig.gridDepth;
+                glTexCoord2f(u1, v1); glVertex3f(posX, -0.02f, posZ);
+                glTexCoord2f(u2, v1); glVertex3f(posX + currentConfig.cellSize, -0.02f, posZ);
+                glTexCoord2f(u2, v2); glVertex3f(posX + currentConfig.cellSize, -0.02f, posZ + currentConfig.cellSize);
+                glTexCoord2f(u1, v2); glVertex3f(posX, -0.02f, posZ + currentConfig.cellSize);
+            }
+            else {
+                glVertex3f(posX, -0.02f, posZ);
+                glVertex3f(posX + currentConfig.cellSize, -0.02f, posZ);
+                glVertex3f(posX + currentConfig.cellSize, -0.02f, posZ + currentConfig.cellSize);
+                glVertex3f(posX, -0.02f, posZ + currentConfig.cellSize);
+            }
+            glEnd();
+        }
+    }
 
     glDisable(GL_TEXTURE_2D);
 
-    // Загружаем модели
-    Model snakeHeadModel, snakeBodyModel, snakeTailModel;
-    Model treeModel, appleModel;
-
-    loadModelWithFallback(currentConfig.snakeHeadModel, snakeHeadModel, "snake_head",
-        [](Model& m) { SnakeHeadPrimitive::create(m); });
-    loadModelWithFallback(currentConfig.snakeBodyModel, snakeBodyModel, "snake_body",
-        [](Model& m) { SnakeBodyPrimitive::create(m); });
-    loadModelWithFallback(currentConfig.snakeTailModel, snakeTailModel, "snake_tail",
-        [](Model& m) { SnakeTailPrimitive::create(m); });
-    loadModelWithFallback(currentConfig.treeModel, treeModel, "obstacles",
-        [](Model& m) { TreePrimitive::create(m); });
-    loadModelWithFallback(currentConfig.appleModel, appleModel, "food",
-        [](Model& m) { ApplePrimitive::create(m); });
-
+    // ========== РИСУЕМ ОБЪЕКТЫ ==========
     auto getModelBottomOffset = [](const Model& model) -> float {
         if (model.vertices.empty()) return 0.0f;
         float minY = FLT_MAX;
@@ -2772,9 +2984,6 @@ void renderShadowPreview3D() {
         return -minY;
         };
 
-    float cellSize = currentConfig.cellSize;
-
-    // Функция рисования с автоматическим затенением
     auto drawSegmentWithColor = [&](Model& model, const glm::vec3& pos, float offset, float scale, const glm::vec3& color) {
         glPushMatrix();
         glTranslatef(pos.x, pos.y + offset * scale + 0.05f, pos.z);
@@ -2798,33 +3007,32 @@ void renderShadowPreview3D() {
         glPopMatrix();
         };
 
-    // Змейка (автоматически затеняется)
+    // Змейка
     drawSegmentWithColor(snakeHeadModel, glm::vec3(0.0f, floorHeight, 0.0f),
         getModelBottomOffset(snakeHeadModel), cellSize * currentConfig.snakeHeadScale,
         currentConfig.snakeHeadColor);
-
     drawSegmentWithColor(snakeBodyModel, glm::vec3(-0.8f, floorHeight, 0.0f),
         getModelBottomOffset(snakeBodyModel), cellSize * currentConfig.snakeBodyScale,
         currentConfig.snakeBodyColor);
-
     drawSegmentWithColor(snakeTailModel, glm::vec3(-1.6f, floorHeight, 0.0f),
         getModelBottomOffset(snakeTailModel), cellSize * currentConfig.snakeTailScale,
         currentConfig.snakeTailColor);
 
-    // Деревья (автоматически затеняются)
+    // Деревья
     float treeOffset = getModelBottomOffset(treeModel);
-    float treeScale = cellSize * 1.2f;
-    drawSegmentWithColor(treeModel, glm::vec3(2.5f, floorHeight, -2.0f), treeOffset, treeScale,
+    float treeScaleDraw = cellSize * 1.2f;
+    drawSegmentWithColor(treeModel, glm::vec3(2.5f, floorHeight, -2.0f), treeOffset, treeScaleDraw,
         glm::vec3(0.2f, 0.6f, 0.2f));
-    drawSegmentWithColor(treeModel, glm::vec3(-2.5f, floorHeight, -2.0f), treeOffset, treeScale,
+    drawSegmentWithColor(treeModel, glm::vec3(-2.5f, floorHeight, -2.0f), treeOffset, treeScaleDraw,
         glm::vec3(0.2f, 0.6f, 0.2f));
 
-    // Яблоко (автоматически затеняется)
+    // Яблоко
+    float appleOffset = getModelBottomOffset(appleModel);
     drawSegmentWithColor(appleModel, glm::vec3(1.0f, floorHeight, 1.0f),
-        getModelBottomOffset(appleModel), cellSize * 0.6f,
+        appleOffset, cellSize * 0.6f,
         glm::vec3(0.9f, 0.2f, 0.2f));
 
-    // Источник света (сфера - без освещения)
+    // Источник света
     if (currentConfig.lightType != 0) {
         glDisable(GL_LIGHTING);
         glDisable(GL_TEXTURE_2D);
@@ -2845,11 +3053,12 @@ void renderShadowPreview3D() {
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
+
     glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
     glDisable(GL_SCISSOR_TEST);
     reset2DProjection();
 
-    // UI
+    // UI (без изменений, как в вашем оригинале)
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f((float)previewX, (float)previewY);
@@ -2869,17 +3078,17 @@ void renderShadowPreview3D() {
     if (currentConfig.lightType == 2) lightTypeName = "Прожектор";
 
     char infoText[200];
-    sprintf_s(infoText, "Свет: %s | Позиция: (%.1f, %.1f, %.1f) | Тени: %s",
+    sprintf_s(infoText, "Свет: %s | Позиция: (%.1f, %.1f, %.1f) | Тени: %s | Режим: %d",
         lightTypeName,
         currentConfig.lightPos.x, currentConfig.lightPos.y, currentConfig.lightPos.z,
-        currentConfig.shadowMapEnabled ? "ВКЛ" : "ВЫКЛ");
+        currentConfig.shadowMapEnabled ? "ВКЛ" : "ВЫКЛ",
+        currentConfig.shadowTraceMode);
     drawText((float)(previewX + 10), (float)(previewY + 50), infoText, 0.8f, 0.8f, 1.0f);
 
     char distInfo[50];
     sprintf_s(distInfo, "Дист: %.1f | Автовращ: %s", previewCameraDistance, previewAutoRotate ? "ВКЛ" : "ВЫКЛ");
     drawText((float)(previewX + previewW - 150), (float)(previewY + 25), distInfo, 1.0f, 1.0f, 0.0f);
 
-    // Кнопки управления
     int arrowY = (int)(previewY + previewH + 15);
     int arrowCenterX = (int)(previewX + previewW / 2);
 
@@ -2918,6 +3127,7 @@ void renderShadowPreview3D() {
     }
     if (previewRotationAngle >= 360) previewRotationAngle -= 360;
 }
+
 void renderShadowEditor() {
     reset2DProjection();
     drawCenteredText((float)(windowHeight * 0.05f), "НАСТРОЙКИ ТЕНЕЙ", 1.0f, 1.0f, 0.0f);
@@ -2996,7 +3206,6 @@ void renderShadowEditor() {
         saveConfig();
     }
 }
-
 
 //=============================================================================
 // ГЛАВНОЕ МЕНЮ
