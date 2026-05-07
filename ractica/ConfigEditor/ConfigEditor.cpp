@@ -2549,6 +2549,8 @@ void renderGroundSkyEditor() {
         }
     }
 
+    static bool useTileMode = true;  // Режим плиток (всегда включён)
+
     if (selectedGroundSky == 0) {
         VisualElement* ground = groundSkyElements[0];
 
@@ -2559,6 +2561,7 @@ void renderGroundSkyEditor() {
 
         drawText((float)editX, (float)(editY - 20), ground->name, 1.0f, 1.0f, 0.0f);
 
+        // Модель
         int modelY = editY;
         drawText((float)editX, (float)(modelY + 20), "Модель:", 1.0f, 1.0f, 1.0f);
 
@@ -2575,10 +2578,10 @@ void renderGroundSkyEditor() {
             updatePreviewForCurrentMode();
         }
 
+        // Текстура
         int textureY = modelY + 90;
         drawText((float)editX, (float)textureY, "Текстура:", 1.0f, 1.0f, 1.0f);
 
-        // Отображаем информацию о текущей текстуре
         if (floorTexture.id != 0) {
             drawText((float)(editX + 100), (float)textureY, truncateFilename(ground->textureFile, 20).c_str(), 0.0f, 1.0f, 0.0f);
         }
@@ -2591,15 +2594,15 @@ void renderGroundSkyEditor() {
 
         if (drawButton(editX, textureY + 20, buttonWidth, 30, "ЗАГРУЗИТЬ ТЕКСТУРУ")) {
             openTextureFileDialog(ground->textureFile, floorTexture);
-            // После загрузки текстуры, добавляем её в previewModel
+            // ВАЖНО: после загрузки текстуры, добавляем её в previewModel
             if (floorTexture.id != 0) {
-                // Очищаем старые материалы
                 previewModel.materials.clear();
                 Material mat;
                 mat.textureID = floorTexture.id;
                 previewModel.materials.push_back(mat);
-                std::cout << "Added separate texture to previewModel with ID: " << floorTexture.id << std::endl;
+                std::cout << "Texture loaded and added to previewModel with ID: " << floorTexture.id << std::endl;
             }
+            updatePreviewForCurrentMode();
         }
 
         if (drawButton(editX + buttonSpacing, textureY + 20, buttonWidth, 30, "СБРОСИТЬ ТЕКСТУРУ")) {
@@ -2608,12 +2611,11 @@ void renderGroundSkyEditor() {
                 glDeleteTextures(1, &floorTexture.id);
                 floorTexture.id = 0;
             }
-            // Очищаем материалы в previewModel, если это была отдельная текстура
-            if (!previewModel.materials.empty() && previewModel.materials[0].textureID == floorTexture.id) {
-                previewModel.materials.clear();
-            }
+            previewModel.materials.clear();
+            updatePreviewForCurrentMode();
         }
 
+        // Цвет пола (влияет на текстуру)
         int colorY = textureY + 80;
         drawText((float)editX, (float)colorY, "Цвет пола:", 1.0f, 1.0f, 1.0f);
 
@@ -2643,10 +2645,29 @@ void renderGroundSkyEditor() {
             currentConfig.floorColor = ground->color;
         }
 
-        if (drawButton(editX, colorY + 110, 150, 35, "ОЧИСТИТЬ ВСЕ")) {
+        // Кнопка для переключения режима текстуры
+        bool hasTexture = (previewModel.loaded && !previewModel.materials.empty() && previewModel.materials[0].textureID != 0) ||
+            (floorTexture.id != 0);
+        if (hasTexture) {
+            int texColorY = colorY + 100;
+            drawText((float)editX, (float)texColorY, "Режим текстуры:", 1.0f, 1.0f, 1.0f);
+
+            std::string texBtnText = std::string("Цвет для текстуры: ") +
+                (ground->useTextureColor ? "ВКЛ" : "ВЫКЛ");
+            if (drawButton(editX, texColorY + 20, 200, 35, texBtnText.c_str())) {
+                ground->useTextureColor = !ground->useTextureColor;
+            }
+
+            if (drawButton(editX + 220, texColorY + 20, 100, 35, "СБРОСИТЬ")) {
+                ground->useTextureColor = true;
+            }
+        }
+
+        if (drawButton(editX, (int)(windowHeight * 0.75f), 150, 35, "ОЧИСТИТЬ ВСЕ")) {
             ground->modelFile = "";
             ground->textureFile = "";
             ground->color = glm::vec3(0.3f, 0.6f, 0.2f);
+            ground->useTextureColor = true;
             currentConfig.floorColor = ground->color;
             if (floorTexture.id != 0) {
                 glDeleteTextures(1, &floorTexture.id);
@@ -2656,7 +2677,7 @@ void renderGroundSkyEditor() {
             updatePreviewForCurrentMode();
         }
 
-        // ========== 3D ПРЕДПРОСМОТР ПОЛА ==========
+        // ========== 3D ПРЕДПРОСМОТР ПОЛА С ТАЙЛИНГОМ ==========
         int previewX = (int)(windowWidth * 0.46f);
         int previewY = (int)(windowHeight * 0.12f);
         int previewW = (int)(windowWidth * 0.36f);
@@ -2702,70 +2723,197 @@ void renderGroundSkyEditor() {
         float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
         float offsetX = worldWidth / 2.0f;
         float offsetZ = worldDepth / 2.0f;
+        float floorHeight = -0.05f;
 
-        // Определяем, есть ли текстура
-        bool hasTexture = false;
-        GLuint textureID = 0;
+        // ========== ОТРИСОВКА ПЛИТОЧНОГО ПОЛА С АВТОМАТИЧЕСКИМ РАСЧЁТОМ ==========
+        if (useTileMode && previewModel.loaded && !previewModel.vertices.empty()) {
+            // ВЫЧИСЛЯЕМ BOUNDING BOX МОДЕЛИ
+            float minX_m = FLT_MAX, maxX_m = -FLT_MAX;
+            float minY_m = FLT_MAX, maxY_m = -FLT_MAX;
+            float minZ_m = FLT_MAX, maxZ_m = -FLT_MAX;
 
-        // Сначала проверяем отдельно загруженную текстуру
-        if (floorTexture.id != 0) {
-            hasTexture = true;
-            textureID = floorTexture.id;
-            std::cout << "Using separate floor texture ID: " << textureID << std::endl;
+            for (size_t i = 0; i < previewModel.vertices.size() / 3; i++) {
+
+                float vx = previewModel.vertices[i * 3];
+                float vy = previewModel.vertices[i * 3 + 1];
+                float vz = previewModel.vertices[i * 3 + 2];
+                minX_m = std::min(minX_m, vx);
+                maxX_m = std::max(maxX_m, vx);
+                minY_m = std::min(minY_m, vy);
+                maxY_m = std::max(maxY_m, vy);
+                minZ_m = std::min(minZ_m, vz);
+                maxZ_m = std::max(maxZ_m, vz);
+            }
+
+            float modelWidth = (maxX_m - minX_m);
+            float modelDepth = (maxZ_m - minZ_m);
+            float modelHeight = (maxY_m - minY_m);
+
+            // АВТОМАТИЧЕСКИЙ РАСЧЁТ РАЗМЕРА ПЛИТКИ
+            // Целевой размер плитки - чтобы помещалось целое количество по ширине и глубине
+            int desiredTilesPerRow = 5;  // Хотим 10 моделей в ряду
+            float targetTileSize = worldWidth / desiredTilesPerRow;
+
+            // Вычисляем масштаб для модели, чтобы её ширина/глубина стала targetTileSize
+            float scaleToFit = targetTileSize / std::max(modelWidth, modelDepth);
+
+            // Фактический размер плитки после масштабирования
+            float actualTileWidth = modelWidth * scaleToFit;
+            float actualTileDepth = modelDepth * scaleToFit;
+
+            // Вычисляем, сколько целых плиток помещается по ширине и глубине
+            int tilesX = std::max(1, (int)(worldWidth / actualTileWidth));
+            int tilesZ = std::max(1, (int)(worldDepth / actualTileDepth));
+
+            // Корректируем размер плитки, чтобы целое количество точно заполнило поле
+            float finalTileWidth = worldWidth / tilesX;
+            float finalTileDepth = worldDepth / tilesZ;
+
+            // Финальный масштаб модели
+            float finalScale = finalTileWidth / std::max(modelWidth, modelDepth);
+
+            // Информация для отладки
+            std::cout << "Model bounds: W=" << modelWidth << " D=" << modelDepth << " H=" << modelHeight << std::endl;
+            std::cout << "World size: W=" << worldWidth << " D=" << worldDepth << std::endl;
+            std::cout << "Tiles: " << tilesX << " x " << tilesZ << std::endl;
+            std::cout << "Final tile size: " << finalTileWidth << " x " << finalTileDepth << std::endl;
+
+            // Начальная позиция (центрируем плитки)
+            float startX = -offsetX;
+            float startZ = -offsetZ;
+
+            // Определяем, использовать ли цвет с текстурой
+            bool hasTexture = (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0) ||
+                (floorTexture.id != 0);
+            GLuint textureID = 0;
+            if (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0) {
+                textureID = previewModel.materials[0].textureID;
+                std::cout << "Using texture from model, ID: " << textureID << std::endl;
+            }
+            else if (floorTexture.id != 0) {
+                textureID = floorTexture.id;
+                std::cout << "Using separate texture, ID: " << textureID << std::endl;
+            }
+            else {
+                std::cout << "No texture available" << std::endl;
+            }
+
+            // Рисуем плитки
+            for (int ix = 0; ix < tilesX; ix++) {
+                for (int iz = 0; iz < tilesZ; iz++) {
+                    float posX = startX + ix * finalTileWidth + finalTileWidth / 2.0f;
+                    float posZ = startZ + iz * finalTileDepth + finalTileDepth / 2.0f;
+
+                    glPushMatrix();
+                    // Позиционируем так, чтобы верх модели был на Y=0
+                    // minY_m - это самая нижняя точка модели (отрицательное значение или 0)
+                    // maxY_m - самая верхняя точка
+                    glTranslatef(posX, floorHeight - (minY_m * finalScale), posZ);
+                    if (previewModel.loaded && !previewModel.vertices.empty()) {
+                        glRotatef(90.0f, 1.0f, 0.0f, 0.0f); // Поворот вокруг X
+                    }
+                    glScalef(finalScale, finalScale, finalScale);
+
+                    if (hasTexture && textureID != 0) {
+                        glEnable(GL_TEXTURE_2D);
+                        glBindTexture(GL_TEXTURE_2D, textureID);
+                        if (ground->useTextureColor) {
+                            glColor3f(ground->color.r, ground->color.g, ground->color.b);
+                        }
+                        else {
+                            glColor3f(1.0f, 1.0f, 1.0f);
+                        }
+                    }
+                    else {
+                        glDisable(GL_TEXTURE_2D);
+                        glColor3f(ground->color.r, ground->color.g, ground->color.b);
+                    }
+
+                    glBegin(GL_TRIANGLES);
+                    for (size_t i = 0; i < previewModel.vertices.size() / 3; i++) {
+                        if (hasTexture && textureID != 0 && !previewModel.texCoords.empty() && i * 2 + 1 < previewModel.texCoords.size()) {
+                            glTexCoord2f(previewModel.texCoords[i * 2], previewModel.texCoords[i * 2 + 1]);
+                        }
+                        glVertex3f(previewModel.vertices[i * 3],
+                            previewModel.vertices[i * 3 + 1],
+                            previewModel.vertices[i * 3 + 2]);
+                    }
+                    glEnd();
+
+                    glPopMatrix();
+                }
+            }
+
+            if (hasTexture && textureID != 0) {
+                glBindTexture(GL_TEXTURE_2D, 0);
+                glDisable(GL_TEXTURE_2D);
+            }
+
+            drawText((float)(previewX + 10), (float)(previewY + 25), "3D ПЛИТКИ (АВТОМАТИЧЕСКИЙ ТАЙЛИНГ)", 1.0f, 1.0f, 0.0f);
+
+            char tileInfo[200];
+            sprintf_s(tileInfo, "Плитки: %d x %d = %d | Размер: %.2fм x %.2fм",
+                tilesX, tilesZ, tilesX * tilesZ, finalTileWidth, finalTileDepth);
+            drawText((float)(previewX + 10), (float)(previewY + 50), tileInfo, 0.0f, 1.0f, 0.0f);
+
+            char modelInfo[100];
+            sprintf_s(modelInfo, "Модель: %.2fм | Масштаб: %.2fx",
+                std::max(modelWidth, modelDepth), finalScale);
+            drawText((float)(previewX + 10), (float)(previewY + 75), modelInfo, 0.7f, 0.7f, 0.7f);
+
+            char colorInfo[150];
+            sprintf_s(colorInfo, "Цвет: R=%.2f G=%.2f B=%.2f | Влияет на текстуру: %s | Текстура: %s",
+                ground->color.r, ground->color.g, ground->color.b,
+                ground->useTextureColor ? "ДА" : "НЕТ",
+                hasTexture ? "ЕСТЬ" : "НЕТ");
+            drawText((float)(previewX + 10), (float)(previewY + 100), colorInfo, 1.0f, 1.0f, 0.5f);
         }
-        // Затем проверяем текстуру из модели
-        else if (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0) {
-            hasTexture = true;
-            textureID = previewModel.materials[0].textureID;
-            std::cout << "Using model texture ID: " << textureID << std::endl;
-        }
-
-        // Рисуем базовый пол (всегда, на случай если модель не загружена)
-        if (hasTexture) {
-            glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, textureID);
-            glColor3f(1.0f, 1.0f, 1.0f);
-        }
-        else {
-            glDisable(GL_TEXTURE_2D);
-            glColor3f(ground->color.r, ground->color.g, ground->color.b);
-        }
-
-        glBegin(GL_QUADS);
-        glNormal3f(0.0f, 1.0f, 0.0f);
-        glTexCoord2f(0.0f, 0.0f);
-        glVertex3f(-offsetX, -0.05f, -offsetZ);
-        glTexCoord2f(1.0f, 0.0f);
-        glVertex3f(offsetX, -0.05f, -offsetZ);
-        glTexCoord2f(1.0f, 1.0f);
-        glVertex3f(offsetX, -0.05f, offsetZ);
-        glTexCoord2f(0.0f, 1.0f);
-        glVertex3f(-offsetX, -0.05f, offsetZ);
-        glEnd();
-
-        // Рисуем 3D модель пола если она загружена
-        if (previewModel.loaded && !previewModel.vertices.empty()) {
+        else if (previewModel.loaded && !previewModel.vertices.empty()) {
+            // Если модель загружена, но режим выключен - показываем одну модель на весь пол
             glPushMatrix();
 
-            // Поворачиваем и масштабируем модель пола
-            glRotatef(-90.0f, 1.0f, 0.0f, 0.0f);
-            glScalef(0.01f, 0.01f, 0.01f);
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            for (size_t i = 0; i < previewModel.vertices.size() / 3; i++) {
+                float vy = previewModel.vertices[i * 3 + 1];
+                minY = std::min(minY, vy);
+                maxY = std::max(maxY, vy);
+            }
+            float modelHeight = maxY - minY;
 
-            // Для 3D модели используем ту же текстуру или цвет
-            if (hasTexture) {
+            glTranslatef(0.0f, -minY + floorHeight, 0.0f);
+
+            float maxDim = std::max(worldWidth, worldDepth);
+            float scale = maxDim / 2.0f;
+            glScalef(scale, scale, scale);
+
+            bool hasTexture = (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0) ||
+                (floorTexture.id != 0);
+            GLuint textureID = 0;
+            if (!previewModel.materials.empty() && previewModel.materials[0].textureID != 0) {
+                textureID = previewModel.materials[0].textureID;
+            }
+            else if (floorTexture.id != 0) {
+                textureID = floorTexture.id;
+            }
+
+            if (hasTexture && textureID != 0) {
                 glEnable(GL_TEXTURE_2D);
                 glBindTexture(GL_TEXTURE_2D, textureID);
-                glColor3f(1.0f, 1.0f, 1.0f);
+                if (ground->useTextureColor) {
+                    glColor3f(ground->color.r, ground->color.g, ground->color.b);
+                }
+                else {
+                    glColor3f(1.0f, 1.0f, 1.0f);
+                }
             }
             else {
                 glDisable(GL_TEXTURE_2D);
                 glColor3f(ground->color.r, ground->color.g, ground->color.b);
             }
 
-            // Рисуем модель
             glBegin(GL_TRIANGLES);
             for (size_t i = 0; i < previewModel.vertices.size() / 3; i++) {
-                if (hasTexture && !previewModel.texCoords.empty() && i * 2 + 1 < previewModel.texCoords.size()) {
+                if (hasTexture && textureID != 0 && !previewModel.texCoords.empty() && i * 2 + 1 < previewModel.texCoords.size()) {
                     glTexCoord2f(previewModel.texCoords[i * 2], previewModel.texCoords[i * 2 + 1]);
                 }
                 glVertex3f(previewModel.vertices[i * 3],
@@ -2775,11 +2923,56 @@ void renderGroundSkyEditor() {
             glEnd();
 
             glPopMatrix();
-        }
 
-        if (hasTexture) {
-            glBindTexture(GL_TEXTURE_2D, 0);
-            glDisable(GL_TEXTURE_2D);
+            drawText((float)(previewX + 10), (float)(previewY + 25), "3D МОДЕЛЬ (ВЕСЬ ПОЛ)", 1.0f, 1.0f, 0.0f);
+        }
+        else {
+            // Базовый пол с текстурой (если есть)
+            bool hasTexture = (floorTexture.id != 0);
+
+            if (hasTexture) {
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, floorTexture.id);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                if (ground->useTextureColor) {
+                    glColor3f(ground->color.r, ground->color.g, ground->color.b);
+                }
+                else {
+                    glColor3f(1.0f, 1.0f, 1.0f);
+                }
+            }
+            else {
+                glDisable(GL_TEXTURE_2D);
+                glColor3f(ground->color.r, ground->color.g, ground->color.b);
+            }
+
+            // Повторяем текстуру каждую ячейку
+            float texRepeatX = worldWidth / currentConfig.cellSize;
+            float texRepeatZ = worldDepth / currentConfig.cellSize;
+
+            glBegin(GL_QUADS);
+            glNormal3f(0.0f, 1.0f, 0.0f);
+            glTexCoord2f(0.0f, 0.0f);
+            glVertex3f(-offsetX, floorHeight, -offsetZ);
+            glTexCoord2f(texRepeatX, 0.0f);
+            glVertex3f(offsetX, floorHeight, -offsetZ);
+            glTexCoord2f(texRepeatX, texRepeatZ);
+            glVertex3f(offsetX, floorHeight, offsetZ);
+            glTexCoord2f(0.0f, texRepeatZ);
+            glVertex3f(-offsetX, floorHeight, offsetZ);
+            glEnd();
+
+            if (hasTexture) {
+                glBindTexture(GL_TEXTURE_2D, 0);
+                glDisable(GL_TEXTURE_2D);
+            }
+
+            drawText((float)(previewX + 10), (float)(previewY + 25), "БАЗОВЫЙ ПОЛ", 1.0f, 1.0f, 0.0f);
+
+            if (!previewModel.loaded || previewModel.vertices.empty()) {
+                drawText((float)(previewX + 10), (float)(previewY + 50), "ЗАГРУЗИТЕ 3D МОДЕЛЬ ДЛЯ ПЛИТОК", 1.0f, 0.7f, 0.0f);
+            }
         }
 
         // Сетка
@@ -2790,13 +2983,13 @@ void renderGroundSkyEditor() {
             glBegin(GL_LINES);
             for (int i = -currentConfig.gridWidth / 2; i <= currentConfig.gridWidth / 2; i++) {
                 float xPos = (float)i * currentConfig.cellSize;
-                glVertex3f(xPos, -0.03f, -offsetZ);
-                glVertex3f(xPos, -0.03f, offsetZ);
+                glVertex3f(xPos, floorHeight + 0.02f, -offsetZ);
+                glVertex3f(xPos, floorHeight + 0.02f, offsetZ);
             }
             for (int i = -currentConfig.gridDepth / 2; i <= currentConfig.gridDepth / 2; i++) {
                 float zPos = (float)i * currentConfig.cellSize;
-                glVertex3f(-offsetX, -0.03f, zPos);
-                glVertex3f(offsetX, -0.03f, zPos);
+                glVertex3f(-offsetX, floorHeight + 0.02f, zPos);
+                glVertex3f(offsetX, floorHeight + 0.02f, zPos);
             }
             glEnd();
             glLineWidth(1.0f);
@@ -2821,24 +3014,6 @@ void renderGroundSkyEditor() {
         glVertex2f((float)previewX, (float)(previewY + previewH));
         glEnd();
 
-        drawText((float)(previewX + 10), (float)(previewY + 25), "ПРЕДПРОСМОТР ПОЛА", 1.0f, 1.0f, 0.0f);
-
-        // Информация о состоянии
-        if (hasTexture) {
-            drawText((float)(previewX + 10), (float)(previewY + 50), "ТЕКСТУРА ЗАГРУЖЕНА", 0.0f, 1.0f, 0.0f);
-        }
-        else if (previewModel.loaded && !previewModel.vertices.empty()) {
-            drawText((float)(previewX + 10), (float)(previewY + 50), "МОДЕЛЬ ЗАГРУЖЕНА (без текстуры)", 1.0f, 0.5f, 0.0f);
-        }
-        else {
-            drawText((float)(previewX + 10), (float)(previewY + 50), "БАЗОВЫЙ ПОЛ", 1.0f, 0.5f, 0.0f);
-        }
-
-        char colorInfo[100];
-        sprintf_s(colorInfo, "Цвет пола: R=%.2f G=%.2f B=%.2f",
-            ground->color.r, ground->color.g, ground->color.b);
-        drawText((float)(previewX + 10), (float)(previewY + 75), colorInfo, 1.0f, 1.0f, 0.5f);
-
         // Кнопки управления вращением
         int arrowY = (int)(previewY + previewH + 15);
         int arrowCenterX = (int)(previewX + previewW / 2);
@@ -2856,7 +3031,7 @@ void renderGroundSkyEditor() {
         }
     }
     else {
-        // Небо (без изменений)...
+        // Небо
         VisualElement* sky = groundSkyElements[1];
 
         int editX = (int)(windowWidth * 0.18f);
