@@ -3497,12 +3497,13 @@ void renderShadowPreview3D() {
         );
 
         // Callback для динамических теней (змейка + пол)
+   // Callback для динамических теней (змейка) - ИСПРАВЛЕННЫЙ
         g_previewDynamicShadow.setIntersectCallback(
             [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float closestDist = 1000.0f;
                 bool hit = false;
 
-                // Пол
+                // ===== ВАЖНО: сначала проверяем пол (как в деревьях) =====
                 if (checkGround(ray, hitDist, hitPoint)) {
                     if (hitDist > 0.01f && hitDist < closestDist) {
                         closestDist = hitDist;
@@ -3510,8 +3511,20 @@ void renderShadowPreview3D() {
                     }
                 }
 
+                // Функция проверки сегмента змеи
                 auto checkSnakeSegment = [&](const glm::vec3& pos, const Model& model,
                     float scale, float offset, size_t idx) {
+                        if (model.vertices.empty()) return;
+
+                        // Вычисляем bounding sphere для быстрого отсечения
+                        float radius = scale * 0.8f;
+                        glm::vec3 center(pos.x, pos.y + offset * scale, pos.z);
+
+                        float tSphere;
+                        if (!rayIntersectsSphere(ray, center, radius, tSphere)) {
+                            return;
+                        }
+
                         glm::mat4 transform = glm::mat4(1.0f);
                         transform = glm::translate(transform,
                             glm::vec3(pos.x, pos.y + offset * scale, pos.z));
@@ -3530,6 +3543,7 @@ void renderShadowPreview3D() {
                         }
                     };
 
+                // Проверяем все сегменты змеи
                 checkSnakeSegment(headPos, g_previewSnakeHeadModel, headScale, headOffset, 0);
                 checkSnakeSegment(bodyPos, g_previewSnakeBodyModel, bodyScale, bodyOffset, 1);
                 checkSnakeSegment(tailPos, g_previewSnakeTailModel, tailScale, tailOffset, 2);
@@ -3610,84 +3624,92 @@ void renderShadowPreview3D() {
     glm::vec3 lightColor = currentConfig.floorColor;
 
     // ========== ОТРИСОВКА ПОЛА ==========
+   // ========== ОТРИСОВКА ПОЛА ==========
     if (currentConfig.shadowMapEnabled && g_previewShadowsInitialized && isSubdivided) {
         // ===== SUBDIVIDED РЕЖИМ - рисуем подклетки =====
         float subCellSizeX = cellSize / subDivSize;
         float subCellSizeZ = cellSize / subDivSize;
+
+        // Получаем указатели на shadowGrid для быстрого доступа
+        const auto& staticGrid = g_previewStaticShadow.getShadowGrid();
+        const auto& dynamicGrid = g_previewDynamicShadow.getShadowGrid();
+        const auto& foodGrid = g_previewFoodShadow.getShadowGrid();
+
+        int staticTotalX = g_previewStaticShadow.getTotalCellsX();
+        int staticTotalZ = g_previewStaticShadow.getTotalCellsZ();
+        int strideX = currentConfig.shadowStrideX;
+        int strideZ = currentConfig.shadowStrideZ;
 
         for (int z = 0; z < currentConfig.gridDepth; z++) {
             for (int x = 0; x < currentConfig.gridWidth; x++) {
                 float cellStartX = x * cellSize - offsetX;
                 float cellStartZ = z * cellSize - offsetZ;
 
-                // Получаем доступ к подклеткам через shadowX/shadowZ
-                int shadowX = x / currentConfig.shadowStrideX;
-                int shadowZ = z / currentConfig.shadowStrideZ;
+                // Координаты в теневой сетке
+                int shadowX = x / strideX;
+                int shadowZ = z / strideZ;
 
-                if (shadowX >= 0 && shadowX < g_previewStaticShadow.getTotalCellsX() &&
-                    shadowZ >= 0 && shadowZ < g_previewStaticShadow.getTotalCellsZ()) {
+                if (shadowX >= 0 && shadowX < staticTotalX && shadowZ >= 0 && shadowZ < staticTotalZ) {
 
-                    const auto& shadowGrid = g_previewStaticShadow.getShadowGrid();
-                    const auto& sample = shadowGrid[shadowZ][shadowX];
+                    const auto& staticSample = staticGrid[shadowZ][shadowX];
+                    const auto& dynamicSample = dynamicGrid[shadowZ][shadowX];
+                    const auto& foodSample = foodGrid[shadowZ][shadowX];
 
-                    if (sample.hasSubCells()) {
-                        // Рисуем подклетки с индивидуальными значениями теней
-                        for (int subZ = 0; subZ < subDivSize; subZ++) {
-                            for (int subX = 0; subX < subDivSize; subX++) {
-                                float posX = cellStartX + subX * subCellSizeX;
-                                float posZ = cellStartZ + subZ * subCellSizeZ;
+                    bool staticHasSub = staticSample.hasSubCells();
+                    bool dynamicHasSub = dynamicSample.hasSubCells();
+                    bool foodHasSub = foodSample.hasSubCells();
 
-                                // Получаем значение тени для этой подклетки
-                                float staticShadow = sample.subCellValues[subZ][subX];
+                    // Для каждой подклетки
+                    for (int subZ = 0; subZ < subDivSize; subZ++) {
+                        for (int subX = 0; subX < subDivSize; subX++) {
+                            float posX = cellStartX + subX * subCellSizeX;
+                            float posZ = cellStartZ + subZ * subCellSizeZ;
 
-                                // Для динамических и food теней используем getShadowAtPointWithSubdivision
-                                glm::vec3 subCenter(posX + subCellSizeX / 2, 0.05f, posZ + subCellSizeZ / 2);
-                                float dynamicShadow = g_previewDynamicShadow.getShadowAtPointWithSubdivision(subCenter, nullptr);
-                                float foodShadow = g_previewFoodShadow.getShadowAtPointWithSubdivision(subCenter, nullptr);
+                            float staticShadow, dynamicShadow, foodShadow;
 
-                                float finalShadow = std::min({ staticShadow, dynamicShadow, foodShadow });
-
-                                glm::vec3 finalColor;
-                                if (useGradient) {
-                                    finalColor = glm::mix(darkColor, lightColor, finalShadow);
-                                }
-                                else {
-                                    finalColor = (finalShadow >= 0.5f) ? lightColor : darkColor;
-                                }
-
-                                glColor3f(finalColor.r, finalColor.g, finalColor.b);
-                                glBegin(GL_QUADS);
-                                glNormal3f(0.0f, 1.0f, 0.0f);
-                                glVertex3f(posX, -0.02f, posZ);
-                                glVertex3f(posX + subCellSizeX, -0.02f, posZ);
-                                glVertex3f(posX + subCellSizeX, -0.02f, posZ + subCellSizeZ);
-                                glVertex3f(posX, -0.02f, posZ + subCellSizeZ);
-                                glEnd();
+                            // Static shadow - используем subCellValues если есть
+                            if (staticHasSub) {
+                                staticShadow = staticSample.subCellValues[subZ][subX];
                             }
+                            else {
+                                staticShadow = staticSample.value;
+                            }
+
+                            // Dynamic shadow - используем subCellValues если есть, иначе центральное значение
+                            if (dynamicHasSub) {
+                                dynamicShadow = dynamicSample.subCellValues[subZ][subX];
+                            }
+                            else {
+                                dynamicShadow = dynamicSample.value;
+                            }
+
+                            // Food shadow - используем subCellValues если есть, иначе центральное значение
+                            if (foodHasSub) {
+                                foodShadow = foodSample.subCellValues[subZ][subX];
+                            }
+                            else {
+                                foodShadow = foodSample.value;
+                            }
+
+                            float finalShadow = std::min({ staticShadow, dynamicShadow, foodShadow });
+
+                            glm::vec3 finalColor;
+                            if (useGradient) {
+                                finalColor = glm::mix(darkColor, lightColor, finalShadow);
+                            }
+                            else {
+                                finalColor = (finalShadow >= 0.5f) ? lightColor : darkColor;
+                            }
+
+                            glColor3f(finalColor.r, finalColor.g, finalColor.b);
+                            glBegin(GL_QUADS);
+                            glNormal3f(0.0f, 1.0f, 0.0f);
+                            glVertex3f(posX, -0.02f, posZ);
+                            glVertex3f(posX + subCellSizeX, -0.02f, posZ);
+                            glVertex3f(posX + subCellSizeX, -0.02f, posZ + subCellSizeZ);
+                            glVertex3f(posX, -0.02f, posZ + subCellSizeZ);
+                            glEnd();
                         }
-                    }
-                    else {
-                        // Нет подклеток - рисуем целую клетку (fallback)
-                        float posX = cellStartX;
-                        float posZ = cellStartZ;
-
-                        float staticShadow = g_previewStaticShadow.getShadowAtCell(x, z);
-                        float dynamicShadow = g_previewDynamicShadow.getShadowAtCell(x, z);
-                        float foodShadow = g_previewFoodShadow.getShadowAtCell(x, z);
-                        float finalShadow = std::min({ staticShadow, dynamicShadow, foodShadow });
-
-                        glm::vec3 finalColor = useGradient ?
-                            glm::mix(darkColor, lightColor, finalShadow) :
-                            ((finalShadow >= 0.5f) ? lightColor : darkColor);
-
-                        glColor3f(finalColor.r, finalColor.g, finalColor.b);
-                        glBegin(GL_QUADS);
-                        glNormal3f(0.0f, 1.0f, 0.0f);
-                        glVertex3f(posX, -0.02f, posZ);
-                        glVertex3f(posX + cellSize, -0.02f, posZ);
-                        glVertex3f(posX + cellSize, -0.02f, posZ + cellSize);
-                        glVertex3f(posX, -0.02f, posZ + cellSize);
-                        glEnd();
                     }
                 }
             }
