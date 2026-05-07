@@ -96,7 +96,7 @@ struct GameConfig {
     float snakeBodyScale = 0.8f;
     float snakeTailScale = 0.8f;
 
-    // Модели окружения
+    // Модели окружения (основные)
     std::string appleModel = "apple.fbx";
     std::string treeModel = "tree.fbx";
     std::string cloudModel = "cloud.fbx";
@@ -110,6 +110,29 @@ struct GameConfig {
     std::string rockModel = "rock.fbx";
     std::string grassModel = "grass.fbx";
 
+    // ========== ДОБАВЛЕННЫЕ ПАРАМЕТРЫ ДЛЯ ПОЛНОГО СОХРАНЕНИЯ ==========
+
+    // Цвета и масштабы препятствий
+    glm::vec3 treeColor = glm::vec3(0.1f, 0.4f, 0.1f);
+    glm::vec3 rockColor = glm::vec3(0.5f, 0.5f, 0.5f);
+    glm::vec3 fenceColor = glm::vec3(0.6f, 0.4f, 0.2f);
+    glm::vec3 appleColor = glm::vec3(1.0f, 0.0f, 0.0f);
+
+    float treeScale = 1.5f;
+    float rockScale = 1.2f;
+    float fenceScale = 1.0f;
+    float appleScale = 0.8f;
+
+    // Цвета и масштабы окружения
+    glm::vec3 flowerColor = glm::vec3(1.0f, 0.0f, 1.0f);
+    glm::vec3 birdColor = glm::vec3(0.5f, 0.5f, 0.5f);
+    glm::vec3 cloudColor = glm::vec3(1.0f, 1.0f, 1.0f);
+
+    float flowerScale = 0.7f;
+    float birdScale = 0.6f;
+    float cloudScale = 1.5f;
+
+    // Вспомогательные методы
     int getShadowSubdivisionSize() const {
         return (shadowTraceMode == 2 || shadowTraceMode == 3) ? shadowSubdivisionSize : 1;
     }

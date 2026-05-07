@@ -7,7 +7,6 @@
 #include <iostream>
 
 // Внешние глобальные переменные
-
 extern Camera g_camera;
 extern GLuint uiVAO, uiVBO;
 extern bool g_shouldExitGame;
@@ -79,16 +78,17 @@ void Game::initPaths() {
 }
 
 void Game::loadConfig() {
-    std::cout << "\n========== ГРУЗИМ КОНФИГ ==========" << std::endl;
-    std::cout << "Путь к конфигу: " << g_configPath << std::endl;
+    std::cout << "\n========== LOADING CONFIG ==========" << std::endl;
+    std::cout << "Config path: " << g_configPath << std::endl;
 
     GameConfig config;
 
+    // Используем правильное пространство имён ConfigManagerUtils
     if (ConfigManager::loadGameConfig(g_configPath, config)) {
-        std::cout << "✓ КОНФИГ ЗАГРУЖЕН УСПЕШНО!" << std::endl;
+        std::cout << "✓ CONFIG LOADED SUCCESSFULLY!" << std::endl;
 
         // ВЫВОДИМ ВСЕ ЗНАЧЕНИЯ ИЗ КОНФИГА
-        std::cout << "\n--- ЗНАЧЕНИЯ ИЗ КОНФИГА ---" << std::endl;
+        std::cout << "\n--- CONFIG VALUES ---" << std::endl;
 
         // Цвета
         std::cout << "SKY_COLOR = " << config.skyColor.r << " " << config.skyColor.g << " " << config.skyColor.b << std::endl;
@@ -114,32 +114,69 @@ void Game::loadConfig() {
         std::cout << "SNAKE_BODY_COLOR = " << config.snakeBodyColor.r << " " << config.snakeBodyColor.g << " " << config.snakeBodyColor.b << std::endl;
         std::cout << "SNAKE_TAIL_COLOR = " << config.snakeTailColor.r << " " << config.snakeTailColor.g << " " << config.snakeTailColor.b << std::endl;
 
-        // Масштабы
+        // Масштабы змейки
         std::cout << "SNAKE_HEAD_SCALE = " << config.snakeHeadScale << std::endl;
         std::cout << "SNAKE_BODY_SCALE = " << config.snakeBodyScale << std::endl;
         std::cout << "SNAKE_TAIL_SCALE = " << config.snakeTailScale << std::endl;
 
-        // Настройки окружения
+        // ========== НОВЫЕ ПАРАМЕТРЫ ПРЕПЯТСТВИЙ ==========
+        std::cout << "\n--- OBSTACLES ---" << std::endl;
+        std::cout << "TREE_MODEL = " << config.treeModel << std::endl;
+        std::cout << "TREE_COLOR = " << config.treeColor.r << " " << config.treeColor.g << " " << config.treeColor.b << std::endl;
+        std::cout << "TREE_SCALE = " << config.treeScale << std::endl;
+
+        std::cout << "ROCK_MODEL = " << config.rockModel << std::endl;
+        std::cout << "ROCK_COLOR = " << config.rockColor.r << " " << config.rockColor.g << " " << config.rockColor.b << std::endl;
+        std::cout << "ROCK_SCALE = " << config.rockScale << std::endl;
+
+        std::cout << "FENCE_MODEL = " << config.fenceModel << std::endl;
+        std::cout << "FENCE_COLOR = " << config.fenceColor.r << " " << config.fenceColor.g << " " << config.fenceColor.b << std::endl;
+        std::cout << "FENCE_SCALE = " << config.fenceScale << std::endl;
+
+        std::cout << "APPLE_MODEL = " << config.appleModel << std::endl;
+        std::cout << "APPLE_COLOR = " << config.appleColor.r << " " << config.appleColor.g << " " << config.appleColor.b << std::endl;
+        std::cout << "APPLE_SCALE = " << config.appleScale << std::endl;
+
+        // ========== НОВЫЕ ПАРАМЕТРЫ ОКРУЖЕНИЯ ==========
+        std::cout << "\n--- ENVIRONMENT ---" << std::endl;
+        std::cout << "CLOUD_MODEL = " << config.cloudModel << std::endl;
+        std::cout << "CLOUD_COLOR = " << config.cloudColor.r << " " << config.cloudColor.g << " " << config.cloudColor.b << std::endl;
+        std::cout << "CLOUD_SCALE = " << config.cloudScale << std::endl;
         std::cout << "CLOUD_COUNT = " << config.cloudCount << std::endl;
+
+        std::cout << "BIRD_MODEL = " << config.birdModel << std::endl;
+        std::cout << "BIRD_COLOR = " << config.birdColor.r << " " << config.birdColor.g << " " << config.birdColor.b << std::endl;
+        std::cout << "BIRD_SCALE = " << config.birdScale << std::endl;
         std::cout << "BIRD_COUNT = " << config.birdCount << std::endl;
+
+        std::cout << "FLOWER_MODEL = " << config.flowerModel << std::endl;
+        std::cout << "FLOWER_COLOR = " << config.flowerColor.r << " " << config.flowerColor.g << " " << config.flowerColor.b << std::endl;
+        std::cout << "FLOWER_SCALE = " << config.flowerScale << std::endl;
         std::cout << "FLOWER_COUNT = " << config.flowerCount << std::endl;
 
-        // Модели окружения
-        std::cout << "APPLE_MODEL = " << config.appleModel << std::endl;
-        std::cout << "TREE_MODEL = " << config.treeModel << std::endl;
-        std::cout << "CLOUD_MODEL = " << config.cloudModel << std::endl;
-        std::cout << "BIRD_MODEL = " << config.birdModel << std::endl;
-        std::cout << "FLOWER_MODEL = " << config.flowerModel << std::endl;
-        std::cout << "FENCE_MODEL = " << config.fenceModel << std::endl;
-        std::cout << "ROCK_MODEL = " << config.rockModel << std::endl;
-        std::cout << "GRASS_MODEL = " << config.grassModel << std::endl;
+        // Настройки пола
+        std::cout << "\n--- FLOOR ---" << std::endl;
         std::cout << "FLOOR_MODEL = " << config.floorModel << std::endl;
-        std::cout << "FLOOR_TEXTURE = " << config.floorTexture << std::endl;
+        std::cout << "FLOOR_TEXTURE = " << (config.floorTexture.empty() ? "none" : config.floorTexture) << std::endl;
+
+        // Настройки света и теней
+        std::cout << "\n--- LIGHT & SHADOWS ---" << std::endl;
+        std::cout << "LIGHT_TYPE = " << config.lightType << std::endl;
+        std::cout << "LIGHT_COLOR = " << config.lightColor.r << " " << config.lightColor.g << " " << config.lightColor.b << std::endl;
+        std::cout << "LIGHT_DIR = " << config.lightDir.x << " " << config.lightDir.y << " " << config.lightDir.z << std::endl;
+        std::cout << "LIGHT_POS = " << config.lightPos.x << " " << config.lightPos.y << " " << config.lightPos.z << std::endl;
+        std::cout << "SHADOW_TRACE_MODE = " << config.shadowTraceMode << std::endl;
+        std::cout << "SHADOW_SUBDIVISION_SIZE = " << config.shadowSubdivisionSize << std::endl;
+        std::cout << "SHADOW_STRIDE_X = " << config.shadowStrideX << std::endl;
+        std::cout << "SHADOW_STRIDE_Z = " << config.shadowStrideZ << std::endl;
+        std::cout << "SHADOW_MAP_ENABLED = " << (config.shadowMapEnabled ? "true" : "false") << std::endl;
+        std::cout << "AMBIENT_ENABLED = " << (config.ambientEnabled ? "true" : "false") << std::endl;
+        std::cout << "SPECULAR_ENABLED = " << (config.specularEnabled ? "true" : "false") << std::endl;
 
         std::cout << "----------------------------\n" << std::endl;
 
         // ПРИМЕНЯЕМ К GameObjects
-        std::cout << "--- ПРИМЕНЯЕМ К GameObjects ---" << std::endl;
+        std::cout << "--- APPLYING TO GameObjects ---" << std::endl;
 
         // Настройки сетки
         objects.setGridWidth(config.gridWidth);
@@ -150,6 +187,7 @@ void Game::loadConfig() {
         objects.setGridEnabled(config.gridEnabled);
         objects.setGridLineWidth(config.gridLineWidth);
         objects.setFloorTileSize(config.floorTileSize);
+
         // Модели змейки
         objects.setSnakeModels(
             config.snakeHeadModel,
@@ -166,10 +204,7 @@ void Game::loadConfig() {
             config.snakeBodyColor,
             config.snakeTailColor
         );
-        std::cout << "  setSnakeColors: Head=("
-            << config.snakeHeadColor.r << "," << config.snakeHeadColor.g << "," << config.snakeHeadColor.b << ") "
-            << "Body=(" << config.snakeBodyColor.r << "," << config.snakeBodyColor.g << "," << config.snakeBodyColor.b << ") "
-            << "Tail=(" << config.snakeTailColor.r << "," << config.snakeTailColor.g << "," << config.snakeTailColor.b << ")" << std::endl;
+        std::cout << "  setSnakeColors applied" << std::endl;
 
         // Масштабы змейки
         objects.setSnakeScales(
@@ -177,87 +212,97 @@ void Game::loadConfig() {
             config.snakeBodyScale,
             config.snakeTailScale
         );
-        std::cout << "  setSnakeScales: Head=" << config.snakeHeadScale
-            << " Body=" << config.snakeBodyScale
-            << " Tail=" << config.snakeTailScale << std::endl;
+        std::cout << "  setSnakeScales applied" << std::endl;
 
-        // Модели окружения
-        objects.setAppleModel(config.appleModel);
-        std::cout << "  setAppleModel: " << config.appleModel << std::endl;
-
+        // Модели препятствий
         objects.setTreeModel(config.treeModel);
-        std::cout << "  setTreeModel: " << config.treeModel << std::endl;
-
-        objects.setCloudModel(config.cloudModel);
-        std::cout << "  setCloudModel: " << config.cloudModel << std::endl;
-
-        objects.setBirdModel(config.birdModel);
-        std::cout << "  setBirdModel: " << config.birdModel << std::endl;
-
-        objects.setFlowerModel(config.flowerModel);
-        std::cout << "  setFlowerModel: " << config.flowerModel << std::endl;
-
-        objects.setFenceModel(config.fenceModel);
-        std::cout << "  setFenceModel: " << config.fenceModel << std::endl;
+        objects.setTreeColor(config.treeColor);
+        objects.setTreeScale(config.treeScale);
+        std::cout << "  setTreeModel/Color/Scale applied" << std::endl;
 
         objects.setRockModel(config.rockModel);
-        std::cout << "  setRockModel: " << config.rockModel << std::endl;
+        objects.setRockColor(config.rockColor);
+        objects.setRockScale(config.rockScale);
+        std::cout << "  setRockModel/Color/Scale applied" << std::endl;
 
-        objects.setGrassModel(config.grassModel);
-        std::cout << "  setGrassModel: " << config.grassModel << std::endl;
+        objects.setFenceModel(config.fenceModel);
+        objects.setFenceColor(config.fenceColor);
+        objects.setFenceScale(config.fenceScale);
+        std::cout << "  setFenceModel/Color/Scale applied" << std::endl;
 
-        // Настройки окружения (количество)
+        objects.setAppleModel(config.appleModel);
+        objects.setAppleColor(config.appleColor);
+        objects.setAppleScale(config.appleScale);
+        std::cout << "  setAppleModel/Color/Scale applied" << std::endl;
+
+        // Модели окружения
+        objects.setCloudModel(config.cloudModel);
+        objects.setCloudColor(config.cloudColor);
+        objects.setCloudScale(config.cloudScale);
         objects.setCloudCount(config.cloudCount);
-        std::cout << "  setCloudCount: " << config.cloudCount << std::endl;
+        std::cout << "  setCloudModel/Color/Scale/Count applied" << std::endl;
 
+        objects.setBirdModel(config.birdModel);
+        objects.setBirdColor(config.birdColor);
+        objects.setBirdScale(config.birdScale);
         objects.setBirdCount(config.birdCount);
-        std::cout << "  setBirdCount: " << config.birdCount << std::endl;
+        std::cout << "  setBirdModel/Color/Scale/Count applied" << std::endl;
 
+        objects.setFlowerModel(config.flowerModel);
+        objects.setFlowerColor(config.flowerColor);
+        objects.setFlowerScale(config.flowerScale);
         objects.setFlowerCount(config.flowerCount);
-        std::cout << "  setFlowerCount: " << config.flowerCount << std::endl;
+        std::cout << "  setFlowerModel/Color/Scale/Count applied" << std::endl;
 
         // Настройки пола
         objects.setFloorModel(config.floorModel);
-        std::cout << "  setFloorModel: " << config.floorModel << std::endl;
-
         objects.setFloorColor(config.floorColor);
-        std::cout << "  setFloorColor: (" << config.floorColor.r << "," << config.floorColor.g << "," << config.floorColor.b << ")" << std::endl;
-
         objects.setFloorTexture(config.floorTexture);
-        std::cout << "  setFloorTexture: " << (config.floorTexture.empty() ? "none" : config.floorTexture) << std::endl;
+        std::cout << "  setFloor applied" << std::endl;
 
         // Цвета неба и сетки
         objects.setSkyColor(config.skyColor);
         objects.setGridColor(config.gridColor);
 
         // ПРИМЕНЯЕМ К Renderer
-        std::cout << "\n--- ПРИМЕНЯЕМ К Renderer ---" << std::endl;
+        std::cout << "\n--- APPLYING TO Renderer ---" << std::endl;
 
         renderer.setSkyColor(config.skyColor);
-        std::cout << "  setSkyColor: (" << config.skyColor.r << "," << config.skyColor.g << "," << config.skyColor.b << ")" << std::endl;
-
         renderer.setFloorColor(config.floorColor);
-        std::cout << "  setFloorColor: (" << config.floorColor.r << "," << config.floorColor.g << "," << config.floorColor.b << ")" << std::endl;
-
         renderer.setGridColor(config.gridColor);
-        std::cout << "  setGridColor: (" << config.gridColor.r << "," << config.gridColor.g << "," << config.gridColor.b << ")" << std::endl;
-
-        // Передаем настройки сетки в рендерер
         renderer.setGridSettings(config.gridEnabled, config.gridLineWidth);
 
-        // ЗАГРУЖАЕМ МОДЕЛИ
-        std::cout << "\n--- ЗАГРУЖАЕМ МОДЕЛИ ---" << std::endl;
-        renderer.loadModelsFromConfig(objects);
+        // Настройки света и теней
+        renderer.setLightType(static_cast<LightType>(config.lightType));
+        renderer.setLightColor(config.lightColor);
+        renderer.setLightDir(config.lightDir);
+        renderer.setLightPos(config.lightPos);
+
+        renderer.setShadowTraceMode(config.shadowTraceMode);
+        renderer.setShadowSubdivisionSize(config.shadowSubdivisionSize);
+        renderer.setShadowStride(config.shadowStrideX, config.shadowStrideZ);
+        renderer.setShadowMapEnabled(config.shadowMapEnabled);
+        renderer.setAmbientEnabled(config.ambientEnabled);
+        renderer.setSpecularEnabled(config.specularEnabled);
+
+        std::cout << "  Light and shadow settings applied" << std::endl;
+
+        // Передаём настройки сетки в рендерер
         renderer.setGridDimensions(
             objects.getGridWidth(),
             objects.getGridDepth(),
             objects.getCellSize()
         );
+
+        // ЗАГРУЖАЕМ МОДЕЛИ
+        std::cout << "\n--- LOADING MODELS ---" << std::endl;
+        renderer.loadModelsFromConfig(objects);
+
         std::cout << "===============================\n" << std::endl;
     }
     else {
-        std::cout << "✗ НЕ УДАЛОСЬ ЗАГРУЗИТЬ КОНФИГ!" << std::endl;
-        std::cout << "Создаем примитивы по умолчанию..." << std::endl;
+        std::cout << "✗ FAILED TO LOAD CONFIG!" << std::endl;
+        std::cout << "Creating default primitives..." << std::endl;
         renderer.createPrimitives();
     }
 }
@@ -283,15 +328,24 @@ void Game::initialize() {
 void Game::startNewGame() {
     objects.initGame();
     objects.setGameState(PLAYING);
-    objects.deleteSaveGame(); // Удаляем старое сохранение
+    objects.deleteSaveGame();
+
+    // Сбрасываем тени при старте новой игры
+    renderer.resetShadows();
+    renderer.markStaticShadowsDirty();
+    renderer.markDynamicShadowsDirty();
+    renderer.markFoodShadowsDirty();
 }
 
 void Game::continueGame() {
     if (objects.loadGame()) {
         objects.setGameState(PLAYING);
+        // Пересчитываем тени после загрузки
+        renderer.markStaticShadowsDirty();
+        renderer.markDynamicShadowsDirty();
+        renderer.markFoodShadowsDirty();
     }
     else {
-        // Если не удалось загрузить - начинаем новую
         startNewGame();
     }
 }
@@ -300,6 +354,7 @@ void Game::update() {
     if (objects.isGameOver() || objects.getGameState() != PLAYING) return;
 
     objects.update();
+
 }
 
 void Game::render() {
@@ -341,7 +396,6 @@ void Game::render() {
 }
 
 void Game::forceRedraw() {
-    // Принудительно перерисовываем текущее состояние
     if (g_mainWindow) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         render();
@@ -356,7 +410,6 @@ void Game::handleKeyPress(int key) {
         case GLFW_KEY_W:
             if (objects.getCurrentDirection() != BACKWARD)
                 objects.setCurrentDirection(FORWARD);
-            // Принудительное обновление теней при смене направления
             renderer.markDynamicShadowsDirty();
             break;
 
@@ -381,7 +434,6 @@ void Game::handleKeyPress(int key) {
         case GLFW_KEY_R:
             objects.initGame();
             objects.setGameState(PLAYING);
-            // Принудительный сброс всех теней
             renderer.resetShadows();
             renderer.markStaticShadowsDirty();
             renderer.markDynamicShadowsDirty();
@@ -396,6 +448,7 @@ void Game::handleKeyPress(int key) {
         case GLFW_KEY_F7:
             renderer.toggleDebugNormals();
             break;
+
         case GLFW_KEY_F8:
             renderer.toggleShadowTraceMode();
             std::cout << "Shadow trace mode toggled (F8)" << std::endl;
@@ -409,7 +462,8 @@ void Game::handleKeyPress(int key) {
             objects.saveGame();
             std::cout << "Game saved!" << std::endl;
             break;
-        case GLFW_KEY_M:  // Клавиша M для переключения точных моделей
+
+        case GLFW_KEY_M:
             renderer.toggleUseExactModels();
             break;
         }

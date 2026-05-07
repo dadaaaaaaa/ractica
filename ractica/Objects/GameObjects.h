@@ -48,6 +48,7 @@ private:
     bool gridEnabled;
     float gridLineWidth;
     int floorTileSize;
+
     // === Õ¿—“–Œ… » «Ã≈… » (»«  ŒÕ‘»√¿) ===
     std::string snakeHeadModel;
     std::string snakeBodyModel;
@@ -82,9 +83,29 @@ private:
     std::string floorTexture;
     glm::vec3 floorPosition;
 
-    // === Õ¿—“–Œ… » Õ≈¡¿ (»«  ŒÕ‘»√¿) ===
+    // === Õ¿—“–Œ… » Õ≈¡¿ » —≈“ » (»«  ŒÕ‘»√¿) ===
     glm::vec3 skyColor;
     glm::vec3 gridColor;
+
+    // === ÕŒ¬€≈ œ¿–¿Ã≈“–€: ÷¬≈“¿ » Ã¿—ÿ“¿¡€ œ–≈œﬂ“—“¬»… (»«  ŒÕ‘»√¿) ===
+    glm::vec3 treeColor;
+    glm::vec3 rockColor;
+    glm::vec3 fenceColor;
+    glm::vec3 appleColor;
+
+    float treeScale;
+    float rockScale;
+    float fenceScale;
+    float appleScale;
+
+    // === ÕŒ¬€≈ œ¿–¿Ã≈“–€: ÷¬≈“¿ » Ã¿—ÿ“¿¡€ Œ –”∆≈Õ»ﬂ (»«  ŒÕ‘»√¿) ===
+    glm::vec3 cloudColor;
+    glm::vec3 birdColor;
+    glm::vec3 flowerColor;
+
+    float cloudScale;
+    float birdScale;
+    float flowerScale;
 
     // === Õ¿—“–Œ… » »√–Œ ¿ ===
     std::string playerName;
@@ -108,6 +129,7 @@ public:
     void update();
     int getFloorTileSize() const { return floorTileSize; }
     void setFloorTileSize(int size) { floorTileSize = size; }
+
     // === √≈““≈–€ »√–Œ¬€’ Œ¡⁄≈ “Œ¬ ===
     const std::vector<Point>& getSnake() const { return snake; }
     const std::vector<Point>& getFood() const { return food; }
@@ -146,9 +168,9 @@ public:
     float getSnakeHeadScale() const { return snakeHeadScale; }
     float getSnakeBodyScale() const { return snakeBodyScale; }
     float getSnakeTailScale() const { return snakeTailScale; }
-    float getSnakeScale() const { return snakeHeadScale; } // ƒÎˇ Ó·‡ÚÌÓÈ ÒÓ‚ÏÂÒÚËÏÓÒÚË
+    float getSnakeScale() const { return snakeHeadScale; }
 
-    // === √≈““≈–€ Œ –”∆≈Õ»ﬂ ===
+    // === √≈““≈–€ Œ –”∆≈Õ»ﬂ (ÍÓÎË˜ÂÒÚ‚Ó) ===
     int getCloudCount() const { return cloudCount; }
     int getBirdCount() const { return birdCount; }
     int getFlowerCount() const { return flowerCount; }
@@ -175,6 +197,24 @@ public:
     const glm::vec3& getSkyColor() const { return skyColor; }
     const glm::vec3& getGridColor() const { return gridColor; }
 
+    // === ÕŒ¬€≈ √≈““≈–€: œ–≈œﬂ“—“¬»ﬂ ===
+    const glm::vec3& getTreeColor() const { return treeColor; }
+    float getTreeScale() const { return treeScale; }
+    const glm::vec3& getRockColor() const { return rockColor; }
+    float getRockScale() const { return rockScale; }
+    const glm::vec3& getFenceColor() const { return fenceColor; }
+    float getFenceScale() const { return fenceScale; }
+    const glm::vec3& getAppleColor() const { return appleColor; }
+    float getAppleScale() const { return appleScale; }
+
+    // === ÕŒ¬€≈ √≈““≈–€: Œ –”∆≈Õ»≈ ===
+    const glm::vec3& getCloudColor() const { return cloudColor; }
+    float getCloudScale() const { return cloudScale; }
+    const glm::vec3& getBirdColor() const { return birdColor; }
+    float getBirdScale() const { return birdScale; }
+    const glm::vec3& getFlowerColor() const { return flowerColor; }
+    float getFlowerScale() const { return flowerScale; }
+
     // === —≈““≈–€ —Œ—“ŒﬂÕ»ﬂ ===
     void setGameState(GameState state) { gameState = state; }
     void setPreviousState(GameState state) { previousState = state; }
@@ -199,7 +239,7 @@ public:
     void setSnakeScales(float headScale, float bodyScale, float tailScale);
     void setSnakeScale(float scale) { snakeHeadScale = snakeBodyScale = snakeTailScale = scale; }
 
-    // === —≈““≈–€ Œ –”∆≈Õ»ﬂ ===
+    // === —≈““≈–€ Œ –”∆≈Õ»ﬂ (ÍÓÎË˜ÂÒÚ‚Ó) ===
     void setCloudCount(int count);
     void setBirdCount(int count);
     void setFlowerCount(int count);
@@ -213,6 +253,24 @@ public:
     void setFenceModel(const std::string& model) { fenceModel = model; }
     void setRockModel(const std::string& model) { rockModel = model; }
     void setGrassModel(const std::string& model) { grassModel = model; }
+
+    // === ÕŒ¬€≈ —≈““≈–€: œ–≈œﬂ“—“¬»ﬂ ===
+    void setTreeColor(const glm::vec3& color);
+    void setTreeScale(float scale);
+    void setRockColor(const glm::vec3& color);
+    void setRockScale(float scale);
+    void setFenceColor(const glm::vec3& color);
+    void setFenceScale(float scale);
+    void setAppleColor(const glm::vec3& color);
+    void setAppleScale(float scale);
+
+    // === ÕŒ¬€≈ —≈““≈–€: Œ –”∆≈Õ»≈ ===
+    void setCloudColor(const glm::vec3& color);
+    void setCloudScale(float scale);
+    void setBirdColor(const glm::vec3& color);
+    void setBirdScale(float scale);
+    void setFlowerColor(const glm::vec3& color);
+    void setFlowerScale(float scale);
 
     // === —≈““≈–€ œŒÀ¿ ===
     void setFloorModel(const std::string& model);

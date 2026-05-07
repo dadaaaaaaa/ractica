@@ -412,12 +412,16 @@ void GameObjects::update() {
 void GameObjects::generateClouds() {
     cloudSprites.clear();
     std::cout << "Generating " << cloudCount << " clouds (from config)" << std::endl;
+    std::cout << "Cloud color from config: (" << cloudColor.r << "," << cloudColor.g << "," << cloudColor.b << ")" << std::endl;
 
     float gameFieldMinX = -gridWidth * cellSize * 0.5f;
     float gameFieldMaxX = gridWidth * cellSize * 0.5f;
     float gameFieldMinZ = -gridDepth * cellSize * 0.5f;
     float gameFieldMaxZ = gridDepth * cellSize * 0.5f;
     float safeDistance = 2.0f;
+
+    // Используем цвет облаков из конфига
+    glm::vec3 baseCloudColor = cloudColor;  // <-- ИСПОЛЬЗУЕМ ИЗ КОНФИГА
 
     for (int i = 0; i < cloudCount; i++) {
         glm::vec3 position;
@@ -444,16 +448,14 @@ void GameObjects::generateClouds() {
             attempts++;
         }
 
-        float size = 0.4f + (rand() % 8) * 0.1f;
+        float size = cloudScale * (0.4f + (rand() % 8) * 0.1f);  // <-- ИСПОЛЬЗУЕМ МАСШТАБ
         float speed = 0.08f + (rand() % 6) * 0.01f;
 
-        int cloudType = rand() % 3;
-        glm::vec3 color;
-        switch (cloudType) {
-        case 0: color = glm::vec3(0.95f, 0.95f, 0.95f); break;
-        case 1: color = glm::vec3(0.85f, 0.85f, 0.85f); break;
-        case 2: color = glm::vec3(0.90f, 0.90f, 0.92f); break;
-        }
+        // Небольшие вариации цвета
+        glm::vec3 color = baseCloudColor;
+        color.r += (rand() % 20 - 10) * 0.005f;
+        color.g += (rand() % 20 - 10) * 0.005f;
+        color.b += (rand() % 20 - 10) * 0.005f;
 
         cloudSprites.push_back(Sprite(position, color, size, speed));
     }
@@ -462,12 +464,15 @@ void GameObjects::generateClouds() {
 void GameObjects::generateBirds() {
     birds.clear();
     std::cout << "Generating " << birdCount << " birds (from config)" << std::endl;
+    std::cout << "Bird color from config: (" << birdColor.r << "," << birdColor.g << "," << birdColor.b << ")" << std::endl;
 
     float gameFieldMinX = -gridWidth * cellSize * 0.5f;
     float gameFieldMaxX = gridWidth * cellSize * 0.5f;
     float gameFieldMinZ = -gridDepth * cellSize * 0.5f;
     float gameFieldMaxZ = gridDepth * cellSize * 0.5f;
     float safeDistance = 1.5f;
+
+    glm::vec3 baseBirdColor = birdColor;  // <-- ИСПОЛЬЗУЕМ ИЗ КОНФИГА
 
     for (int i = 0; i < birdCount; i++) {
         glm::vec3 position;
@@ -493,7 +498,7 @@ void GameObjects::generateBirds() {
             attempts++;
         }
 
-        float size = 0.06f + (rand() % 6) * 0.02f;
+        float size = birdScale * (0.06f + (rand() % 6) * 0.02f);  // <-- ИСПОЛЬЗУЕМ МАСШТАБ
         float speed = 0.12f + (rand() % 8) * 0.02f;
 
         float currentAngle = atan2f(position.z, position.x);
@@ -502,14 +507,11 @@ void GameObjects::generateBirds() {
 
         glm::vec3 direction = glm::vec3(cos(movementAngle), 0.0f, sin(movementAngle));
 
-        int birdType = rand() % 4;
-        glm::vec3 color;
-        switch (birdType) {
-        case 0: color = glm::vec3(0.1f, 0.1f, 0.3f); break;
-        case 1: color = glm::vec3(0.3f, 0.2f, 0.1f); break;
-        case 2: color = glm::vec3(0.8f, 0.8f, 0.9f); break;
-        case 3: color = glm::vec3(0.2f, 0.2f, 0.2f); break;
-        }
+        // Вариации цвета
+        glm::vec3 color = baseBirdColor;
+        color.r += (rand() % 30 - 15) * 0.01f;
+        color.g += (rand() % 30 - 15) * 0.01f;
+        color.b += (rand() % 30 - 15) * 0.01f;
 
         Bird bird(position, color, size, speed);
         bird.direction = direction;
@@ -520,21 +522,26 @@ void GameObjects::generateBirds() {
 void GameObjects::generateGroundSprites() {
     flowerSprites.clear();
     std::cout << "Generating " << flowerCount << " flowers (from config)" << std::endl;
+    std::cout << "Flower color from config: (" << flowerColor.r << "," << flowerColor.g << "," << flowerColor.b << ")" << std::endl;
+
+    glm::vec3 baseFlowerColor = flowerColor;  // <-- ИСПОЛЬЗУЕМ ИЗ КОНФИГА
 
     for (int i = 0; i < flowerCount; i++) {
         float x = (rand() % 200 - 100) * 0.1f;
         float y = 0.01f;
         float z = (rand() % 200 - 100) * 0.1f;
-        float size = 0.1f + (rand() % 5) * 0.02f;
+        float size = flowerScale * (0.1f + (rand() % 5) * 0.02f);  // <-- ИСПОЛЬЗУЕМ МАСШТАБ
 
-        int colorType = rand() % 4;
-        glm::vec3 color;
-        switch (colorType) {
-        case 0: color = glm::vec3(1.0f, 0.2f, 0.2f); break;
-        case 1: color = glm::vec3(0.2f, 0.2f, 1.0f); break;
-        case 2: color = glm::vec3(1.0f, 0.8f, 0.2f); break;
-        case 3: color = glm::vec3(0.8f, 0.2f, 0.8f); break;
-        }
+        // Вариации цвета на основе базового
+        glm::vec3 color = baseFlowerColor;
+        color.r += (rand() % 40 - 20) * 0.01f;
+        color.g += (rand() % 40 - 20) * 0.01f;
+        color.b += (rand() % 40 - 20) * 0.01f;
+
+        // Ограничиваем значения
+        color.r = std::max(0.0f, std::min(1.0f, color.r));
+        color.g = std::max(0.0f, std::min(1.0f, color.g));
+        color.b = std::max(0.0f, std::min(1.0f, color.b));
 
         flowerSprites.push_back(Sprite(glm::vec3(x, y, z), color, size, 0.0f));
     }
@@ -1127,7 +1134,83 @@ bool GameObjects::loadGame() {
     std::cout << " Game loaded successfully!" << std::endl;
     return true;
 }
+// Добавьте после существующих сеттеров:
 
+//=============================================================================
+// СЕТТЕРЫ ДЛЯ ЦВЕТОВ И МАСШТАБОВ ПРЕПЯТСТВИЙ
+//=============================================================================
+void GameObjects::setTreeColor(const glm::vec3& color) {
+    treeColor = color;
+    std::cout << "GameObjects::setTreeColor: (" << color.r << "," << color.g << "," << color.b << ")" << std::endl;
+}
+
+void GameObjects::setTreeScale(float scale) {
+    treeScale = scale;
+    std::cout << "GameObjects::setTreeScale: " << scale << std::endl;
+}
+
+void GameObjects::setRockColor(const glm::vec3& color) {
+    rockColor = color;
+    std::cout << "GameObjects::setRockColor: (" << color.r << "," << color.g << "," << color.b << ")" << std::endl;
+}
+
+void GameObjects::setRockScale(float scale) {
+    rockScale = scale;
+    std::cout << "GameObjects::setRockScale: " << scale << std::endl;
+}
+
+void GameObjects::setFenceColor(const glm::vec3& color) {
+    fenceColor = color;
+    std::cout << "GameObjects::setFenceColor: (" << color.r << "," << color.g << "," << color.b << ")" << std::endl;
+}
+
+void GameObjects::setFenceScale(float scale) {
+    fenceScale = scale;
+    std::cout << "GameObjects::setFenceScale: " << scale << std::endl;
+}
+
+void GameObjects::setAppleColor(const glm::vec3& color) {
+    appleColor = color;
+    std::cout << "GameObjects::setAppleColor: (" << color.r << "," << color.g << "," << color.b << ")" << std::endl;
+}
+
+void GameObjects::setAppleScale(float scale) {
+    appleScale = scale;
+    std::cout << "GameObjects::setAppleScale: " << scale << std::endl;
+}
+
+//=============================================================================
+// СЕТТЕРЫ ДЛЯ ЦВЕТОВ И МАСШТАБОВ ОКРУЖЕНИЯ
+//=============================================================================
+void GameObjects::setCloudColor(const glm::vec3& color) {
+    cloudColor = color;
+    std::cout << "GameObjects::setCloudColor: (" << color.r << "," << color.g << "," << color.b << ")" << std::endl;
+}
+
+void GameObjects::setCloudScale(float scale) {
+    cloudScale = scale;
+    std::cout << "GameObjects::setCloudScale: " << scale << std::endl;
+}
+
+void GameObjects::setBirdColor(const glm::vec3& color) {
+    birdColor = color;
+    std::cout << "GameObjects::setBirdColor: (" << color.r << "," << color.g << "," << color.b << ")" << std::endl;
+}
+
+void GameObjects::setBirdScale(float scale) {
+    birdScale = scale;
+    std::cout << "GameObjects::setBirdScale: " << scale << std::endl;
+}
+
+void GameObjects::setFlowerColor(const glm::vec3& color) {
+    flowerColor = color;
+    std::cout << "GameObjects::setFlowerColor: (" << color.r << "," << color.g << "," << color.b << ")" << std::endl;
+}
+
+void GameObjects::setFlowerScale(float scale) {
+    flowerScale = scale;
+    std::cout << "GameObjects::setFlowerScale: " << scale << std::endl;
+}
 bool GameObjects::hasSaveGame() const {
     std::ifstream file(saveFileName);
     return file.good();

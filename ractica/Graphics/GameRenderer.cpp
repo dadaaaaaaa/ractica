@@ -713,26 +713,161 @@ void GameRenderer::updateLightPosition() {
     }
     }
 }
+void GameRenderer::setSkyColor(const glm::vec3& color) {
+    skyColor = color;
+}
 
-// Добавить методы-сеттеры:
+void GameRenderer::setFloorColor(const glm::vec3& color) {
+    floorColor = color;
+}
+
+void GameRenderer::setGridColor(const glm::vec3& color) {
+    gridColor = color;
+}
+
+void GameRenderer::setGridSettings(bool enabled, float lineWidth) {
+    gridEnabled = enabled;
+    gridLineWidth = lineWidth;
+}
+
+void GameRenderer::setGridDimensions(int width, int depth, float cellSize) {
+    m_gridWidth = width;
+    m_gridDepth = depth;
+    m_cellSize = cellSize;
+
+    // Пересчитываем размеры тайлов пола
+    m_floorTileSizeX = (m_gridWidth * m_cellSize) / m_floorTilesX;
+    m_floorTileSizeZ = (m_gridDepth * m_cellSize) / m_floorTilesZ;
+
+    // Помечаем тени как грязные
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
+
+void GameRenderer::setShadowMapEnabled(bool enabled) {
+    m_shadowMapEnabled = enabled;
+    shadow_map = enabled;
+
+    // Помечаем тени как грязные
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
+
+void GameRenderer::setShadowSubdivisionSize(int size) {
+    if (size < 2) size = 2;
+    if (size > 20) size = 20;
+    m_floorSubdivisionLevel = size;
+
+    // Помечаем тени как грязные
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
+
+void GameRenderer::setShadowStride(int strideX, int strideZ) {
+    if (strideX < 1) strideX = 1;
+    if (strideZ < 1) strideZ = 1;
+    if (strideX > 8) strideX = 8;
+    if (strideZ > 8) strideZ = 8;
+
+    m_shadowStrideX = strideX;
+    m_shadowStrideZ = strideZ;
+
+    // Помечаем тени как грязные
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
+
+void GameRenderer::setAmbientEnabled(bool enabled) {
+    m_ambientEnabled = enabled;
+    setupFixedPipelineLighting();
+}
+
+void GameRenderer::setSpecularEnabled(bool enabled) {
+    m_specularEnabled = enabled;
+    setupFixedPipelineLighting();
+}
+
+void GameRenderer::setLightDir(const glm::vec3& dir) {
+    m_lightDir = glm::normalize(dir);
+    setupFixedPipelineLighting();
+    updateLightPosition();
+
+    // Помечаем тени как грязные
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
+
+void GameRenderer::setLightPos(const glm::vec3& pos) {
+    m_lightPos = pos;
+    setupFixedPipelineLighting();
+    updateLightPosition();
+
+    // Помечаем тени как грязные
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
+
 void GameRenderer::setLightType(LightType type) {
     m_lightType = type;
     setupFixedPipelineLighting();
+    updateLightPosition();
 
-    // Обновляем радиусы сфер для всех ShadowMapper
-    if (m_shadowMapEnabled) {
-        m_staticShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
-        m_dynamicShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
-        m_foodShadow.updateSpheresRadius(m_lightType, m_lightPos, m_lightDir);
-
-        m_staticShadowsDirty = true;
-        m_dynamicShadowsDirty = true;
-        m_foodShadowsDirty = true;
-    }
-
-    std::cout << "Light type changed to: " << (type == LightType::Directional ? "Directional" :
-        (type == LightType::Points ? "Points" : "Spot")) << std::endl;
+    // Помечаем тени как грязные
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
 }
+
+void GameRenderer::setLightColor(const glm::vec3& color) {
+    m_lightColor = color;
+    setupFixedPipelineLighting();
+
+    // Помечаем тени как грязные
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
+
+void GameRenderer::markStaticShadowsDirty() {
+    m_staticShadowsDirty = true;
+}
+
+void GameRenderer::forceFoodShadowsUpdate(const GameObjects& objects) {
+    m_foodShadowsDirty = true;
+
+    // Очищаем границы объектов
+    m_foodShadow.clearObjectBounds();
+
+    // Устанавливаем callback для пересечения с едой
+    m_foodShadow.setIntersectCallback(
+        [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+            float offsetX = m_gridWidth * m_cellSize / 2.0f;
+            float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+            HitInfo hit = intersectFoodOnly(ray, objects, offsetX, offsetZ);
+            if (hit.hit && hit.distance > 0.01f) {
+                hitDist = hit.distance;
+                hitPoint = hit.point;
+                return true;
+            }
+            return false;
+        }
+    );
+
+    m_foodShadow.computeShadows();
+    m_foodShadowsDirty = false;
+}
+
+void GameRenderer::toggleRayTracing() {
+    m_rayTracingEnabled = !m_rayTracingEnabled;
+    std::cout << "Ray tracing " << (m_rayTracingEnabled ? "ENABLED" : "DISABLED") << std::endl;
+}
+
 
 void GameRenderer::setLightPosition(const glm::vec3& pos) {
     m_lightPos = pos;
@@ -768,12 +903,7 @@ void GameRenderer::setLightDirection(const glm::vec3& dir) {
     }
 }
 
-void GameRenderer::setLightColor(const glm::vec3& color) {
-    m_lightColor = color;
-    // Обновляем diffuse компоненту
-    GLfloat light0_diffuse[] = { m_lightColor.r, m_lightColor.g, m_lightColor.b, 1.0f };
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
-}
+
 
 
 void GameRenderer::setMaterial(const glm::vec3& color, float shininess, float specularStrength) {

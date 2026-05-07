@@ -11,6 +11,7 @@
 #include <chrono>
 #include <iomanip>
 #include <map>
+
 #include "../Primitives/SnakeTailPrimitive.h"
 #include "../Primitives/TreePrimitive.h"
 #include "../Primitives/ApplePrimitive.h"
@@ -27,57 +28,172 @@
 #include "../Graphics/RayTracer.h"
 #include "Model.h"
 #include "ModelLoader.h"
+
+// Предварительное объявление enum LightType, если его нет в Types.h
+
+
 struct ModelBounds {
     glm::vec3 center;
     float radius;
     glm::mat4 transform;
     const Model* model;
 };
+
+//=============================================================================
+// ГЛАВНЫЙ КЛАСС РЕНДЕРЕРА
+//=============================================================================
 class GameRenderer {
 public:
+    //=========================================================================
+    // КОНСТРУКТОР / ДЕСТРУКТОР
+    //=========================================================================
     GameRenderer();
     ~GameRenderer();
-    float getFloorHeight() const { return m_floorHeight; }
-    void initialize();
-    void renderGame(const GameObjects& objects);
-    void loadModelsFromConfig(const GameObjects& objects);
-    void setFloorTexture(const std::string& texturePath);
-    void markDynamicShadowsDirty();
-    void resetShadows();
-    HitInfo intersectTreesOnly(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
-    HitInfo intersectSnakeOnly(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
-    HitInfo intersectFoodOnly(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ);
-    // Настройки
-    void setRayTracingEnabled(bool enabled) { m_rayTracingEnabled = enabled; }
-    void setShadowMapEnabled(bool enabled) { shadow_map = enabled; }
-    void setGridEnabled(bool enabled) { gridEnabled = enabled; }
-    void setRenderWireframe(bool enabled) { m_renderWireframe = enabled; }
 
-    void setSkyColor(const glm::vec3& color) { skyColor = color; }
-    void setFloorColor(const glm::vec3& color) { floorColor = color; }
-    void setGridColor(const glm::vec3& color) { gridColor = color; }
-    void setGridSettings(bool enabled, float lineWidth) { gridEnabled = enabled; gridLineWidth = lineWidth; }
-    void setGridDimensions(int width, int depth, float cellSize) {
-        m_gridWidth = width;
-        m_gridDepth = depth;
-        m_cellSize = cellSize;
-    }
-    void toggleRayTracing() { m_rayTracingEnabled = !m_rayTracingEnabled; }
-    void toggleshadow_map() { shadow_map = !shadow_map; }
-    void markStaticShadowsDirty() { m_staticShadowsDirty = true; }
-    void createPrimitives();
-    void drawSnakeEyes();
+    //=========================================================================
+    // ИНИЦИАЛИЗАЦИЯ И ОСНОВНЫЕ МЕТОДЫ
+    //=========================================================================
+    void initialize();                          // Инициализация рендерера
+    void renderGame(const GameObjects& objects); // Отрисовка всей игры
+    void loadModelsFromConfig(const GameObjects& objects); // Загрузка моделей из конфига
+    void createPrimitives();                    // Создание примитивов по умолчанию
+    void resetShadows();                        // Полный сброс всех теней
+    void toggleAmbient();                       // Переключение Ambient освещения
+    void toggleSpecular();                      // Переключение Specular отражений
 
-    // НОВЫЕ МЕТОДЫ ДЛЯ НОРМАЛЕЙ
-    void toggleDebugNormals();
-    bool isDebugNormalsEnabled() const { return m_debugNormalsEnabled; }
+    //=========================================================================
+    // ГЕТТЕРЫ / СЕТТЕРЫ: НАСТРОЙКИ СЕТКИ (Grid)
+    //=========================================================================
+    void setGridEnabled(bool enabled);          // Вкл/Выкл отрисовку сетки
+    void setGridSettings(bool enabled, float lineWidth); // Настройки сетки
+    void setGridDimensions(int width, int depth, float cellSize); // Размеры сетки
+    void setGridColor(const glm::vec3& color);  // Цвет линий сетки
 
-    // Геттеры
-    bool isRayTracingEnabled() const { return m_rayTracingEnabled; }
-    bool isShadowMapEnabled() const { return shadow_map; }
-    bool isGridEnabled() const { return gridEnabled; }
+    bool isGridEnabled() const;                 // Включена ли сетка
+    float getGridLineWidth() const;             // Толщина линий сетки
 
-    // Статические методы для GLFW
+    //=========================================================================
+    // ГЕТТЕРЫ / СЕТТЕРЫ: ЦВЕТА (Colors)
+    //=========================================================================
+    void setSkyColor(const glm::vec3& color);   // Цвет неба
+    void setFloorColor(const glm::vec3& color); // Цвет пола
+
+    const glm::vec3& getSkyColor() const;       // Получить цвет неба
+    const glm::vec3& getFloorColor() const;     // Получить цвет пола
+    const glm::vec3& getGridColor() const;      // Получить цвет сетки
+
+    //=========================================================================
+    // ГЕТТЕРЫ / СЕТТЕРЫ: НАСТРОЙКИ ПОЛА (Floor)
+    //=========================================================================
+    void setFloorTexture(const std::string& texturePath); // Установить текстуру пола
+    void setFloorTiles(int tilesX, int tilesZ);  // Количество тайлов пола для теней
+    float getFloorHeight() const;               // Высота пола (Y-координата)
+    int getFloorTilesX() const;                 // Количество тайлов по X
+    int getFloorTilesZ() const;                 // Количество тайлов по Z
+    float getFloorTileSizeX() const;            // Размер тайла по X
+    float getFloorTileSizeZ() const;            // Размер тайла по Z
+
+    //=========================================================================
+    // ГЕТТЕРЫ / СЕТТЕРЫ: ОСВЕЩЕНИЕ (Lighting)
+    //=========================================================================
+    void setLightType(LightType type);          // Тип источника (Directional/Point/Spot)
+    void setLightColor(const glm::vec3& color); // Цвет света
+    void setLightPosition(const glm::vec3& pos); // Позиция (для Point и Spot)
+    void setLightDirection(const glm::vec3& dir); // Направление (для Directional)
+    void setLightDir(const glm::vec3& dir);     // Алиас для setLightDirection
+    void setLightPos(const glm::vec3& pos);     // Алиас для setLightPosition
+    void setAmbientEnabled(bool enabled);       // Вкл/Выкл Ambient освещение
+    void setSpecularEnabled(bool enabled);      // Вкл/Выкл Specular отражения
+    bool isAmbientEnabled() const { return m_ambientEnabled; }
+    bool isSpecularEnabled() const { return m_specularEnabled; }
+
+    void updateLighting();                      // Обновить параметры освещения
+
+    LightType getLightType() const;             // Получить тип источника
+    glm::vec3 getLightColor() const;            // Получить цвет света
+    glm::vec3 getLightPosition() const;         // Получить позицию света
+    glm::vec3 getLightDirection() const;        // Получить направление света
+
+    //=========================================================================
+    // ГЕТТЕРЫ / СЕТТЕРЫ: ТЕНИ (Shadows)
+    //=========================================================================
+    void setShadowMapEnabled(bool enabled);     // Вкл/Выкл отрисовку теней
+    void setShadowTraceMode(bool useCorners);   // Режим трассировки (центр/углы)
+    void setShadowTraceModeByIndex(int modeIndex); // Установка режима по индексу (0-3)
+    void setShadowSubdivisionSize(int size);    // Размер подразбиения ячейки (для режимов 2 и 3)
+    void setShadowStride(int strideX, int strideZ); // Шаг теневой сетки
+
+    void toggleShadowMap();                     // Переключить тени (вкл/выкл)
+    void toggleShadowTraceMode();               // Переключить режим трассировки (F8)
+
+    bool isShadowMapEnabled() const;            // Включены ли тени
+    bool isUsingCornerTrace() const;            // Используется ли режим углов (Corners)
+    ShadowMapper::ShadowTraceMode getCurrentShadowMode() const; // Текущий режим трассировки
+    const char* getCurrentShadowModeName() const; // Имя текущего режима для отладки
+
+    //=========================================================================
+    // УПРАВЛЕНИЕ "ГРЯЗНЫМИ" ТЕНЯМИ (Dirty Shadow Management)
+    //=========================================================================
+    void markStaticShadowsDirty();              // Пометить статические тени как устаревшие
+    void markDynamicShadowsDirty();             // Пометить динамические тени как устаревшие
+    void markFoodShadowsDirty();                // Пометить тени еды как устаревшие
+    void forceFoodShadowsUpdate(const GameObjects& objects); // Принудительное обновление теней еды
+
+    //=========================================================================
+    // ДЕБАГ И ОТЛАДКА (Debug)
+    //=========================================================================
+    void toggleDebugNormals();                  // Вкл/Выкл отрисовку нормалей моделей
+    void toggleDebugRays();                     // Вкл/Выкл отрисовку лучей для теней
+    void toggleShowAllRays();                   // Показать все лучи (не только попавшие)
+    void toggleRenderWireframe();               // Вкл/Выкл wireframe режим
+
+    void setShowGroundRays(bool show);          // Показывать лучи, попавшие в пол
+
+    bool isDebugNormalsEnabled() const;         // Включена ли отрисовка нормалей
+    bool isRayTracingEnabled() const;           // Включена ли трассировка лучей
+
+    //=========================================================================
+    // УПРАВЛЕНИЕ РЕНДЕРИНГОМ (Rendering Controls)
+    //=========================================================================
+    void setRayTracingEnabled(bool enabled);    // Вкл/Выкл трассировку лучей
+    void setRenderWireframe(bool enabled);      // Вкл/Выкл wireframe режим
+
+    void toggleRayTracing();                    // Переключить трассировку лучей
+    void toggleshadow_map();                    // Переключить карту теней
+
+    void drawSphereImmediate(const glm::vec3& center, float radius); // Отрисовка сферы
+    void drawSnakeEyes();                        // Отрисовка глаз змейки
+
+    //=========================================================================
+    // ФУНКЦИИ ПЕРЕСЕЧЕНИЯ ДЛЯ ТЕНЕЙ
+    //=========================================================================
+    HitInfo intersectTreesOnly(const Ray& ray, const GameObjects& objects,
+        float offsetX, float offsetZ);
+    HitInfo intersectSnakeOnly(const Ray& ray, const GameObjects& objects,
+        float offsetX, float offsetZ);
+    HitInfo intersectFoodOnly(const Ray& ray, const GameObjects& objects,
+        float offsetX, float offsetZ);
+
+    //=========================================================================
+    // ФУНКЦИИ ДЛЯ РАБОТЫ С МОДЕЛЯМИ
+    //=========================================================================
+    bool loadFBXModelToModel(const std::string& filename, Model& outModel,
+        const std::string& subFolder = "");
+    void toggleUseExactModels();
+    bool isUsingExactModels() const;
+
+    void setMaterial(const glm::vec3& color, float shininess = 32.0f,
+        float specularStrength = 0.3f);
+
+    void drawModelWithShadow(const Model& model, float x, float y, float z,
+        float scale, const glm::vec3& color, bool inShadow);
+
+    void drawModelWithMaterial(const Model& model, float x, float y, float z,
+        float scale, const glm::vec3& color = glm::vec3(1.0f));
+
+    //=========================================================================
+    // СТАТИЧЕСКИЕ МЕТОДЫ ДЛЯ НАСТРОЙКИ OPENGL
+    //=========================================================================
     static void setupGLFWHints();
     static void setupCallbacks(GLFWwindow* window);
     static bool initGLEW();
@@ -87,98 +203,20 @@ public:
     static void initOpenGLSettings();
     static void checkGLError(const char* functionName);
 
-    void drawSphereImmediate(const glm::vec3& center, float radius);
-
-    void renderShadowMap();
-    void toggleShadowMap();
-    void toggleDebugRays();
-    void setShowGroundRays(bool show) { m_showGroundRays = show; }
-    void setMaterial(const glm::vec3& color, float shininess = 32.0f, float specularStrength = 0.3f);
-    void drawModelWithShadow(const Model& model, float x, float y, float z,
-        float scale, const glm::vec3& color, bool inShadow);
-    bool loadFBXModelToModel(const std::string& filename, Model& outModel, const std::string& subFolder = "");
-    void drawModelWithMaterial(const Model& model, float x, float y, float z, float scale, const glm::vec3& color = glm::vec3(1.0f));
-    void setLightType(LightType type);
-    void setLightPosition(const glm::vec3& pos);
-    void setLightDirection(const glm::vec3& dir);
-    void setLightColor(const glm::vec3& color);
-    void updateLighting();
-    LightType getLightType() const { return m_lightType; }
-    glm::vec3 getLightColor() const { return m_lightColor; }
-    glm::vec3 getLightPosition() const { return m_lightPos; }
-    glm::vec3 getLightDirection() const { return m_lightDir; }
 private:
-    float m_floorHeight = 0.0f;
-    void setupPointLight();
-    void setupSpotLight();
-    void setupDirectionalLight();
-    void setupFixedPipelineLighting();
-    void updateLightPosition();
-    void setupTexture(GLuint textureID);
-    void resetDepthState();
-    void drawCube();
-    void drawDebugSpheres();
-    void computeShadowsIfNeeded(const GameObjects& objects);
-    HitInfo intersectScene(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, bool treesOnly = false);
-    ShadowMapper::ShadowTraceMode m_currentShadowMode;
-public:
+    //=========================================================================
+    // ВНУТРЕННИЕ МЕТОДЫ ОСВЕЩЕНИЯ
+    //=========================================================================
+    void setupFixedPipelineLighting();           // Настройка фиксированного освещения
+    void setupDirectionalLight();                // Настройка направленного света
+    void setupPointLight();                      // Настройка точечного света
+    void setupSpotLight();                       // Настройка прожектора
+    void updateLightPosition();                  // Обновление позиции света
+    void setupTexture(GLuint textureID);         // Настройка текстуры
 
-    void toggleAmbient();
-    void toggleSpecular();
-    void toggleShowAllRays();
-    void toggleShadowTraceMode();  // Переключение между режимами (F8)
-    void setShadowTraceMode(bool useCorners);  // true = углы, false = центр
-    bool isUsingCornerTrace() const { return m_useCornerTrace; }
-public:
-    ShadowMapper::ShadowTraceMode getCurrentShadowMode() const { return m_currentShadowMode; }
-    const char* getCurrentShadowModeName() const { return ShadowMapper::getModeName(m_currentShadowMode); }
-public:
-    void setShadowTraceModeByIndex(int modeIndex);
-    void markFoodShadowsDirty();
-    void forceFoodShadowsUpdate(const GameObjects& objects) {
-        m_foodShadowsDirty = true;
-        m_foodShadow.clearObjectBounds();  // ОЧИЩАЕМ СФЕРЫ!
-
-        m_foodShadow.setIntersectCallback(
-            [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
-                float offsetX = m_gridWidth * m_cellSize / 2.0f;
-                float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-                HitInfo hit = intersectScene(ray, objects, offsetX, offsetZ);
-                if (hit.hit && hit.distance > 0.01f) {
-                    hitDist = hit.distance;
-                    hitPoint = hit.point;
-                    return true;
-                }
-                return false;
-            }
-        );
-        m_foodShadow.computeShadows();
-        m_foodShadowsDirty = false;
-    }
-
-    void toggleUseExactModels();  // НОВЫЙ МЕТОД
-    bool isUsingExactModels() const { return m_useExactModels; }
-    // Добавить в секцию public:
-
-    void setFloorTiles(int tilesX, int tilesZ) {
-        m_floorTilesX = tilesX;
-        m_floorTilesZ = tilesZ;
-        m_floorTileSizeX = (m_gridWidth * m_cellSize) / tilesX;
-        m_floorTileSizeZ = (m_gridDepth * m_cellSize) / tilesZ;
-        m_staticShadowsDirty = true;
-    }
-
-    int getFloorTilesX() const { return m_floorTilesX; }
-    int getFloorTilesZ() const { return m_floorTilesZ; }
-    float getFloorTileSizeX() const { return m_floorTileSizeX; }
-    float getFloorTileSizeZ() const { return m_floorTileSizeZ; }
-private:
-    bool m_ambientEnabled;
-    bool m_specularEnabled;
-    bool m_showAllRays;
-    ShadowMapper m_foodShadow;     // Для еды (яблоки) - НОВОЕ
-    bool m_useCornerTrace = false;
-    bool m_foodShadowsDirty;
+    //=========================================================================
+    // ВНУТРЕННИЕ МЕТОДЫ ОТРИСОВКИ
+    //=========================================================================
     void drawFloor();
     void drawSnake(const std::vector<Point>& snake);
     void drawFood(const std::vector<Point>& food);
@@ -188,32 +226,60 @@ private:
     void drawBirds(const std::vector<Bird>& birds);
     void drawGroundSprites(const std::vector<Sprite>& flowerSprites);
     void drawLightSource();
-    void drawModel(const Model& model, float x, float y, float z, float scale, const glm::vec3& color);
-    void drawModelWithRotation(const Model& model, float x, float y, float z, float scale,
-        const glm::vec3& color, float rotationAngle);
-    float calculateSegmentRotation(const std::vector<Point>& snake, size_t index);
+    void drawTiledFloor(const GameObjects& objects);
+    void drawFallbackFloor();
+    void drawFloorGrid();
 
-    bool convertModelDataToModel(const ModelData& modelData, Model& outModel);
-    void setupModelTexture(Model& model, GLuint textureID);
+    void drawModel(const Model& model, float x, float y, float z,
+        float scale, const glm::vec3& color);
+    void drawModelWithRotation(const Model& model, float x, float y, float z,
+        float scale, const glm::vec3& color, float rotationAngle);
 
-
-    void initRayTracingResources();
-    void cleanupRayTracingResources();
-    void renderWithRayTracing(const GameObjects& objects);
-    glm::vec3 traceRay(const Ray& ray, const GameObjects& objects, float offsetX, float offsetZ, int depth = 0);
-    bool rayIntersectsAABB(const Ray& ray, const glm::vec3& min, const glm::vec3& max, float& tMin, float& tMax);
-    bool rayIntersectsSphere(const Ray& ray, const glm::vec3& center, float radius, float& tHit);
-    glm::vec3 computeNormal(const glm::vec3& point, const glm::vec3& min, const glm::vec3& max);
-
+    void drawDebugSpheres();
     void drawDebugRaysIfEnabled();
     void drawDebugRays(const std::vector<DebugRay>& rays, float lineWidth = 1.0f);
     void drawRay(const DebugRay& ray, const glm::vec3& color);
-
-    // НОВЫЕ МЕТОДЫ ДЛЯ ОТЛАДКИ НОРМАЛЕЙ
     void drawDebugNormals(const GameObjects& objects);
-    void drawModelNormals(const Model& model, const glm::mat4& transform, float normalLength = 0.15f);
+    void drawModelNormals(const Model& model, const glm::mat4& transform,
+        float normalLength = 0.15f);
     void drawModelNormalsWithTransform(const Model& model, float x, float y, float z,
         float scale, float rotationAngle, float normalLength = 0.15f);
+
+    //=========================================================================
+    // ВНУТРЕННИЕ МЕТОДЫ ТЕНЕЙ
+    //=========================================================================
+    void computeShadowsIfNeeded(const GameObjects& objects);
+    HitInfo intersectScene(const Ray& ray, const GameObjects& objects,
+        float offsetX, float offsetZ, bool treesOnly = false);
+    bool rayIntersectsModel(const Ray& ray, const Model& model,
+        const glm::mat4& transform, float& hitDistance, glm::vec3& hitPoint);
+    void renderShadowMap();
+
+    //=========================================================================
+    // ВНУТРЕННИЕ МЕТОДЫ ТРАССИРОВКИ ЛУЧЕЙ
+    //=========================================================================
+    void initRayTracingResources();
+    void cleanupRayTracingResources();
+    void renderWithRayTracing(const GameObjects& objects);
+    glm::vec3 traceRay(const Ray& ray, const GameObjects& objects,
+        float offsetX, float offsetZ, int depth = 0);
+    bool rayIntersectsAABB(const Ray& ray, const glm::vec3& min,
+        const glm::vec3& max, float& tMin, float& tMax);
+    bool rayIntersectsSphere(const Ray& ray, const glm::vec3& center,
+        float radius, float& tHit);
+    glm::vec3 computeNormal(const glm::vec3& point, const glm::vec3& min,
+        const glm::vec3& max);
+
+    //=========================================================================
+    // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+    //=========================================================================
+    float calculateSegmentRotation(const std::vector<Point>& snake, size_t index);
+    void resetDepthState();
+    void drawCube();
+    void createTexturedFloorModel(Model& model);
+    bool convertModelDataToModel(const ModelData& modelData, Model& outModel);
+    void setupModelTexture(Model& model, GLuint textureID);
+
     glm::vec3 getSnakeSegmentPosition(const Point& segment, size_t index);
     glm::vec3 getSnakeSegmentScale(const Point& segment, size_t index);
     glm::vec3 getFoodPosition(const Point& food);
@@ -221,19 +287,68 @@ private:
     glm::vec3 getBirdPosition(const Bird& bird);
     glm::vec3 getCloudPosition(const Sprite& cloud);
     glm::vec3 getFlowerPosition(const Sprite& flower);
-    void drawTiledFloor(const GameObjects& objects);
-    void drawFallbackFloor();
-    void drawFloorGrid();
-private:
-    int m_floorTilesX;           // Количество полигонов по X
-    int m_floorTilesZ;           // Количество полигонов по Z
-    float m_floorTileSizeX;      // Размер одного полигона по X
-    float m_floorTileSizeZ;      // Размер одного полигона по Z
-    bool m_floorUseSubdivision;  // Использовать ли подразбиение для пола
-    int m_floorSubdivisionLevel; // Уровень подразбиения (для subdivided режимов)
-    bool m_useExactModels = false;
-    bool rayIntersectsModel(const Ray& ray, const Model& model, const glm::mat4& transform, float& hitDistance, glm::vec3& hitPoint);
-    // Основные модели примитивов
+
+    //=========================================================================
+    // ПЕРЕМЕННЫЕ ПОЛА
+    //=========================================================================
+    float m_floorHeight = 0.0f;
+    int m_floorTilesX = 8;
+    int m_floorTilesZ = 8;
+    float m_floorTileSizeX = 1.0f;
+    float m_floorTileSizeZ = 1.0f;
+    bool m_floorUseSubdivision = false;
+    int m_floorSubdivisionLevel = 10;
+
+    //=========================================================================
+    // ПЕРЕМЕННЫЕ ЦВЕТОВ
+    //=========================================================================
+    glm::vec3 skyColor = glm::vec3(0.53f, 0.81f, 0.92f);
+    glm::vec3 floorColor = glm::vec3(0.3f, 0.6f, 0.2f);
+    glm::vec3 gridColor = glm::vec3(0.2f, 0.5f, 0.15f);
+    bool useFloorTexture = false;
+
+    //=========================================================================
+    // ПЕРЕМЕННЫЕ СЕТКИ
+    //=========================================================================
+    bool gridEnabled = true;
+    float gridLineWidth = 1.0f;
+    int m_gridWidth = 120;
+    int m_gridDepth = 120;
+    float m_cellSize = 0.1f;
+
+    //=========================================================================
+    // ПЕРЕМЕННЫЕ ОСВЕЩЕНИЯ
+    //=========================================================================
+    LightType m_lightType = LightType::Points;  // Используем POINT вместо LightType::POINT
+    glm::vec3 m_lightDir = glm::vec3(-1.0f, -1.0f, 0.5f);
+    glm::vec3 m_lightPos = glm::vec3(0.0f, 5.0f, 0.0f);
+    glm::vec3 m_lightColor = glm::vec3(1.0f, 1.0f, 1.0f);
+    bool m_ambientEnabled = true;
+    bool m_specularEnabled = true;
+    bool isShadowDirty() const { return m_shadowsDirty; }
+    void markShadowDirty() { m_shadowsDirty = true; }
+    void clearShadowDirty() { m_shadowsDirty = false; }
+    bool m_shadowsDirty = false;
+    //=========================================================================
+    // ПЕРЕМЕННЫЕ ТЕНЕЙ
+    //=========================================================================
+    bool shadow_map = true;
+    bool m_shadowMapEnabled = true;
+    int m_shadowStrideX = 2;
+    int m_shadowStrideZ = 2;
+    bool m_useCornerTrace = true;
+    ShadowMapper::ShadowTraceMode m_currentShadowMode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED;
+
+    ShadowMapper m_staticShadow;
+    ShadowMapper m_dynamicShadow;
+    ShadowMapper m_foodShadow;
+    bool m_staticShadowsDirty = true;
+    bool m_dynamicShadowsDirty = true;
+    bool m_foodShadowsDirty = true;
+
+    //=========================================================================
+    // ПЕРЕМЕННЫЕ МОДЕЛЕЙ
+    //=========================================================================
     Model m_snakeHeadModel;
     Model m_snakeBodyModel;
     Model m_snakeTailModel;
@@ -242,56 +357,39 @@ private:
     Model m_cloudModel;
     Model m_birdModel;
     Model m_flowerModel;
+    Model m_fenceModel;
+    Model m_floorModel;
     Model m_cubeModel;
     Model m_sphereModel;
     Model m_cylinderModel;
-    Model m_fenceModel;
-    Model m_floorModel;
-    LightType m_lightType;
-    glm::vec3 m_lightDir;
-    glm::vec3 m_lightPos;
-    glm::vec3 m_lightColor;
+
     std::map<std::string, Model> m_loadedFBXModels;
+    bool m_useExactModels = false;
 
-    void createTexturedFloorModel(Model& model);
-
-    glm::vec3 skyColor;
-    glm::vec3 floorColor;
-    glm::vec3 gridColor;
-    bool useFloorTexture;
-    bool gridEnabled;
-    float gridLineWidth;
-    int m_gridWidth;
-    int m_gridDepth;
-    float m_cellSize;
-
-    bool shadow_map;
-    bool m_shadowMapEnabled;
-    int m_shadowStrideX;
-    int m_shadowStrideZ;
-
-    ShadowMapper m_staticShadow;
-    ShadowMapper m_dynamicShadow;
-    bool m_staticShadowsDirty;
-    bool m_dynamicShadowsDirty;
-
-    bool m_rayTracingEnabled;
-    bool m_renderWireframe;
-    int m_rayTracingStepSize;
-    bool m_rayTracingUseAdaptive;
+    //=========================================================================
+    // ПЕРЕМЕННЫЕ ТРАССИРОВКИ ЛУЧЕЙ
+    //=========================================================================
+    bool m_rayTracingEnabled = false;
+    bool m_renderWireframe = false;
+    int m_rayTracingStepSize = 4;
+    bool m_rayTracingUseAdaptive = true;
     RayTracer m_rayTracer;
+    GLuint m_rayTracingTexture = 0;
+    GLuint m_rayTracingVAO = 0;
+    GLuint m_rayTracingVBO = 0;
+    GLuint m_rayTracingShader = 0;
 
-    GLuint m_rayTracingTexture;
-    GLuint m_rayTracingVAO;
-    GLuint m_rayTracingVBO;
-    GLuint m_rayTracingShader;
+    //=========================================================================
+    // ДЕБАГ ПЕРЕМЕННЫЕ
+    //=========================================================================
+    bool m_debugRaysEnabled = false;
+    bool m_showGroundRays = false;
+    bool m_showAllRays = false;
+    bool m_debugNormalsEnabled = false;
 
-    bool m_debugRaysEnabled;
-    bool m_showGroundRays;
-
-    // НОВЫЙ ФЛАГ ДЛЯ НОРМАЛЕЙ
-    bool m_debugNormalsEnabled;
-
+    //=========================================================================
+    // ТЕКСТУРА ПОЛА
+    //=========================================================================
     struct Texture {
         GLuint id = 0;
         int width = 0;
