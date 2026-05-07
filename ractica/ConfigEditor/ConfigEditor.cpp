@@ -80,7 +80,17 @@ static int g_lastShadowSubdivisionSize = 0; // Последний размер �
 // Добавить после функции loadFBXModel:
 // Добавить после других функций:
 // Функция инициализации света (вызвать ОДИН раз в initOpenGL())
+// Добавить после initElements()
 
+// Добавить после других функций
+float getModelBottomOffset(const Model& model) {
+    if (model.vertices.empty()) return 0.0f;
+    float minY = FLT_MAX;
+    for (const auto& v : model.vertices) {
+        minY = std::min(minY, v.position.y);
+    }
+    return -minY;
+}
 void initLighting() {
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
@@ -1415,7 +1425,53 @@ bool loadFBXModel(const std::string& filename, Model& outModel, const std::strin
 
     return true;
 }
+void initShadowModels() {
+    // Загружаем модели для теней из currentConfig
+    if (!currentConfig.snakeHeadModel.empty()) {
+        loadFBXModel(currentConfig.snakeHeadModel, g_previewSnakeHeadModel, "snake_head");
+    }
+    if (g_previewSnakeHeadModel.vertices.empty()) {
+        SnakeHeadPrimitive::create(g_previewSnakeHeadModel);
+        g_previewSnakeHeadModel.computeNormals();
+        g_previewSnakeHeadModel.setupBuffers();
+    }
 
+    if (!currentConfig.snakeBodyModel.empty()) {
+        loadFBXModel(currentConfig.snakeBodyModel, g_previewSnakeBodyModel, "snake_body");
+    }
+    if (g_previewSnakeBodyModel.vertices.empty()) {
+        SnakeBodyPrimitive::create(g_previewSnakeBodyModel);
+        g_previewSnakeBodyModel.computeNormals();
+        g_previewSnakeBodyModel.setupBuffers();
+    }
+
+    if (!currentConfig.snakeTailModel.empty()) {
+        loadFBXModel(currentConfig.snakeTailModel, g_previewSnakeTailModel, "snake_tail");
+    }
+    if (g_previewSnakeTailModel.vertices.empty()) {
+        SnakeTailPrimitive::create(g_previewSnakeTailModel);
+        g_previewSnakeTailModel.computeNormals();
+        g_previewSnakeTailModel.setupBuffers();
+    }
+
+    if (!currentConfig.treeModel.empty()) {
+        loadFBXModel(currentConfig.treeModel, g_previewTreeModel, "obstacles");
+    }
+    if (g_previewTreeModel.vertices.empty()) {
+        TreePrimitive::create(g_previewTreeModel);
+        g_previewTreeModel.computeNormals();
+        g_previewTreeModel.setupBuffers();
+    }
+
+    if (!currentConfig.appleModel.empty()) {
+        loadFBXModel(currentConfig.appleModel, g_previewAppleModel, "food");
+    }
+    if (g_previewAppleModel.vertices.empty()) {
+        ApplePrimitive::create(g_previewAppleModel);
+        g_previewAppleModel.computeNormals();
+        g_previewAppleModel.setupBuffers();
+    }
+}
 void openFileDialog(std::string& destVar, const std::string& subFolder) {
     std::string folderPath = g_modelsPath + subFolder + "\\";
     CreateDirectoryA(folderPath.c_str(), NULL);
@@ -2497,7 +2553,102 @@ void renderGridEditor() {
 //=============================================================================
 // РЕДАКТОР СВЕТА
 //=============================================================================
+void setupFixedPipelineLighting() {
+    glEnable(GL_LIGHTING);
+    glEnable(GL_NORMALIZE);
 
+    // Глобальная ambient
+    if (currentConfig.ambientEnabled) {
+        GLfloat global_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
+    }
+    else {
+        GLfloat global_ambient[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
+    }
+
+    glEnable(GL_LIGHT0);
+    glEnable(GL_LIGHT1);
+
+    switch (currentConfig.lightType) {
+    case 0: { // Directional
+        GLfloat light0_ambient[] = { currentConfig.ambientEnabled ? 0.3f : 0.0f,
+                                     currentConfig.ambientEnabled ? 0.3f : 0.0f,
+                                     currentConfig.ambientEnabled ? 0.3f : 0.0f, 1.0f };
+        GLfloat light0_diffuse[] = { currentConfig.lightColor.r, currentConfig.lightColor.g,
+                                     currentConfig.lightColor.b, 1.0f };
+        GLfloat light0_specular[] = { currentConfig.specularEnabled ? 0.5f : 0.0f,
+                                      currentConfig.specularEnabled ? 0.5f : 0.0f,
+                                      currentConfig.specularEnabled ? 0.5f : 0.0f, 1.0f };
+        GLfloat light0_position[] = { -currentConfig.lightDir.x, -currentConfig.lightDir.y,
+                                      -currentConfig.lightDir.z, 0.0f };
+        glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+        glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+        glDisable(GL_LIGHT1);
+        break;
+    }
+    case 1: { // Point
+        GLfloat light0_ambient[] = { currentConfig.ambientEnabled ? 0.2f : 0.0f,
+                                     currentConfig.ambientEnabled ? 0.2f : 0.0f,
+                                     currentConfig.ambientEnabled ? 0.2f : 0.0f, 1.0f };
+        GLfloat light0_diffuse[] = { currentConfig.lightColor.r * 0.9f,
+                                     currentConfig.lightColor.g * 0.9f,
+                                     currentConfig.lightColor.b * 0.9f, 1.0f };
+        GLfloat light0_specular[] = { currentConfig.specularEnabled ? 0.4f : 0.0f,
+                                      currentConfig.specularEnabled ? 0.4f : 0.0f,
+                                      currentConfig.specularEnabled ? 0.4f : 0.0f, 1.0f };
+        GLfloat light0_position[] = { currentConfig.lightPos.x, currentConfig.lightPos.y,
+                                      currentConfig.lightPos.z, 1.0f };
+        glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+        glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.8f);
+        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.07f);
+        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.02f);
+        glDisable(GL_LIGHT1);
+        break;
+    }
+    case 2: { // Spot
+        GLfloat light0_ambient[] = { currentConfig.ambientEnabled ? 0.15f : 0.0f,
+                                     currentConfig.ambientEnabled ? 0.15f : 0.0f,
+                                     currentConfig.ambientEnabled ? 0.15f : 0.0f, 1.0f };
+        GLfloat light0_diffuse[] = { currentConfig.lightColor.r * 1.5f,
+                                     currentConfig.lightColor.g * 1.5f,
+                                     currentConfig.lightColor.b * 1.5f, 1.0f };
+        GLfloat light0_specular[] = { currentConfig.specularEnabled ? 0.7f : 0.0f,
+                                      currentConfig.specularEnabled ? 0.7f : 0.0f,
+                                      currentConfig.specularEnabled ? 0.7f : 0.0f, 1.0f };
+        GLfloat light0_position[] = { currentConfig.lightPos.x, currentConfig.lightPos.y,
+                                      currentConfig.lightPos.z, 1.0f };
+        glLightfv(GL_LIGHT0, GL_AMBIENT, light0_ambient);
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+        glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+        glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+
+        GLfloat spot_direction[] = { 0.0f, -1.0f, 0.0f };
+        glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spot_direction);
+        glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 45.0f);
+        glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 2.0f);
+
+        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.5f);
+        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.03f);
+        glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.01f);
+
+        GLfloat light1_ambient[] = { currentConfig.ambientEnabled ? 0.2f : 0.0f,
+                                     currentConfig.ambientEnabled ? 0.2f : 0.0f,
+                                     currentConfig.ambientEnabled ? 0.2f : 0.0f, 1.0f };
+        GLfloat light1_diffuse[] = { 0.25f, 0.25f, 0.25f, 1.0f };
+        GLfloat light1_position[] = { 0.0f, 5.0f, 0.0f, 1.0f };
+        glLightfv(GL_LIGHT1, GL_AMBIENT, light1_ambient);
+        glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_diffuse);
+        glLightfv(GL_LIGHT1, GL_POSITION, light1_position);
+        break;
+    }
+    }
+}
 void renderLightEditor() {
     reset2DProjection();
     drawCenteredText((float)(windowHeight * 0.05f), "НАСТРОЙКИ СВЕТА", 1.0f, 1.0f, 0.0f);
@@ -2557,21 +2708,12 @@ void renderLightEditor() {
 
     // Применяем изменения освещения
     if (lightChanged) {
-        // Временно включаем 3D режим для обновления света
-        glMatrixMode(GL_PROJECTION);
-        glPushMatrix();
-        glLoadIdentity();
-
-        glMatrixMode(GL_MODELVIEW);
-        glPushMatrix();
-        glLoadIdentity();
-
+        setupFixedPipelineLighting();  // Добавить эту строку
         updateLightPosition();
 
-        glMatrixMode(GL_PROJECTION);
-        glPopMatrix();
-        glMatrixMode(GL_MODELVIEW);
-        glPopMatrix();
+        // Помечаем тени как грязные для пересчёта
+        g_previewShadowsDirty = true;
+        g_forceBoundsRecalc = true;
     }
 
     if (drawButton((int)(windowWidth * 0.03f), (int)(windowHeight * 0.9f), 150, 50, "НАЗАД")) {
@@ -2663,18 +2805,16 @@ bool rayIntersectsSphereEditor(const Ray& ray, const glm::vec3& center, float ra
 // ========== ПРОВЕРКА ПЕРЕСЕЧЕНИЯ ЛУЧА С МОДЕЛЬЮ (ТОЧНАЯ ГЕОМЕТРИЯ, как в GameRenderer) ==========
 // ========== ПРОВЕРКА ПЕРЕСЕЧЕНИЯ ЛУЧА С МОДЕЛЬЮ (ТОЧНАЯ ГЕОМЕТРИЯ) ==========
 // ИЗ GameRenderer.cpp - точная копия с кэшем
+// Добавить после других функций в ConfigEditor.cpp
 bool rayIntersectsModel(const Ray& ray, const Model& model,
     const glm::mat4& transform,
     float& hitDistance, glm::vec3& hitPoint) {
 
-    if (model.vertices.empty()) {
-        return false;
-    }
+    if (model.vertices.empty()) return false;
 
-    // Используем глобальный кэш, а не static
+    // Кэш для bounding sphere модели
     auto it = g_boundsCache.find(&model);
-    if (it == g_boundsCache.end()) {
-        // Вычисляем локальные границы модели
+    if (it == g_boundsCache.end() || g_forceBoundsRecalc) {
         float minX = model.vertices[0].position.x;
         float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
 
@@ -2687,19 +2827,11 @@ bool rayIntersectsModel(const Ray& ray, const Model& model,
             maxZ = std::max(maxZ, vert.position.z);
         }
 
-        glm::vec3 localCenter(
-            (minX + maxX) * 0.5f,
-            (minY + maxY) * 0.5f,
-            (minZ + maxZ) * 0.5f
-        );
-
+        glm::vec3 localCenter((minX + maxX) * 0.5f, (minY + maxY) * 0.5f, (minZ + maxZ) * 0.5f);
         float localRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
 
         g_boundsCache[&model] = { localCenter, localRadius };
         it = g_boundsCache.find(&model);
-
-        std::cout << "Cached model: center=(" << localCenter.x << "," << localCenter.y << "," << localCenter.z
-            << ") radius=" << localRadius << " vertices=" << model.vertices.size() << std::endl;
     }
 
     const auto& localBounds = it->second;
@@ -2710,7 +2842,7 @@ bool rayIntersectsModel(const Ray& ray, const Model& model,
     glm::vec4 worldCenter4 = transform * glm::vec4(localCenter, 1.0f);
     glm::vec3 worldCenter = glm::vec3(worldCenter4);
 
-    // Вычисляем максимальный радиус
+    // Вычисляем масштаб
     glm::vec3 scale;
     scale.x = glm::length(glm::vec3(transform[0]));
     scale.y = glm::length(glm::vec3(transform[1]));
@@ -3099,37 +3231,7 @@ void setupSpotLight() {
     glLightfv(GL_LIGHT1, GL_POSITION, light1_position);
 }
 // ИЗ GameRenderer.cpp - точная копия
-void setupFixedPipelineLighting() {
-    glEnable(GL_LIGHTING);
-    glEnable(GL_NORMALIZE);
 
-    // Глобальная ambient
-    if (currentConfig.ambientEnabled) {
-        GLfloat global_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
-        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
-    }
-    else {
-        GLfloat global_ambient[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, global_ambient);
-    }
-
-    // Включаем два источника света
-    glEnable(GL_LIGHT0);
-    glEnable(GL_LIGHT1);
-
-    // Настраиваем в зависимости от типа
-    switch (currentConfig.lightType) {
-    case 0: // Directional
-        setupDirectionalLight();
-        break;
-    case 1: // Points
-        setupPointLight();
-        break;
-    case 2: // Spot
-        setupSpotLight();
-        break;
-    }
-}
 static void getModelBoundingSphere(const Model& model, float scale, glm::vec3& center, float& radius) {
     if (model.vertices.empty()) {
         center = glm::vec3(0.0f);
@@ -3153,17 +3255,16 @@ static void getModelBoundingSphere(const Model& model, float scale, glm::vec3& c
 }
 // ИСПРАВЛЕННАЯ ФУНКЦИЯ - свет НЕ зависит от камеры
 // ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ - свет НЕ зависит от камеры ==========
-// ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ - полная копия логики из GameRenderer ==========
 void renderShadowPreview3D() {
     int previewX = (int)(windowWidth * 0.55f);
     int previewY = (int)(windowHeight * 0.12f);
     int previewW = (int)(windowWidth * 0.42f);
     int previewH = (int)(windowHeight * 0.65f);
 
-    previewHoverX = (int)previewX;
-    previewHoverY = (int)previewY;
-    previewHoverW = (int)previewW;
-    previewHoverH = (int)previewH;
+    previewHoverX = previewX;
+    previewHoverY = previewY;
+    previewHoverW = previewW;
+    previewHoverH = previewH;
 
     previewHovered = (mouseX >= previewX && mouseX <= previewX + previewW &&
         mouseY >= previewY && mouseY <= previewY + previewH);
@@ -3201,60 +3302,14 @@ void renderShadowPreview3D() {
 
     gluLookAt(eye.x, eye.y, eye.z, center.x, center.y, center.z, up.x, up.y, up.z);
 
+    // Обновляем позицию света
     updateLightPosition();
 
-    // ========== ЗАГРУЗКА МОДЕЛЕЙ ==========
-    Model snakeHeadModel, snakeBodyModel, snakeTailModel;
-    Model treeModel, appleModel;
-
-    // Голова змеи
-    if (!currentConfig.snakeHeadModel.empty()) {
-        loadFBXModel(currentConfig.snakeHeadModel, snakeHeadModel, "snake_head");
-    }
-    if (snakeHeadModel.vertices.empty()) {
-        SnakeHeadPrimitive::create(snakeHeadModel);
-        snakeHeadModel.computeNormals();
-        snakeHeadModel.setupBuffers();
-    }
-
-    // Тело змеи
-    if (!currentConfig.snakeBodyModel.empty()) {
-        loadFBXModel(currentConfig.snakeBodyModel, snakeBodyModel, "snake_body");
-    }
-    if (snakeBodyModel.vertices.empty()) {
-        SnakeBodyPrimitive::create(snakeBodyModel);
-        snakeBodyModel.computeNormals();
-        snakeBodyModel.setupBuffers();
-    }
-
-    // Хвост змеи
-    if (!currentConfig.snakeTailModel.empty()) {
-        loadFBXModel(currentConfig.snakeTailModel, snakeTailModel, "snake_tail");
-    }
-    if (snakeTailModel.vertices.empty()) {
-        SnakeTailPrimitive::create(snakeTailModel);
-        snakeTailModel.computeNormals();
-        snakeTailModel.setupBuffers();
-    }
-
-    // Дерево
-    if (!currentConfig.treeModel.empty()) {
-        loadFBXModel(currentConfig.treeModel, treeModel, "obstacles");
-    }
-    if (treeModel.vertices.empty()) {
-        TreePrimitive::create(treeModel);
-        treeModel.computeNormals();
-        treeModel.setupBuffers();
-    }
-
-    // Яблоко
-    if (!currentConfig.appleModel.empty()) {
-        loadFBXModel(currentConfig.appleModel, appleModel, "food");
-    }
-    if (appleModel.vertices.empty()) {
-        ApplePrimitive::create(appleModel);
-        appleModel.computeNormals();
-        appleModel.setupBuffers();
+    // Инициализируем модели для теней, если нужно
+    static bool modelsInitialized = false;
+    if (!modelsInitialized) {
+        initShadowModels();
+        modelsInitialized = true;
     }
 
     float cellSize = currentConfig.cellSize;
@@ -3264,21 +3319,12 @@ void renderShadowPreview3D() {
     float offsetX = worldWidth / 2.0f;
     float offsetZ = worldDepth / 2.0f;
 
-    // Вычисление offset для посадки на пол
-    auto getBottomOffset = [](const Model& model) -> float {
-        if (model.vertices.empty()) return 0.0f;
-        float minY = FLT_MAX;
-        for (const auto& v : model.vertices) {
-            minY = std::min(minY, v.position.y);
-        }
-        return -minY;
-        };
-
-    float headOffset = getBottomOffset(snakeHeadModel);
-    float bodyOffset = getBottomOffset(snakeBodyModel);
-    float tailOffset = getBottomOffset(snakeTailModel);
-    float treeOffset = getBottomOffset(treeModel);
-    float appleOffset = getBottomOffset(appleModel);
+    // Получаем смещения моделей
+    float headOffset = getModelBottomOffset(g_previewSnakeHeadModel);
+    float bodyOffset = getModelBottomOffset(g_previewSnakeBodyModel);
+    float tailOffset = getModelBottomOffset(g_previewSnakeTailModel);
+    float treeOffset = getModelBottomOffset(g_previewTreeModel);
+    float appleOffset = getModelBottomOffset(g_previewAppleModel);
 
     // Масштабы
     float headScale = cellSize * currentConfig.snakeHeadScale;
@@ -3287,12 +3333,13 @@ void renderShadowPreview3D() {
     float treeScale = cellSize * 1.2f;
     float appleScale = cellSize * 0.6f;
 
-    // Позиции в центре поля
+    // Позиции объектов
     glm::vec3 headPos(0.0f, floorHeight, 0.0f);
-    glm::vec3 bodyPos(0.0f, floorHeight, -1.5f);
-    glm::vec3 tailPos(0.0f, floorHeight, -3.0f);
+    glm::vec3 bodyPos(0.0f, floorHeight, -cellSize);   // Ближе к голове
+    glm::vec3 tailPos(0.0f, floorHeight, 2 * -cellSize);  // Ближе к телу
+    std::vector<glm::vec3> snakePositions = { headPos, bodyPos, tailPos };
 
-    // Деревья
+    // Позиции деревьев
     float margin = 3.0f * cellSize;
     float maxX = offsetX - margin;
     float maxZ = offsetZ - margin;
@@ -3310,7 +3357,7 @@ void renderShadowPreview3D() {
         glm::vec3(maxX - 4.0f, floorHeight, 0.0f)
     };
 
-    // Яблоки
+    // Позиции яблок
     std::vector<glm::vec3> applePositions = {
         glm::vec3(2.0f, floorHeight, 2.0f),
         glm::vec3(-2.0f, floorHeight, 2.0f),
@@ -3318,9 +3365,7 @@ void renderShadowPreview3D() {
         glm::vec3(-2.0f, floorHeight, -2.0f)
     };
 
-    std::vector<glm::vec3> snakePositions = { headPos, bodyPos, tailPos };
-
-    // Проверка пола
+    // Функция проверки пересечения с полом
     auto checkGround = [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
         if (fabs(ray.direction.y) < 0.0001f) return false;
         float tGround = -ray.origin.y / ray.direction.y;
@@ -3335,75 +3380,92 @@ void renderShadowPreview3D() {
         return false;
         };
 
-    // ShadowMapper
-    static ShadowMapper previewStaticShadow;
-    static ShadowMapper previewDynamicShadow;
-    static ShadowMapper previewFoodShadow;
-    static bool shadowsComputed = false;
+    // Функция для вычисления поворота сегмента змеи
+    auto calcRotation = [](const std::vector<glm::vec3>& positions, size_t idx) -> float {
+        if (positions.size() <= 1) return 0.0f;
+        if (idx == 0) {
+            if (positions[0].x > positions[1].x) return 90.0f;
+            if (positions[0].x < positions[1].x) return -90.0f;
+            if (positions[0].z > positions[1].z) return 0.0f;
+            if (positions[0].z < positions[1].z) return 180.0f;
+        }
+        else {
+            if (positions[idx].x > positions[idx - 1].x) return 90.0f;
+            if (positions[idx].x < positions[idx - 1].x) return -90.0f;
+            if (positions[idx].z > positions[idx - 1].z) return 0.0f;
+            if (positions[idx].z < positions[idx - 1].z) return 180.0f;
+        }
+        return 0.0f;
+        };
 
-    static int lastShadowTraceMode = -1;
-    static bool lastShadowMapEnabled = false;
-    static int lastShadowStrideX = 0;
-    static int lastShadowStrideZ = 0;
-    static int lastShadowSubdivisionSize = 0;
+    // Определяем тип освещения
+    LightType lightType = static_cast<LightType>(currentConfig.lightType);
+    glm::vec3 lightDir = glm::normalize(currentConfig.lightDir);
+    glm::vec3 lightPos = currentConfig.lightPos;
 
-    bool needsRecalc = !shadowsComputed ||
-        lastShadowTraceMode != currentConfig.shadowTraceMode ||
-        lastShadowMapEnabled != currentConfig.shadowMapEnabled ||
-        lastShadowStrideX != currentConfig.shadowStrideX ||
-        lastShadowStrideZ != currentConfig.shadowStrideZ ||
-        lastShadowSubdivisionSize != currentConfig.shadowSubdivisionSize;
+    // Проверяем, нужно ли пересчитать тени
+    bool needsRecalc = !g_previewShadowsInitialized ||
+        g_lastShadowTraceMode != currentConfig.shadowTraceMode ||
+        g_lastShadowMapEnabled != currentConfig.shadowMapEnabled ||
+        g_lastShadowStrideX != currentConfig.shadowStrideX ||
+        g_lastShadowStrideZ != currentConfig.shadowStrideZ ||
+        g_lastShadowSubdivisionSize != currentConfig.shadowSubdivisionSize ||
+        g_forceBoundsRecalc;
 
     if (needsRecalc && currentConfig.shadowMapEnabled) {
-        std::cout << "RECALCULATING SHADOWS!" << std::endl;
+        std::cout << "Reinitializing ShadowMappers for preview..." << std::endl;
 
-        previewStaticShadow = ShadowMapper(
+        // Инициализируем ShadowMapper
+        g_previewStaticShadow = ShadowMapper(
             currentConfig.gridWidth, currentConfig.gridDepth,
-            currentConfig.cellSize, floorHeight,
-            currentConfig.lightDir, currentConfig.lightColor,
-            static_cast<LightType>(currentConfig.lightType), currentConfig.lightPos,
+            cellSize, floorHeight,
+            lightDir, currentConfig.lightColor,
+            lightType, lightPos,
             currentConfig.shadowStrideX, currentConfig.shadowStrideZ
         );
 
-        previewDynamicShadow = ShadowMapper(
+        g_previewDynamicShadow = ShadowMapper(
             currentConfig.gridWidth, currentConfig.gridDepth,
-            currentConfig.cellSize, floorHeight,
-            currentConfig.lightDir, currentConfig.lightColor,
-            static_cast<LightType>(currentConfig.lightType), currentConfig.lightPos,
+            cellSize, floorHeight,
+            lightDir, currentConfig.lightColor,
+            lightType, lightPos,
             currentConfig.shadowStrideX, currentConfig.shadowStrideZ
         );
 
-        previewFoodShadow = ShadowMapper(
+        g_previewFoodShadow = ShadowMapper(
             currentConfig.gridWidth, currentConfig.gridDepth,
-            currentConfig.cellSize, floorHeight,
-            currentConfig.lightDir, currentConfig.lightColor,
-            static_cast<LightType>(currentConfig.lightType), currentConfig.lightPos,
+            cellSize, floorHeight,
+            lightDir, currentConfig.lightColor,
+            lightType, lightPos,
             currentConfig.shadowStrideX, currentConfig.shadowStrideZ
         );
 
-        previewStaticShadow.setUseSpheres(false);
-        previewDynamicShadow.setUseSpheres(false);
-        previewFoodShadow.setUseSpheres(false);
+        // Отключаем сферы для точной геометрии
+        g_previewStaticShadow.setUseSpheres(false);
+        g_previewDynamicShadow.setUseSpheres(false);
+        g_previewFoodShadow.setUseSpheres(false);
 
-        ShadowMapper::ShadowTraceMode mode;
+        // Устанавливаем режим трассировки
+        ShadowMapper::ShadowTraceMode traceMode;
         switch (currentConfig.shadowTraceMode) {
-        case 0: mode = ShadowMapper::TRACE_CENTER; break;
-        case 1: mode = ShadowMapper::TRACE_CORNERS; break;
-        case 2: mode = ShadowMapper::TRACE_CENTER_SUBDIVIDED; break;
-        case 3: mode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
-        default: mode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
+        case 0: traceMode = ShadowMapper::TRACE_CENTER; break;
+        case 1: traceMode = ShadowMapper::TRACE_CORNERS; break;
+        case 2: traceMode = ShadowMapper::TRACE_CENTER_SUBDIVIDED; break;
+        case 3: traceMode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
+        default: traceMode = ShadowMapper::TRACE_CORNERS_SUBDIVIDED; break;
         }
 
-        previewStaticShadow.setShadowTraceMode(mode);
-        previewDynamicShadow.setShadowTraceMode(mode);
-        previewFoodShadow.setShadowTraceMode(mode);
+        g_previewStaticShadow.setShadowTraceMode(traceMode);
+        g_previewDynamicShadow.setShadowTraceMode(traceMode);
+        g_previewFoodShadow.setShadowTraceMode(traceMode);
 
-        // Callback для статических теней (деревья)
-        previewStaticShadow.setIntersectCallback(
+        // Callback для статических теней (деревья + пол)
+        g_previewStaticShadow.setIntersectCallback(
             [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float closestDist = 1000.0f;
                 bool hit = false;
 
+                // Пол
                 if (checkGround(ray, hitDist, hitPoint)) {
                     if (hitDist > 0.01f && hitDist < closestDist) {
                         closestDist = hitDist;
@@ -3411,6 +3473,7 @@ void renderShadowPreview3D() {
                     }
                 }
 
+                // Деревья
                 for (const auto& treePos : treePositions) {
                     glm::mat4 transform = glm::mat4(1.0f);
                     transform = glm::translate(transform,
@@ -3419,7 +3482,7 @@ void renderShadowPreview3D() {
 
                     float tempDist;
                     glm::vec3 tempPoint;
-                    if (rayIntersectsModel(ray, treeModel, transform, tempDist, tempPoint)) {
+                    if (rayIntersectsModel(ray, g_previewTreeModel, transform, tempDist, tempPoint)) {
                         if (tempDist > 0.01f && tempDist < closestDist) {
                             closestDist = tempDist;
                             hitPoint = tempPoint;
@@ -3433,12 +3496,14 @@ void renderShadowPreview3D() {
             }
         );
 
-        // Callback для динамических теней (змейка)
-        previewDynamicShadow.setIntersectCallback(
+        // Callback для динамических теней (змейка + пол)
+   // Callback для динамических теней (змейка) - ИСПРАВЛЕННЫЙ
+        g_previewDynamicShadow.setIntersectCallback(
             [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float closestDist = 1000.0f;
                 bool hit = false;
 
+                // ===== ВАЖНО: сначала проверяем пол (как в деревьях) =====
                 if (checkGround(ray, hitDist, hitPoint)) {
                     if (hitDist > 0.01f && hitDist < closestDist) {
                         closestDist = hitDist;
@@ -3446,40 +3511,55 @@ void renderShadowPreview3D() {
                     }
                 }
 
-                auto checkSnakeSegment = [&](const glm::vec3& pos, const Model& model, float scale, float offset, size_t idx) {
-                    glm::mat4 transform = glm::mat4(1.0f);
-                    transform = glm::translate(transform,
-                        glm::vec3(pos.x, pos.y + offset * scale, pos.z));
-                    float rotation = calculateSegmentRotationEditor(snakePositions, idx);
-                    transform = glm::rotate(transform, glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
-                    transform = glm::scale(transform, glm::vec3(scale));
+                // Функция проверки сегмента змеи
+                auto checkSnakeSegment = [&](const glm::vec3& pos, const Model& model,
+                    float scale, float offset, size_t idx) {
+                        if (model.vertices.empty()) return;
 
-                    float tempDist;
-                    glm::vec3 tempPoint;
-                    if (rayIntersectsModel(ray, model, transform, tempDist, tempPoint)) {
-                        if (tempDist > 0.01f && tempDist < closestDist) {
-                            closestDist = tempDist;
-                            hitPoint = tempPoint;
-                            hit = true;
+                        // Вычисляем bounding sphere для быстрого отсечения
+                        float radius = scale * 0.8f;
+                        glm::vec3 center(pos.x, pos.y + offset * scale, pos.z);
+
+                        float tSphere;
+                        if (!rayIntersectsSphere(ray, center, radius, tSphere)) {
+                            return;
                         }
-                    }
+
+                        glm::mat4 transform = glm::mat4(1.0f);
+                        transform = glm::translate(transform,
+                            glm::vec3(pos.x, pos.y + offset * scale, pos.z));
+                        float rotation = calcRotation(snakePositions, idx);
+                        transform = glm::rotate(transform, glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
+                        transform = glm::scale(transform, glm::vec3(scale));
+
+                        float tempDist;
+                        glm::vec3 tempPoint;
+                        if (rayIntersectsModel(ray, model, transform, tempDist, tempPoint)) {
+                            if (tempDist > 0.01f && tempDist < closestDist) {
+                                closestDist = tempDist;
+                                hitPoint = tempPoint;
+                                hit = true;
+                            }
+                        }
                     };
 
-                checkSnakeSegment(headPos, snakeHeadModel, headScale, headOffset, 0);
-                checkSnakeSegment(bodyPos, snakeBodyModel, bodyScale, bodyOffset, 1);
-                checkSnakeSegment(tailPos, snakeTailModel, tailScale, tailOffset, 2);
+                // Проверяем все сегменты змеи
+                checkSnakeSegment(headPos, g_previewSnakeHeadModel, headScale, headOffset, 0);
+                checkSnakeSegment(bodyPos, g_previewSnakeBodyModel, bodyScale, bodyOffset, 1);
+                checkSnakeSegment(tailPos, g_previewSnakeTailModel, tailScale, tailOffset, 2);
 
                 if (hit) hitDist = closestDist;
                 return hit;
             }
         );
 
-        // Callback для теней еды (яблоки)
-        previewFoodShadow.setIntersectCallback(
+        // Callback для теней еды (яблоки + пол)
+        g_previewFoodShadow.setIntersectCallback(
             [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float closestDist = 1000.0f;
                 bool hit = false;
 
+                // Пол
                 if (checkGround(ray, hitDist, hitPoint)) {
                     if (hitDist > 0.01f && hitDist < closestDist) {
                         closestDist = hitDist;
@@ -3487,6 +3567,7 @@ void renderShadowPreview3D() {
                     }
                 }
 
+                // Яблоки
                 for (const auto& applePos : applePositions) {
                     glm::mat4 transform = glm::mat4(1.0f);
                     transform = glm::translate(transform,
@@ -3495,7 +3576,7 @@ void renderShadowPreview3D() {
 
                     float tempDist;
                     glm::vec3 tempPoint;
-                    if (rayIntersectsModel(ray, appleModel, transform, tempDist, tempPoint)) {
+                    if (rayIntersectsModel(ray, g_previewAppleModel, transform, tempDist, tempPoint)) {
                         if (tempDist > 0.01f && tempDist < closestDist) {
                             closestDist = tempDist;
                             hitPoint = tempPoint;
@@ -3509,34 +3590,180 @@ void renderShadowPreview3D() {
             }
         );
 
-        previewStaticShadow.computeShadows();
-        previewDynamicShadow.computeShadows();
-        previewFoodShadow.computeShadows();
+        // Вычисляем тени
+        std::cout << "Computing static shadows..." << std::endl;
+        g_previewStaticShadow.computeShadows();
+        std::cout << "Computing dynamic shadows..." << std::endl;
+        g_previewDynamicShadow.computeShadows();
+        std::cout << "Computing food shadows..." << std::endl;
+        g_previewFoodShadow.computeShadows();
 
-        shadowsComputed = true;
-        lastShadowTraceMode = currentConfig.shadowTraceMode;
-        lastShadowMapEnabled = currentConfig.shadowMapEnabled;
-        lastShadowStrideX = currentConfig.shadowStrideX;
-        lastShadowStrideZ = currentConfig.shadowStrideZ;
-        lastShadowSubdivisionSize = currentConfig.shadowSubdivisionSize;
+        g_previewShadowsInitialized = true;
+        g_forceBoundsRecalc = false;
+
+        // Сохраняем последние настройки
+        g_lastShadowTraceMode = currentConfig.shadowTraceMode;
+        g_lastShadowMapEnabled = currentConfig.shadowMapEnabled;
+        g_lastShadowStrideX = currentConfig.shadowStrideX;
+        g_lastShadowStrideZ = currentConfig.shadowStrideZ;
+        g_lastShadowSubdivisionSize = currentConfig.shadowSubdivisionSize;
+
+        std::cout << "Shadows recalculated with mode: " << g_previewStaticShadow.getCurrentModeName() << std::endl;
     }
 
+    // Настройка освещения
     glEnable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+    setupFixedPipelineLighting();
 
-    // Рисуем сетку
+    bool useGradient = (currentConfig.shadowTraceMode == 1 || currentConfig.shadowTraceMode == 3);
+    bool isSubdivided = (currentConfig.shadowTraceMode == 2 || currentConfig.shadowTraceMode == 3);
+    int subDivSize = SHADOW_SUBDIVISION_SIZE;
+
+    glm::vec3 darkColor = currentConfig.floorColor * 0.15f;
+    glm::vec3 lightColor = currentConfig.floorColor;
+
+    // ========== ОТРИСОВКА ПОЛА ==========
+   // ========== ОТРИСОВКА ПОЛА ==========
+    if (currentConfig.shadowMapEnabled && g_previewShadowsInitialized && isSubdivided) {
+        // ===== SUBDIVIDED РЕЖИМ - рисуем подклетки =====
+        float subCellSizeX = cellSize / subDivSize;
+        float subCellSizeZ = cellSize / subDivSize;
+
+        // Получаем указатели на shadowGrid для быстрого доступа
+        const auto& staticGrid = g_previewStaticShadow.getShadowGrid();
+        const auto& dynamicGrid = g_previewDynamicShadow.getShadowGrid();
+        const auto& foodGrid = g_previewFoodShadow.getShadowGrid();
+
+        int staticTotalX = g_previewStaticShadow.getTotalCellsX();
+        int staticTotalZ = g_previewStaticShadow.getTotalCellsZ();
+        int strideX = currentConfig.shadowStrideX;
+        int strideZ = currentConfig.shadowStrideZ;
+
+        for (int z = 0; z < currentConfig.gridDepth; z++) {
+            for (int x = 0; x < currentConfig.gridWidth; x++) {
+                float cellStartX = x * cellSize - offsetX;
+                float cellStartZ = z * cellSize - offsetZ;
+
+                // Координаты в теневой сетке
+                int shadowX = x / strideX;
+                int shadowZ = z / strideZ;
+
+                if (shadowX >= 0 && shadowX < staticTotalX && shadowZ >= 0 && shadowZ < staticTotalZ) {
+
+                    const auto& staticSample = staticGrid[shadowZ][shadowX];
+                    const auto& dynamicSample = dynamicGrid[shadowZ][shadowX];
+                    const auto& foodSample = foodGrid[shadowZ][shadowX];
+
+                    bool staticHasSub = staticSample.hasSubCells();
+                    bool dynamicHasSub = dynamicSample.hasSubCells();
+                    bool foodHasSub = foodSample.hasSubCells();
+
+                    // Для каждой подклетки
+                    for (int subZ = 0; subZ < subDivSize; subZ++) {
+                        for (int subX = 0; subX < subDivSize; subX++) {
+                            float posX = cellStartX + subX * subCellSizeX;
+                            float posZ = cellStartZ + subZ * subCellSizeZ;
+
+                            float staticShadow, dynamicShadow, foodShadow;
+
+                            // Static shadow - используем subCellValues если есть
+                            if (staticHasSub) {
+                                staticShadow = staticSample.subCellValues[subZ][subX];
+                            }
+                            else {
+                                staticShadow = staticSample.value;
+                            }
+
+                            // Dynamic shadow - используем subCellValues если есть, иначе центральное значение
+                            if (dynamicHasSub) {
+                                dynamicShadow = dynamicSample.subCellValues[subZ][subX];
+                            }
+                            else {
+                                dynamicShadow = dynamicSample.value;
+                            }
+
+                            // Food shadow - используем subCellValues если есть, иначе центральное значение
+                            if (foodHasSub) {
+                                foodShadow = foodSample.subCellValues[subZ][subX];
+                            }
+                            else {
+                                foodShadow = foodSample.value;
+                            }
+
+                            float finalShadow = std::min({ staticShadow, dynamicShadow, foodShadow });
+
+                            glm::vec3 finalColor;
+                            if (useGradient) {
+                                finalColor = glm::mix(darkColor, lightColor, finalShadow);
+                            }
+                            else {
+                                finalColor = (finalShadow >= 0.5f) ? lightColor : darkColor;
+                            }
+
+                            glColor3f(finalColor.r, finalColor.g, finalColor.b);
+                            glBegin(GL_QUADS);
+                            glNormal3f(0.0f, 1.0f, 0.0f);
+                            glVertex3f(posX, -0.02f, posZ);
+                            glVertex3f(posX + subCellSizeX, -0.02f, posZ);
+                            glVertex3f(posX + subCellSizeX, -0.02f, posZ + subCellSizeZ);
+                            glVertex3f(posX, -0.02f, posZ + subCellSizeZ);
+                            glEnd();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else {
+        // ===== НЕ-subdivided режимы - оригинальный код =====
+        for (int z = 0; z < currentConfig.gridDepth; z++) {
+            for (int x = 0; x < currentConfig.gridWidth; x++) {
+                float posX = x * cellSize - offsetX;
+                float posZ = z * cellSize - offsetZ;
+
+                glm::vec3 finalColor = lightColor;
+
+                if (currentConfig.shadowMapEnabled && g_previewShadowsInitialized) {
+                    float staticShadow = g_previewStaticShadow.getShadowAtCell(x, z);
+                    float dynamicShadow = g_previewDynamicShadow.getShadowAtCell(x, z);
+                    float foodShadow = g_previewFoodShadow.getShadowAtCell(x, z);
+
+                    if (useGradient) {
+                        float shadowValue = (staticShadow + dynamicShadow + foodShadow) / 3.0f;
+                        finalColor = glm::mix(darkColor, lightColor, shadowValue);
+                    }
+                    else {
+                        float minShadow = std::min({ staticShadow, dynamicShadow, foodShadow });
+                        finalColor = (minShadow < 0.5f) ? darkColor : lightColor;
+                    }
+                }
+
+                glColor3f(finalColor.r, finalColor.g, finalColor.b);
+                glBegin(GL_QUADS);
+                glNormal3f(0.0f, 1.0f, 0.0f);
+                glVertex3f(posX, -0.02f, posZ);
+                glVertex3f(posX + cellSize, -0.02f, posZ);
+                glVertex3f(posX + cellSize, -0.02f, posZ + cellSize);
+                glVertex3f(posX, -0.02f, posZ + cellSize);
+                glEnd();
+            }
+        }
+    }
+
+    // ========== РИСУЕМ СЕТКУ ==========
     if (currentConfig.gridEnabled) {
         glDisable(GL_LIGHTING);
         glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
         glLineWidth(currentConfig.gridLineWidth);
         glBegin(GL_LINES);
         for (int i = 0; i <= currentConfig.gridWidth; i++) {
-            float x = i * currentConfig.cellSize - offsetX;
+            float x = i * cellSize - offsetX;
             glVertex3f(x, 0.01f, -offsetZ);
             glVertex3f(x, 0.01f, offsetZ);
         }
         for (int i = 0; i <= currentConfig.gridDepth; i++) {
-            float z = i * currentConfig.cellSize - offsetZ;
+            float z = i * cellSize - offsetZ;
             glVertex3f(-offsetX, 0.01f, z);
             glVertex3f(offsetX, 0.01f, z);
         }
@@ -3545,76 +3772,7 @@ void renderShadowPreview3D() {
         glEnable(GL_LIGHTING);
     }
 
-    // Рисуем пол с тенями
-    bool useFloorTexture = !currentConfig.floorTexture.empty() && floorTexture.id != 0;
-    if (useFloorTexture) {
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, floorTexture.id);
-        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    }
-    else {
-        glDisable(GL_TEXTURE_2D);
-    }
-
-    bool useGradient = (currentConfig.shadowTraceMode == 1 || currentConfig.shadowTraceMode == 3);
-    glm::vec3 darkColor = currentConfig.floorColor * 0.15f;
-    glm::vec3 lightColor = currentConfig.floorColor;
-
-    for (int z = 0; z < currentConfig.gridDepth; z++) {
-        for (int x = 0; x < currentConfig.gridWidth; x++) {
-            float posX = x * currentConfig.cellSize - offsetX;
-            float posZ = z * currentConfig.cellSize - offsetZ;
-
-            glm::vec3 finalColor = lightColor;
-
-            if (currentConfig.shadowMapEnabled && shadowsComputed) {
-                float staticShadow = previewStaticShadow.getShadowAtCell(x, z);
-                float dynamicShadow = previewDynamicShadow.getShadowAtCell(x, z);
-                float foodShadow = previewFoodShadow.getShadowAtCell(x, z);
-
-                if (useGradient) {
-                    float shadowValue = (staticShadow + dynamicShadow + foodShadow) / 3.0f;
-                    finalColor = glm::mix(darkColor, lightColor, shadowValue);
-                }
-                else {
-                    float minShadow = std::min({ staticShadow, dynamicShadow, foodShadow });
-                    if (minShadow < 0.5f) {
-                        finalColor = darkColor;
-                    }
-                    else {
-                        finalColor = lightColor;
-                    }
-                }
-            }
-
-            glColor3f(finalColor.r, finalColor.g, finalColor.b);
-
-            glBegin(GL_QUADS);
-            glNormal3f(0.0f, 1.0f, 0.0f);
-
-            if (useFloorTexture && floorTexture.id != 0) {
-                float u1 = (float)x / currentConfig.gridWidth;
-                float v1 = (float)z / currentConfig.gridDepth;
-                float u2 = (float)(x + 1) / currentConfig.gridWidth;
-                float v2 = (float)(z + 1) / currentConfig.gridDepth;
-                glTexCoord2f(u1, v1); glVertex3f(posX, -0.02f, posZ);
-                glTexCoord2f(u2, v1); glVertex3f(posX + currentConfig.cellSize, -0.02f, posZ);
-                glTexCoord2f(u2, v2); glVertex3f(posX + currentConfig.cellSize, -0.02f, posZ + currentConfig.cellSize);
-                glTexCoord2f(u1, v2); glVertex3f(posX, -0.02f, posZ + currentConfig.cellSize);
-            }
-            else {
-                glVertex3f(posX, -0.02f, posZ);
-                glVertex3f(posX + currentConfig.cellSize, -0.02f, posZ);
-                glVertex3f(posX + currentConfig.cellSize, -0.02f, posZ + currentConfig.cellSize);
-                glVertex3f(posX, -0.02f, posZ + currentConfig.cellSize);
-            }
-            glEnd();
-        }
-    }
-
-    glDisable(GL_TEXTURE_2D);
-
-    // Рисуем объекты
+    // ========== ФУНКЦИЯ ОТРИСОВКИ МОДЕЛИ ==========
     auto drawModel3D = [&](Model& model, const glm::vec3& pos, float offset,
         float scale, float rotation, const glm::vec3& color) {
             if (model.vertices.empty()) return;
@@ -3638,25 +3796,25 @@ void renderShadowPreview3D() {
             glPopMatrix();
         };
 
-    // Змейка
-    drawModel3D(snakeHeadModel, headPos, headOffset, headScale,
-        calculateSegmentRotationEditor(snakePositions, 0), currentConfig.snakeHeadColor);
-    drawModel3D(snakeBodyModel, bodyPos, bodyOffset, bodyScale,
-        calculateSegmentRotationEditor(snakePositions, 1), currentConfig.snakeBodyColor);
-    drawModel3D(snakeTailModel, tailPos, tailOffset, tailScale,
-        calculateSegmentRotationEditor(snakePositions, 2), currentConfig.snakeTailColor);
+    // ========== РИСУЕМ ЗМЕЙКУ ==========
+    drawModel3D(g_previewSnakeHeadModel, headPos, headOffset, headScale,
+        calcRotation(snakePositions, 0), currentConfig.snakeHeadColor);
+    drawModel3D(g_previewSnakeBodyModel, bodyPos, bodyOffset, bodyScale,
+        calcRotation(snakePositions, 1), currentConfig.snakeBodyColor);
+    drawModel3D(g_previewSnakeTailModel, tailPos, tailOffset, tailScale,
+        calcRotation(snakePositions, 2), currentConfig.snakeTailColor);
 
-    // Деревья
+    // ========== РИСУЕМ ДЕРЕВЬЯ ==========
     for (const auto& treePos : treePositions) {
-        drawModel3D(treeModel, treePos, treeOffset, treeScale, 0.0f, glm::vec3(0.2f, 0.6f, 0.2f));
+        drawModel3D(g_previewTreeModel, treePos, treeOffset, treeScale, 0.0f, glm::vec3(0.2f, 0.6f, 0.2f));
     }
 
-    // Яблоки
+    // ========== РИСУЕМ ЯБЛОКИ ==========
     for (const auto& applePos : applePositions) {
-        drawModel3D(appleModel, applePos, appleOffset, appleScale, 0.0f, glm::vec3(0.9f, 0.2f, 0.2f));
+        drawModel3D(g_previewAppleModel, applePos, appleOffset, appleScale, 0.0f, glm::vec3(0.9f, 0.2f, 0.2f));
     }
 
-    // Источник света
+    // ========== РИСУЕМ ИСТОЧНИК СВЕТА ==========
     if (currentConfig.lightType != 0) {
         glDisable(GL_LIGHTING);
         glDisable(GL_TEXTURE_2D);
@@ -3672,6 +3830,7 @@ void renderShadowPreview3D() {
 
     glDisable(GL_COLOR_MATERIAL);
 
+    // ========== ВОССТАНАВЛИВАЕМ МАТРИЦЫ ==========
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
@@ -3681,7 +3840,7 @@ void renderShadowPreview3D() {
     glDisable(GL_SCISSOR_TEST);
     reset2DProjection();
 
-    // UI
+    // ========== UI РАМКА ==========
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f((float)previewX, (float)previewY);
@@ -3701,10 +3860,12 @@ void renderShadowPreview3D() {
     }
 
     char infoText[300];
-    sprintf_s(infoText, "Тени: %s | Режим: %s | %s",
+    sprintf_s(infoText, "Тени: %s | Режим: %s | %s | Подклетки: %dx%d",
         currentConfig.shadowMapEnabled ? "ВКЛ" : "ВЫКЛ",
         modeName,
-        useGradient ? "градиент" : "бинарный");
+        useGradient ? "градиент" : "бинарный",
+        isSubdivided ? subDivSize : 1,
+        isSubdivided ? subDivSize : 1);
     drawText((float)(previewX + 10), (float)(previewY + 50), infoText, 0.8f, 0.8f, 1.0f);
 
     char objectsInfo[200];
@@ -3712,6 +3873,7 @@ void renderShadowPreview3D() {
         treePositions.size(), applePositions.size());
     drawText((float)(previewX + 10), (float)(previewY + 75), objectsInfo, 0.7f, 0.7f, 0.7f);
 
+    // ========== КНОПКИ УПРАВЛЕНИЯ КАМЕРОЙ ==========
     int arrowY = (int)(previewY + previewH + 15);
     int arrowCenterX = (int)(previewX + previewW / 2);
 
@@ -4092,8 +4254,12 @@ bool initOpenGL() {
     ConfigManager::loadGameConfig(g_configPath, currentConfig);
     initElements();
 
-    // ВАЖНО: Инициализируем освещение
+    // Инициализируем освещение
     setupFixedPipelineLighting();
+
+    // Очищаем кэш границ моделей
+    g_boundsCache.clear();
+    g_forceBoundsRecalc = true;
 
     return true;
 }
