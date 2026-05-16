@@ -207,7 +207,6 @@ public:
         const glm::vec3& lightDirection, const glm::vec3& lightColor,
         LightType lightType, const glm::vec3& lightPos,
         int strideX, int strideZ);
-
     void setGrid(int width, int depth, float cellSize, float groundHeight);
     void setLightType(LightType type) { m_lightType = type; }
     void setLightPos(const glm::vec3& pos) { m_lightPos = pos; }
@@ -216,6 +215,7 @@ public:
     void registerObjectBounds(const std::vector<BoundingSphere>& spheres);
     void clearObjectBounds();
     void setIntersectCallback(std::function<bool(const struct Ray&, float&, glm::vec3&)> callback);
+
 
     // Управление режимом трассировки
     void setShadowTraceMode(ShadowTraceMode mode);

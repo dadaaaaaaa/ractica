@@ -92,7 +92,7 @@ public:
     int getFloorTilesZ() const;                 // Количество тайлов по Z
     float getFloorTileSizeX() const;            // Размер тайла по X
     float getFloorTileSizeZ() const;            // Размер тайла по Z
-
+    void updateSpheresRadii();
     //=========================================================================
     // ГЕТТЕРЫ / СЕТТЕРЫ: ОСВЕЩЕНИЕ (Lighting)
     //=========================================================================

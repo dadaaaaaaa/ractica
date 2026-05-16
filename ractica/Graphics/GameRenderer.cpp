@@ -52,8 +52,8 @@ GameRenderer::GameRenderer()
     , m_shadowMapEnabled(false)
     , m_debugRaysEnabled(false)
     , m_showGroundRays(false)
-    , m_shadowStrideX(2)
-    , m_shadowStrideZ(2)
+    , m_shadowStrideX(1)
+    , m_shadowStrideZ(1)
     , m_staticShadowsDirty(true)
     , m_dynamicShadowsDirty(true)
     , m_foodShadowsDirty(true)
@@ -87,11 +87,106 @@ void GameRenderer::drawDebugSpheres() {
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_DEPTH_TEST);
 
+    // Включаем прозрачность
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     const GameObjects& objects = g_game.getGameObjects();
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    // Рисуем сферы для деревьев (красные, полупрозрачные)
+    // Предварительно вычисляем радиусы моделей (как в updateSpheresRadii)
+    static float treeModelRadius = 0.0f;
+    static float headRadius = 0.0f, bodyRadius = 0.0f, tailRadius = 0.0f;
+    static float appleModelRadius = 0.0f;
+    static bool radiiComputed = false;
+
+    if (!radiiComputed) {
+        // Радиус дерева
+        if (!m_treeModel.vertices.empty()) {
+            float minX = FLT_MAX, maxX = -FLT_MAX;
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            float minZ = FLT_MAX, maxZ = -FLT_MAX;
+            for (const auto& vert : m_treeModel.vertices) {
+                minX = std::min(minX, vert.position.x);
+                maxX = std::max(maxX, vert.position.x);
+                minY = std::min(minY, vert.position.y);
+                maxY = std::max(maxY, vert.position.y);
+                minZ = std::min(minZ, vert.position.z);
+                maxZ = std::max(maxZ, vert.position.z);
+            }
+            treeModelRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+        }
+
+        // Радиусы змейки
+        if (!m_snakeHeadModel.vertices.empty()) {
+            float minX = FLT_MAX, maxX = -FLT_MAX;
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            float minZ = FLT_MAX, maxZ = -FLT_MAX;
+            for (const auto& vert : m_snakeHeadModel.vertices) {
+                minX = std::min(minX, vert.position.x);
+                maxX = std::max(maxX, vert.position.x);
+                minY = std::min(minY, vert.position.y);
+                maxY = std::max(maxY, vert.position.y);
+                minZ = std::min(minZ, vert.position.z);
+                maxZ = std::max(maxZ, vert.position.z);
+            }
+            headRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+
+            if (!m_snakeBodyModel.vertices.empty()) {
+                minX = FLT_MAX, maxX = -FLT_MAX;
+                minY = FLT_MAX, maxY = -FLT_MAX;
+                minZ = FLT_MAX, maxZ = -FLT_MAX;
+                for (const auto& vert : m_snakeBodyModel.vertices) {
+                    minX = std::min(minX, vert.position.x);
+                    maxX = std::max(maxX, vert.position.x);
+                    minY = std::min(minY, vert.position.y);
+                    maxY = std::max(maxY, vert.position.y);
+                    minZ = std::min(minZ, vert.position.z);
+                    maxZ = std::max(maxZ, vert.position.z);
+                }
+                bodyRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+            }
+
+            if (!m_snakeTailModel.vertices.empty()) {
+                minX = FLT_MAX, maxX = -FLT_MAX;
+                minY = FLT_MAX, maxY = -FLT_MAX;
+                minZ = FLT_MAX, maxZ = -FLT_MAX;
+                for (const auto& vert : m_snakeTailModel.vertices) {
+                    minX = std::min(minX, vert.position.x);
+                    maxX = std::max(maxX, vert.position.x);
+                    minY = std::min(minY, vert.position.y);
+                    maxY = std::max(maxY, vert.position.y);
+                    minZ = std::min(minZ, vert.position.z);
+                    maxZ = std::max(maxZ, vert.position.z);
+                }
+                tailRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+            }
+        }
+
+        // Радиус яблока
+        if (!m_appleModel.vertices.empty()) {
+            float minX = FLT_MAX, maxX = -FLT_MAX;
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            float minZ = FLT_MAX, maxZ = -FLT_MAX;
+            for (const auto& vert : m_appleModel.vertices) {
+                minX = std::min(minX, vert.position.x);
+                maxX = std::max(maxX, vert.position.x);
+                minY = std::min(minY, vert.position.y);
+                maxY = std::max(maxY, vert.position.y);
+                minZ = std::min(minZ, vert.position.z);
+                maxZ = std::max(maxZ, vert.position.z);
+            }
+            appleModelRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+        }
+
+        radiiComputed = true;
+        std::cout << "Debug spheres radii: tree=" << treeModelRadius
+            << ", head=" << headRadius << ", body=" << bodyRadius
+            << ", tail=" << tailRadius << ", apple=" << appleModelRadius << std::endl;
+    }
+
+    // ===== РИСУЕМ СФЕРЫ ДЛЯ ДЕРЕВЬЕВ (красные, полупрозрачные) =====
     glColor4f(1.0f, 0.0f, 0.0f, 0.3f);
 
     for (const auto& obstacle : objects.getObstacles()) {
@@ -100,38 +195,103 @@ void GameRenderer::drawDebugSpheres() {
             float z = block.z * m_cellSize - offsetZ;
             float y = block.y * m_cellSize;
 
-            // Должна быть такая же сфера, как в rayIntersectsModel
-            // Вычисляем bounding sphere модели
-            if (!m_treeModel.vertices.empty()) {
-                // Находим границы модели в локальных координатах
-                float minX = m_treeModel.vertices[0].position.x;
-                float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
-                for (const auto& v : m_treeModel.vertices) {
-                    minX = std::min(minX, v.position.x);
-                    maxX = std::max(maxX, v.position.x);
-                    minY = std::min(minY, v.position.y);
-                    maxY = std::max(maxY, v.position.y);
-                    minZ = std::min(minZ, v.position.z);
-                    maxZ = std::max(maxZ, v.position.z);
-                }
+            float scale = m_cellSize * 1.2f;
+            float worldRadius = treeModelRadius * scale;
 
-                float radius = std::max({ (maxX - minX) * 0.5f,
-                                         (maxY - minY) * 0.5f,
-                                         (maxZ - minZ) * 0.5f }) * (m_cellSize * 1.2f);
+            // Центр сферы должен совпадать с тем, что в updateSpheresRadii
+            glm::vec3 center(
+                x + m_cellSize * 0.5f,
+                y + scale * 1.0f,  // Центр дерева по высоте
+                z + m_cellSize * 0.5f
+            );
 
-                glm::vec3 center(x + (minX + maxX) * 0.5f * (m_cellSize * 1.2f),
-                    y + (minY + maxY) * 0.5f * (m_cellSize * 1.2f),
-                    z + (minZ + maxZ) * 0.5f * (m_cellSize * 1.2f));
-
-                // Рисуем сферу
-                GLUquadric* quad = gluNewQuadric();
-                glPushMatrix();
-                glTranslatef(center.x, center.y, center.z);
-                gluSphere(quad, radius, 16, 16);
-                glPopMatrix();
-                gluDeleteQuadric(quad);
+            // Обновляем радиус в зависимости от типа света (как в BoundingSphere::updateRadius)
+            float currentRadius = worldRadius;
+            if (m_lightType == LightType::Directional) {
+                // Для направленного света радиус не меняется
+                currentRadius = worldRadius;
             }
+            else {
+                // Для точечного и прожектора - добавляем небольшой запас
+                currentRadius = worldRadius * 1.2f;
+            }
+
+            GLUquadric* quad = gluNewQuadric();
+            glPushMatrix();
+            glTranslatef(center.x, center.y, center.z);
+            gluSphere(quad, currentRadius, 24, 24);
+            glPopMatrix();
+            gluDeleteQuadric(quad);
         }
+    }
+
+    // ===== РИСУЕМ СФЕРЫ ДЛЯ ЗМЕЙКИ (зелёные, полупрозрачные) =====
+    glColor4f(0.0f, 1.0f, 0.0f, 0.3f);
+
+    for (size_t i = 0; i < objects.getSnake().size(); i++) {
+        const Point& segment = objects.getSnake()[i];
+        float x = segment.x * m_cellSize - offsetX;
+        float z = segment.z * m_cellSize - offsetZ;
+        float y = segment.y * m_cellSize + 0.1f;
+
+        float scale;
+        float modelRadius;
+
+        if (i == 0) {
+            scale = m_cellSize * objects.getSnakeHeadScale();
+            modelRadius = headRadius;
+        }
+        else if (i == objects.getSnake().size() - 1) {
+            scale = m_cellSize * objects.getSnakeTailScale();
+            modelRadius = tailRadius;
+        }
+        else {
+            scale = m_cellSize * objects.getSnakeBodyScale();
+            modelRadius = bodyRadius;
+        }
+
+        float worldRadius = modelRadius * scale;
+
+        // Обновляем радиус в зависимости от типа света
+        float currentRadius = worldRadius;
+        if (m_lightType != LightType::Directional) {
+            currentRadius = worldRadius * 1.2f;
+        }
+
+        GLUquadric* quad = gluNewQuadric();
+        glPushMatrix();
+        glTranslatef(x, y, z);
+        gluSphere(quad, currentRadius, 24, 24);
+        glPopMatrix();
+        gluDeleteQuadric(quad);
+    }
+
+    // ===== РИСУЕМ СФЕРЫ ДЛЯ ЕДЫ (жёлтые, полупрозрачные) =====
+    glColor4f(1.0f, 1.0f, 0.0f, 0.3f);
+
+    for (const auto& apple : objects.getFood()) {
+        float x = apple.x * m_cellSize - offsetX;
+        float z = apple.z * m_cellSize - offsetZ;
+
+        float scale = m_cellSize * 0.6f;
+        float worldRadius = appleModelRadius * scale;
+
+        float centerX = x + m_cellSize * 0.5f;
+        float centerY = m_floorHeight + worldRadius;  // Основание на полу
+        float centerZ = z + m_cellSize * 0.5f;
+
+        // Обновляем радиус в зависимости от типа света
+        float currentRadius = worldRadius;
+        if (m_lightType != LightType::Directional) {
+            currentRadius = worldRadius * 1.2f;
+        }
+
+        GLUquadric* quad = gluNewQuadric();
+        glPushMatrix();
+        glTranslatef(centerX, centerY, centerZ);
+        gluSphere(quad, currentRadius, 24, 24);
+        glPopMatrix();
+        gluDeleteQuadric(quad);
     }
 
     glPopAttrib();
@@ -376,133 +536,133 @@ void GameRenderer::toggleDebugNormals() {
 void GameRenderer::drawDebugNormals(const GameObjects& objects) {
     if (!m_debugNormalsEnabled) return;
 
-    glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT);
-    glDisable(GL_LIGHTING);
-    glDisable(GL_TEXTURE_2D);
-    glDisable(GL_DEPTH_TEST);
-    glLineWidth(1.5f);
+    //glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT);
+    //glDisable(GL_LIGHTING);
+    //glDisable(GL_TEXTURE_2D);
+    //glDisable(GL_DEPTH_TEST);
+    //glLineWidth(1.5f);
 
-    float offsetX = m_gridWidth * m_cellSize / 2.0f;
-    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-    float normalLength = 0.15f;
+    //float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    //float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+    //float normalLength = 0.15f;
 
-    // Рисуем нормали для змейки
-    for (size_t i = 0; i < objects.getSnake().size(); i++) {
-        const Point& segment = objects.getSnake()[i];
-        float x = segment.x * m_cellSize - offsetX;
-        float y = segment.y * m_cellSize + 0.1f;
-        float z = segment.z * m_cellSize - offsetZ;
+    //// Рисуем нормали для змейки
+    //for (size_t i = 0; i < objects.getSnake().size(); i++) {
+    //    const Point& segment = objects.getSnake()[i];
+    //    float x = segment.x * m_cellSize - offsetX;
+    //    float y = segment.y * m_cellSize + 0.1f;
+    //    float z = segment.z * m_cellSize - offsetZ;
 
-        float scale;
-        const Model* currentModel = nullptr;
+    //    float scale;
+    //    const Model* currentModel = nullptr;
 
-        if (i == 0) {
-            scale = m_cellSize * objects.getSnakeHeadScale();
-            currentModel = &m_snakeHeadModel;
-        }
-        else if (i == objects.getSnake().size() - 1) {
-            scale = m_cellSize * objects.getSnakeTailScale();
-            currentModel = &m_snakeTailModel;
-        }
-        else {
-            scale = m_cellSize * objects.getSnakeBodyScale();
-            currentModel = &m_snakeBodyModel;
-        }
+    //    if (i == 0) {
+    //        scale = m_cellSize * objects.getSnakeHeadScale();
+    //        currentModel = &m_snakeHeadModel;
+    //    }
+    //    else if (i == objects.getSnake().size() - 1) {
+    //        scale = m_cellSize * objects.getSnakeTailScale();
+    //        currentModel = &m_snakeTailModel;
+    //    }
+    //    else {
+    //        scale = m_cellSize * objects.getSnakeBodyScale();
+    //        currentModel = &m_snakeBodyModel;
+    //    }
 
-        float rotationAngle = calculateSegmentRotation(objects.getSnake(), i);
+    //    float rotationAngle = calculateSegmentRotation(objects.getSnake(), i);
 
-        glm::mat4 transform = glm::mat4(1.0f);
-        transform = glm::translate(transform, glm::vec3(x, y, z));
-        transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
-        transform = glm::scale(transform, glm::vec3(scale));
+    //    glm::mat4 transform = glm::mat4(1.0f);
+    //    transform = glm::translate(transform, glm::vec3(x, y, z));
+    //    transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+    //    transform = glm::scale(transform, glm::vec3(scale));
 
-        drawModelNormals(*currentModel, transform, normalLength);
-    }
+    //    drawModelNormals(*currentModel, transform, normalLength);
+    //}
 
-    // Рисуем нормали для еды (яблок)
-    for (const auto& apple : objects.getFood()) {
-        float x = apple.x * m_cellSize - offsetX;
-        float y = apple.y * m_cellSize + 0.1f;
-        float z = apple.z * m_cellSize - offsetZ;
-        float scale = m_cellSize * 0.6f;
+    //// Рисуем нормали для еды (яблок)
+    //for (const auto& apple : objects.getFood()) {
+    //    float x = apple.x * m_cellSize - offsetX;
+    //    float y = apple.y * m_cellSize + 0.1f;
+    //    float z = apple.z * m_cellSize - offsetZ;
+    //    float scale = m_cellSize * 0.6f;
 
-        glm::mat4 transform = glm::mat4(1.0f);
-        transform = glm::translate(transform, glm::vec3(x, y, z));
-        transform = glm::scale(transform, glm::vec3(scale));
+    //    glm::mat4 transform = glm::mat4(1.0f);
+    //    transform = glm::translate(transform, glm::vec3(x, y, z));
+    //    transform = glm::scale(transform, glm::vec3(scale));
 
-        drawModelNormals(m_appleModel, transform, normalLength);
-    }
+    //    drawModelNormals(m_appleModel, transform, normalLength);
+    //}
 
-    // Рисуем нормали для деревьев (препятствий)
-    for (const auto& obstacle : objects.getObstacles()) {
-        for (const auto& block : obstacle.blocks) {
-            float x = block.x * m_cellSize - offsetX;
-            float y = block.y * m_cellSize;
-            float z = block.z * m_cellSize - offsetZ;
-            float scale = m_cellSize * 1.2f;
+    //// Рисуем нормали для деревьев (препятствий)
+    //for (const auto& obstacle : objects.getObstacles()) {
+    //    for (const auto& block : obstacle.blocks) {
+    //        float x = block.x * m_cellSize - offsetX;
+    //        float y = block.y * m_cellSize;
+    //        float z = block.z * m_cellSize - offsetZ;
+    //        float scale = m_cellSize * 1.2f;
 
-            glm::mat4 transform = glm::mat4(1.0f);
-            transform = glm::translate(transform, glm::vec3(x, y, z));
-            transform = glm::scale(transform, glm::vec3(scale));
+    //        glm::mat4 transform = glm::mat4(1.0f);
+    //        transform = glm::translate(transform, glm::vec3(x, y, z));
+    //        transform = glm::scale(transform, glm::vec3(scale));
 
-            drawModelNormals(m_treeModel, transform, normalLength);
-        }
-    }
+    //        drawModelNormals(m_treeModel, transform, normalLength);
+    //    }
+    //}
 
-    // Рисуем нормали для забора
-    for (const auto& fenceBlock : objects.getFenceBlocks()) {
-        float x = fenceBlock.x * m_cellSize - offsetX;
-        float z = fenceBlock.z * m_cellSize - offsetZ;
-        float y = 0.1f;
-        float scale = m_cellSize;
+    //// Рисуем нормали для забора
+    //for (const auto& fenceBlock : objects.getFenceBlocks()) {
+    //    float x = fenceBlock.x * m_cellSize - offsetX;
+    //    float z = fenceBlock.z * m_cellSize - offsetZ;
+    //    float y = 0.1f;
+    //    float scale = m_cellSize;
 
-        glm::mat4 transform = glm::mat4(1.0f);
-        transform = glm::translate(transform, glm::vec3(x, y, z));
-        transform = glm::scale(transform, glm::vec3(scale, scale * 0.5f, scale));
+    //    glm::mat4 transform = glm::mat4(1.0f);
+    //    transform = glm::translate(transform, glm::vec3(x, y, z));
+    //    transform = glm::scale(transform, glm::vec3(scale, scale * 0.5f, scale));
 
-        drawModelNormals(m_fenceModel, transform, normalLength);
-    }
+    //    drawModelNormals(m_fenceModel, transform, normalLength);
+    //}
 
-    // Рисуем нормали для облаков
-    for (const auto& cloud : objects.getCloudSprites()) {
-        float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
-        if (distanceToCenter < 8.0f) continue;
+    //// Рисуем нормали для облаков
+    //for (const auto& cloud : objects.getCloudSprites()) {
+    //    float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
+    //    if (distanceToCenter < 8.0f) continue;
 
-        glm::mat4 transform = glm::mat4(1.0f);
-        transform = glm::translate(transform, cloud.position);
-        transform = glm::scale(transform, glm::vec3(cloud.size));
+    //    glm::mat4 transform = glm::mat4(1.0f);
+    //    transform = glm::translate(transform, cloud.position);
+    //    transform = glm::scale(transform, glm::vec3(cloud.size));
 
-        drawModelNormals(m_cloudModel, transform, normalLength);
-    }
+    //    drawModelNormals(m_cloudModel, transform, normalLength);
+    //}
 
-    // Рисуем нормали для птиц
-    for (const auto& bird : objects.getBirds()) {
-        glm::mat4 transform = glm::mat4(1.0f);
-        transform = glm::translate(transform, bird.position);
+    //// Рисуем нормали для птиц
+    //for (const auto& bird : objects.getBirds()) {
+    //    glm::mat4 transform = glm::mat4(1.0f);
+    //    transform = glm::translate(transform, bird.position);
 
-        if (glm::length(bird.direction) > 0.1f) {
-            float angle = atan2f(bird.direction.x, bird.direction.z);
-            transform = glm::rotate(transform, angle, glm::vec3(0.0f, 1.0f, 0.0f));
-            float pitch = atan2f(bird.direction.y,
-                glm::length(glm::vec2(bird.direction.x, bird.direction.z)));
-            transform = glm::rotate(transform, pitch, glm::vec3(1.0f, 0.0f, 0.0f));
-        }
+    //    if (glm::length(bird.direction) > 0.1f) {
+    //        float angle = atan2f(bird.direction.x, bird.direction.z);
+    //        transform = glm::rotate(transform, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+    //        float pitch = atan2f(bird.direction.y,
+    //            glm::length(glm::vec2(bird.direction.x, bird.direction.z)));
+    //        transform = glm::rotate(transform, pitch, glm::vec3(1.0f, 0.0f, 0.0f));
+    //    }
 
-        transform = glm::scale(transform, glm::vec3(bird.size));
-        drawModelNormals(m_birdModel, transform, normalLength);
-    }
+    //    transform = glm::scale(transform, glm::vec3(bird.size));
+    //    drawModelNormals(m_birdModel, transform, normalLength);
+    //}
 
-    // Рисуем нормали для цветов
-    for (const auto& flower : objects.getFlowerSprites()) {
-        glm::mat4 transform = glm::mat4(1.0f);
-        transform = glm::translate(transform, glm::vec3(flower.position.x, flower.position.y + 0.05f, flower.position.z));
-        transform = glm::scale(transform, glm::vec3(flower.size));
+    //// Рисуем нормали для цветов
+    //for (const auto& flower : objects.getFlowerSprites()) {
+    //    glm::mat4 transform = glm::mat4(1.0f);
+    //    transform = glm::translate(transform, glm::vec3(flower.position.x, flower.position.y + 0.05f, flower.position.z));
+    //    transform = glm::scale(transform, glm::vec3(flower.size));
 
-        drawModelNormals(m_flowerModel, transform, normalLength);
-    }
+    //    drawModelNormals(m_flowerModel, transform, normalLength);
+    //}
 
-    glPopAttrib();
-    glEnable(GL_DEPTH_TEST);
+    //glPopAttrib();
+    //glEnable(GL_DEPTH_TEST);
 }
 
 void GameRenderer::drawModelNormals(const Model& model, const glm::mat4& transform, float normalLength) {
@@ -791,26 +951,30 @@ void GameRenderer::setSpecularEnabled(bool enabled) {
     setupFixedPipelineLighting();
 }
 
-void GameRenderer::setLightDir(const glm::vec3& dir) {
-    m_lightDir = glm::normalize(dir);
-    setupFixedPipelineLighting();
-    updateLightPosition();
-
-    // Помечаем тени как грязные
-    m_staticShadowsDirty = true;
-    m_dynamicShadowsDirty = true;
-    m_foodShadowsDirty = true;
-}
-
 void GameRenderer::setLightPos(const glm::vec3& pos) {
     m_lightPos = pos;
     setupFixedPipelineLighting();
     updateLightPosition();
 
-    // Помечаем тени как грязные
-    m_staticShadowsDirty = true;
-    m_dynamicShadowsDirty = true;
-    m_foodShadowsDirty = true;
+    if (m_shadowMapEnabled) {
+        updateSpheresRadii();  // <-- Добавить
+        m_staticShadowsDirty = true;
+        m_dynamicShadowsDirty = true;
+        m_foodShadowsDirty = true;
+    }
+}
+
+void GameRenderer::setLightDir(const glm::vec3& dir) {
+    m_lightDir = glm::normalize(dir);
+    setupFixedPipelineLighting();
+    updateLightPosition();
+
+    if (m_shadowMapEnabled) {
+        updateSpheresRadii();  // <-- Добавить
+        m_staticShadowsDirty = true;
+        m_dynamicShadowsDirty = true;
+        m_foodShadowsDirty = true;
+    }
 }
 
 void GameRenderer::setLightType(LightType type) {
@@ -818,10 +982,12 @@ void GameRenderer::setLightType(LightType type) {
     setupFixedPipelineLighting();
     updateLightPosition();
 
-    // Помечаем тени как грязные
-    m_staticShadowsDirty = true;
-    m_dynamicShadowsDirty = true;
-    m_foodShadowsDirty = true;
+    if (m_shadowMapEnabled) {
+        updateSpheresRadii();  // <-- Добавить
+        m_staticShadowsDirty = true;
+        m_dynamicShadowsDirty = true;
+        m_foodShadowsDirty = true;
+    }
 }
 
 void GameRenderer::setLightColor(const glm::vec3& color) {
@@ -1295,7 +1461,198 @@ void GameRenderer::renderGame(const GameObjects& objects) {
 
 // GameRenderer.cpp - полная функция с синхронизацией режима
 
-// В GameRenderer.cpp - исправленная computeShadowsIfNeeded
+void GameRenderer::updateSpheresRadii() {
+    if (!m_shadowMapEnabled) return;
+
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+    const GameObjects& objects = g_game.getGameObjects();
+
+    // ========== ВЫЧИСЛЯЕМ РЕАЛЬНЫЕ РАДИУСЫ МОДЕЛЕЙ (один раз) ==========
+    static float treeModelRadius = 0.0f;
+    static float headRadius = 0.0f, bodyRadius = 0.0f, tailRadius = 0.0f;
+    static float appleModelRadius = 0.0f;
+    static bool radiiComputed = false;
+
+    if (!radiiComputed) {
+        // Радиус дерева
+        if (!m_treeModel.vertices.empty()) {
+            float minX = FLT_MAX, maxX = -FLT_MAX;
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            float minZ = FLT_MAX, maxZ = -FLT_MAX;
+
+            for (const auto& vert : m_treeModel.vertices) {
+                minX = std::min(minX, vert.position.x);
+                maxX = std::max(maxX, vert.position.x);
+                minY = std::min(minY, vert.position.y);
+                maxY = std::max(maxY, vert.position.y);
+                minZ = std::min(minZ, vert.position.z);
+                maxZ = std::max(maxZ, vert.position.z);
+            }
+            treeModelRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+            std::cout << "Tree model radius (local): " << treeModelRadius << std::endl;
+        }
+
+        // Радиусы змейки
+        if (!m_snakeHeadModel.vertices.empty()) {
+            float minX = FLT_MAX, maxX = -FLT_MAX;
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            float minZ = FLT_MAX, maxZ = -FLT_MAX;
+
+            for (const auto& vert : m_snakeHeadModel.vertices) {
+                minX = std::min(minX, vert.position.x);
+                maxX = std::max(maxX, vert.position.x);
+                minY = std::min(minY, vert.position.y);
+                maxY = std::max(maxY, vert.position.y);
+                minZ = std::min(minZ, vert.position.z);
+                maxZ = std::max(maxZ, vert.position.z);
+            }
+            headRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+
+            if (!m_snakeBodyModel.vertices.empty()) {
+                minX = FLT_MAX, maxX = -FLT_MAX;
+                minY = FLT_MAX, maxY = -FLT_MAX;
+                minZ = FLT_MAX, maxZ = -FLT_MAX;
+                for (const auto& vert : m_snakeBodyModel.vertices) {
+                    minX = std::min(minX, vert.position.x);
+                    maxX = std::max(maxX, vert.position.x);
+                    minY = std::min(minY, vert.position.y);
+                    maxY = std::max(maxY, vert.position.y);
+                    minZ = std::min(minZ, vert.position.z);
+                    maxZ = std::max(maxZ, vert.position.z);
+                }
+                bodyRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+            }
+
+            if (!m_snakeTailModel.vertices.empty()) {
+                minX = FLT_MAX, maxX = -FLT_MAX;
+                minY = FLT_MAX, maxY = -FLT_MAX;
+                minZ = FLT_MAX, maxZ = -FLT_MAX;
+                for (const auto& vert : m_snakeTailModel.vertices) {
+                    minX = std::min(minX, vert.position.x);
+                    maxX = std::max(maxX, vert.position.x);
+                    minY = std::min(minY, vert.position.y);
+                    maxY = std::max(maxY, vert.position.y);
+                    minZ = std::min(minZ, vert.position.z);
+                    maxZ = std::max(maxZ, vert.position.z);
+                }
+                tailRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+            }
+            std::cout << "Snake radii: head=" << headRadius << ", body=" << bodyRadius << ", tail=" << tailRadius << std::endl;
+        }
+
+        // Радиус яблока
+        if (!m_appleModel.vertices.empty()) {
+            float minX = FLT_MAX, maxX = -FLT_MAX;
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            float minZ = FLT_MAX, maxZ = -FLT_MAX;
+
+            for (const auto& vert : m_appleModel.vertices) {
+                minX = std::min(minX, vert.position.x);
+                maxX = std::max(maxX, vert.position.x);
+                minY = std::min(minY, vert.position.y);
+                maxY = std::max(maxY, vert.position.y);
+                minZ = std::min(minZ, vert.position.z);
+                maxZ = std::max(maxZ, vert.position.z);
+            }
+            appleModelRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+            std::cout << "Apple model radius: " << appleModelRadius << std::endl;
+        }
+
+        radiiComputed = true;
+    }
+
+    // ========== СФЕРЫ ДЛЯ ДЕРЕВЬЕВ ==========
+    std::vector<BoundingSphere> treeSpheres;
+
+    for (const auto& obstacle : objects.getObstacles()) {
+        for (const auto& block : obstacle.blocks) {
+            float x = block.x * m_cellSize - offsetX;
+            float z = block.z * m_cellSize - offsetZ;
+            float y = block.y * m_cellSize;
+
+            float scale = m_cellSize * 1.2f;
+            float worldRadius = treeModelRadius * scale;
+
+            // Центр сферы должен совпадать с центром модели
+            glm::vec3 center(
+                x + m_cellSize * 0.5f,
+                y + scale * 1.0f,  // Центр дерева по высоте
+                z + m_cellSize * 0.5f
+            );
+
+            BoundingSphere sphere(center, worldRadius);
+            sphere.updateRadius(m_lightType, m_lightPos, m_lightDir, 20.0f);
+            treeSpheres.push_back(sphere);
+        }
+    }
+    m_staticShadow.registerObjectBounds(treeSpheres);
+    if (!treeSpheres.empty()) {
+        std::cout << "Tree spheres: " << treeSpheres.size() << ", radius=" << treeSpheres[0].currentRadius << std::endl;
+    }
+
+    // ========== СФЕРЫ ДЛЯ ЗМЕЙКИ ==========
+    std::vector<BoundingSphere> snakeSpheres;
+
+    for (size_t i = 0; i < objects.getSnake().size(); i++) {
+        const Point& segment = objects.getSnake()[i];
+        float x = segment.x * m_cellSize - offsetX;
+        float z = segment.z * m_cellSize - offsetZ;
+        float y = segment.y * m_cellSize + 0.1f;
+
+        float scale;
+        float modelRadius;
+
+        if (i == 0) {
+            scale = m_cellSize * objects.getSnakeHeadScale();
+            modelRadius = headRadius;
+        }
+        else if (i == objects.getSnake().size() - 1) {
+            scale = m_cellSize * objects.getSnakeTailScale();
+            modelRadius = tailRadius;
+        }
+        else {
+            scale = m_cellSize * objects.getSnakeBodyScale();
+            modelRadius = bodyRadius;
+        }
+
+        float worldRadius = modelRadius * scale;
+
+        BoundingSphere sphere(glm::vec3(x, y, z), worldRadius);
+        sphere.updateRadius(m_lightType, m_lightPos, m_lightDir, 20.0f);
+        snakeSpheres.push_back(sphere);
+    }
+    m_dynamicShadow.registerObjectBounds(snakeSpheres);
+    std::cout << "Snake spheres: " << snakeSpheres.size() << std::endl;
+
+    // ========== СФЕРЫ ДЛЯ ЕДЫ ==========
+    std::vector<BoundingSphere> foodSpheres;
+
+    for (const auto& apple : objects.getFood()) {
+        float x = apple.x * m_cellSize - offsetX;
+        float z = apple.z * m_cellSize - offsetZ;
+
+        float scale = m_cellSize * 0.6f;
+        float worldRadius = appleModelRadius * scale;
+
+        float centerX = x + m_cellSize * 0.5f;
+        float centerY = m_floorHeight + worldRadius;
+        float centerZ = z + m_cellSize * 0.5f;
+
+        BoundingSphere sphere(glm::vec3(centerX, centerY, centerZ), worldRadius);
+        sphere.updateRadius(m_lightType, m_lightPos, m_lightDir, 20.0f);
+        foodSpheres.push_back(sphere);
+    }
+    m_foodShadow.registerObjectBounds(foodSpheres);
+    if (!foodSpheres.empty()) {
+        std::cout << "Food spheres: " << foodSpheres.size() << ", radius=" << foodSpheres[0].currentRadius << std::endl;
+    }
+
+    // Помечаем тени как грязные для пересчёта
+    m_staticShadowsDirty = true;
+    m_dynamicShadowsDirty = true;
+    m_foodShadowsDirty = true;
+}
 
 void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     // Синхронизируем режим и свет
@@ -1320,11 +1677,128 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     m_foodShadow.setLightPos(m_lightPos);
     m_foodShadow.setLightDirection(m_lightDir);
 
+    float offsetX = m_gridWidth * m_cellSize / 2.0f;
+    float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+    // ========== ПРЕДВАРИТЕЛЬНО ВЫЧИСЛЯЕМ РАДИУСЫ МОДЕЛЕЙ ==========
+    static float treeModelRadius = 0.0f;
+    static float headRadius = 0.0f, bodyRadius = 0.0f, tailRadius = 0.0f;
+    static float appleModelRadius = 0.0f;
+    static bool radiiComputed = false;
+
+    if (!radiiComputed && m_shadowMapEnabled) {
+        // Радиус дерева
+        if (!m_treeModel.vertices.empty()) {
+            float minX = FLT_MAX, maxX = -FLT_MAX;
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            float minZ = FLT_MAX, maxZ = -FLT_MAX;
+            for (const auto& vert : m_treeModel.vertices) {
+                minX = std::min(minX, vert.position.x);
+                maxX = std::max(maxX, vert.position.x);
+                minY = std::min(minY, vert.position.y);
+                maxY = std::max(maxY, vert.position.y);
+                minZ = std::min(minZ, vert.position.z);
+                maxZ = std::max(maxZ, vert.position.z);
+            }
+            treeModelRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+        }
+
+        // Радиусы змейки
+        if (!m_snakeHeadModel.vertices.empty()) {
+            float minX = FLT_MAX, maxX = -FLT_MAX;
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            float minZ = FLT_MAX, maxZ = -FLT_MAX;
+            for (const auto& vert : m_snakeHeadModel.vertices) {
+                minX = std::min(minX, vert.position.x);
+                maxX = std::max(maxX, vert.position.x);
+                minY = std::min(minY, vert.position.y);
+                maxY = std::max(maxY, vert.position.y);
+                minZ = std::min(minZ, vert.position.z);
+                maxZ = std::max(maxZ, vert.position.z);
+            }
+            headRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+
+            if (!m_snakeBodyModel.vertices.empty()) {
+                minX = FLT_MAX, maxX = -FLT_MAX;
+                minY = FLT_MAX, maxY = -FLT_MAX;
+                minZ = FLT_MAX, maxZ = -FLT_MAX;
+                for (const auto& vert : m_snakeBodyModel.vertices) {
+                    minX = std::min(minX, vert.position.x);
+                    maxX = std::max(maxX, vert.position.x);
+                    minY = std::min(minY, vert.position.y);
+                    maxY = std::max(maxY, vert.position.y);
+                    minZ = std::min(minZ, vert.position.z);
+                    maxZ = std::max(maxZ, vert.position.z);
+                }
+                bodyRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+            }
+
+            if (!m_snakeTailModel.vertices.empty()) {
+                minX = FLT_MAX, maxX = -FLT_MAX;
+                minY = FLT_MAX, maxY = -FLT_MAX;
+                minZ = FLT_MAX, maxZ = -FLT_MAX;
+                for (const auto& vert : m_snakeTailModel.vertices) {
+                    minX = std::min(minX, vert.position.x);
+                    maxX = std::max(maxX, vert.position.x);
+                    minY = std::min(minY, vert.position.y);
+                    maxY = std::max(maxY, vert.position.y);
+                    minZ = std::min(minZ, vert.position.z);
+                    maxZ = std::max(maxZ, vert.position.z);
+                }
+                tailRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+            }
+        }
+
+        // Радиус яблока
+        if (!m_appleModel.vertices.empty()) {
+            float minX = FLT_MAX, maxX = -FLT_MAX;
+            float minY = FLT_MAX, maxY = -FLT_MAX;
+            float minZ = FLT_MAX, maxZ = -FLT_MAX;
+            for (const auto& vert : m_appleModel.vertices) {
+                minX = std::min(minX, vert.position.x);
+                maxX = std::max(maxX, vert.position.x);
+                minY = std::min(minY, vert.position.y);
+                maxY = std::max(maxY, vert.position.y);
+                minZ = std::min(minZ, vert.position.z);
+                maxZ = std::max(maxZ, vert.position.z);
+            }
+            appleModelRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+        }
+
+        radiiComputed = true;
+        std::cout << "Model radii computed: tree=" << treeModelRadius
+            << ", head=" << headRadius << ", body=" << bodyRadius
+            << ", tail=" << tailRadius << ", apple=" << appleModelRadius << std::endl;
+    }
+
     // ========== СТАТИЧЕСКИЕ ТЕНИ (только деревья) ==========
     if (m_staticShadowsDirty) {
         m_staticShadow.clearObjectBounds();
         m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
-        m_staticShadow.setUseSpheres(false);
+        m_staticShadow.setUseSpheres(true);
+
+        std::vector<BoundingSphere> treeSpheres;
+        for (const auto& obstacle : objects.getObstacles()) {
+            for (const auto& block : obstacle.blocks) {
+                float x = block.x * m_cellSize - offsetX;
+                float z = block.z * m_cellSize - offsetZ;
+                float y = block.y * m_cellSize;
+
+                float scale = m_cellSize * 1.2f;
+                float worldRadius = treeModelRadius * scale;
+
+                glm::vec3 center(
+                    x + m_cellSize * 0.5f,
+                    y + scale * 1.0f,
+                    z + m_cellSize * 0.5f
+                );
+
+                BoundingSphere sphere(center, worldRadius);
+                sphere.updateRadius(m_lightType, m_lightPos, m_lightDir, 20.0f);
+                treeSpheres.push_back(sphere);
+            }
+        }
+        m_staticShadow.registerObjectBounds(treeSpheres);
 
         m_staticShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
@@ -1343,13 +1817,42 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         m_staticShadowsDirty = false;
     }
 
-    // ========== ДИНАМИЧЕСКИЕ ТЕНИ (ВСЕГДА пересчитываем, если тени включены) ==========
-    if (m_shadowMapEnabled) {
-        // ВСЕГДА пересчитываем динамические тени для змейки
-
+    // ========== ДИНАМИЧЕСКИЕ ТЕНИ (змейка) ==========
+    if (m_shadowMapEnabled && m_dynamicShadowsDirty) {
         m_dynamicShadow.clearObjectBounds();
         m_dynamicShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
-        m_dynamicShadow.setUseSpheres(false);
+        m_dynamicShadow.setUseSpheres(true);
+
+        std::vector<BoundingSphere> snakeSpheres;
+        for (size_t i = 0; i < objects.getSnake().size(); i++) {
+            const Point& segment = objects.getSnake()[i];
+            float x = segment.x * m_cellSize - offsetX;
+            float z = segment.z * m_cellSize - offsetZ;
+            float y = segment.y * m_cellSize + 0.1f;
+
+            float scale;
+            float modelRadius;
+
+            if (i == 0) {
+                scale = m_cellSize * objects.getSnakeHeadScale();
+                modelRadius = headRadius;
+            }
+            else if (i == objects.getSnake().size() - 1) {
+                scale = m_cellSize * objects.getSnakeTailScale();
+                modelRadius = tailRadius;
+            }
+            else {
+                scale = m_cellSize * objects.getSnakeBodyScale();
+                modelRadius = bodyRadius;
+            }
+
+            float worldRadius = modelRadius * scale;
+
+            BoundingSphere sphere(glm::vec3(x, y, z), worldRadius);
+            sphere.updateRadius(m_lightType, m_lightPos, m_lightDir, 20.0f);
+            snakeSpheres.push_back(sphere);
+        }
+        m_dynamicShadow.registerObjectBounds(snakeSpheres);
 
         m_dynamicShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
@@ -1365,21 +1868,38 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             }
         );
         m_dynamicShadow.computeShadows();
+        m_dynamicShadowsDirty = false;
     }
 
-    // ========== ТЕНИ ДЛЯ ЕДЫ (ВСЕГДА пересчитываем, если тени включены) ==========
-    if (m_shadowMapEnabled) {
-
+    // ========== ТЕНИ ДЛЯ ЕДЫ ==========
+    if (m_shadowMapEnabled && m_foodShadowsDirty) {
         m_foodShadow.clearObjectBounds();
         m_foodShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
-        m_foodShadow.setUseSpheres(false);
+        m_foodShadow.setUseSpheres(true);
+
+        std::vector<BoundingSphere> foodSpheres;
+        for (const auto& apple : objects.getFood()) {
+            float x = apple.x * m_cellSize - offsetX;
+            float z = apple.z * m_cellSize - offsetZ;
+
+            float scale = m_cellSize * 0.6f;
+            float worldRadius = appleModelRadius * scale;
+
+            float centerX = x + m_cellSize * 0.5f;
+            float centerY = m_floorHeight + worldRadius;
+            float centerZ = z + m_cellSize * 0.5f;
+
+            BoundingSphere sphere(glm::vec3(centerX, centerY, centerZ), worldRadius);
+            sphere.updateRadius(m_lightType, m_lightPos, m_lightDir, 20.0f);
+            foodSpheres.push_back(sphere);
+        }
+        m_foodShadow.registerObjectBounds(foodSpheres);
 
         m_foodShadow.setIntersectCallback(
             [this, &objects](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 float offsetX = m_gridWidth * m_cellSize / 2.0f;
                 float offsetZ = m_gridDepth * m_cellSize / 2.0f;
                 HitInfo hit = intersectFoodOnly(ray, objects, offsetX, offsetZ);
-                // ВАЖНО: hit.distance может быть > 0, даже если hit.hit == true (попали в пол)
                 if (hit.hit && hit.distance > 0.01f) {
                     hitDist = hit.distance;
                     hitPoint = hit.point;
@@ -1389,6 +1909,7 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             }
         );
         m_foodShadow.computeShadows();
+        m_foodShadowsDirty = false;
     }
 }
 void GameRenderer::markFoodShadowsDirty() {
@@ -1926,9 +2447,9 @@ void GameRenderer::resetShadows() {
     m_foodShadow.setShadowTraceMode(m_currentShadowMode);
 
     // ВАЖНО: ОТКЛЮЧАЕМ СФЕРЫ!
-    m_staticShadow.setUseSpheres(false);
-    m_dynamicShadow.setUseSpheres(false);
-    m_foodShadow.setUseSpheres(false);
+    m_staticShadow.setUseSpheres(true);
+    m_dynamicShadow.setUseSpheres(true);
+    m_foodShadow.setUseSpheres(true);
 
     // ОЧИЩАЕМ СФЕРЫ!
     m_staticShadow.clearObjectBounds();
@@ -2195,17 +2716,18 @@ HitInfo GameRenderer::intersectTreesOnly(const Ray& ray, const GameObjects& obje
 
     // Пол (всегда нужно для теней на земле)
     float tGround = -ray.origin.y / ray.direction.y;
-    if (tGround > 0.01f && tGround < maxDistance && tGround < closestHit.distance) {
+    if (tGround > 0.01f && tGround < maxDistance) {
         glm::vec3 hitPoint = ray.pointAt(tGround);
         if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
             closestHit.hit = true;
             closestHit.distance = tGround;
             closestHit.point = hitPoint;
             closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+            // НЕ ВОЗВРАЩАЕМСЯ - тень на земле может быть перекрыта деревом
         }
     }
 
-    // Только деревья
+    // Только деревья - с возможностью раннего выхода
     for (const auto& obstacle : objects.getObstacles()) {
         for (const auto& block : obstacle.blocks) {
             float x = block.x * m_cellSize - offsetX;
@@ -2234,6 +2756,15 @@ HitInfo GameRenderer::intersectTreesOnly(const Ray& ray, const GameObjects& obje
                             closestHit.hit = true;
                             closestHit.distance = hitDist;
                             closestHit.point = hitPt;
+
+                            // ✅ ВАЖНО: Если мы НЕ ждём попадания в пол,
+                            // можно вернуться сразу при первом попадании в дерево
+                            // Но если пол может быть ближе - продолжаем искать ближайшее
+
+                            // Для теней: нас интересует ЛЮБОЕ попадание в дерево,
+                            // не обязательно ближайшее. Тень будет в любом случае.
+                            // Поэтому можно вернуться СРАЗУ!
+                            return closestHit;  // ✅ РАННИЙ ВЫХОД
                         }
                     }
                 }
