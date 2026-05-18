@@ -213,7 +213,12 @@ private:
     void setupSpotLight();                       // Настройка прожектора
     void updateLightPosition();                  // Обновление позиции света
     void setupTexture(GLuint textureID);         // Настройка текстуры
-
+    bool intersectTreeById(const Ray& ray, int treeId, float offsetX, float offsetZ,
+        float& hitDist, glm::vec3& hitPoint);
+    bool intersectSnakeSegmentById(const Ray& ray, int segmentId, float offsetX, float offsetZ,
+        float& hitDist, glm::vec3& hitPoint);
+    bool intersectAppleById(const Ray& ray, int appleId, float offsetX, float offsetZ,
+        float& hitDist, glm::vec3& hitPoint);
     //=========================================================================
     // ВНУТРЕННИЕ МЕТОДЫ ОТРИСОВКИ
     //=========================================================================
@@ -244,7 +249,7 @@ private:
         float normalLength = 0.15f);
     void drawModelNormalsWithTransform(const Model& model, float x, float y, float z,
         float scale, float rotationAngle, float normalLength = 0.15f);
-
+    bool m_useSpheres = true;
     //=========================================================================
     // ВНУТРЕННИЕ МЕТОДЫ ТЕНЕЙ
     //=========================================================================

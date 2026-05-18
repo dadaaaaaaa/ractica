@@ -4980,16 +4980,16 @@ void saveConfig() {
         currentConfig.snakeHeadModel = snakeElements[0]->modelFile;
         currentConfig.snakeHeadColor = snakeElements[0]->color;
         currentConfig.snakeHeadScale = snakeElements[0]->scale;
-        
+
         currentConfig.snakeBodyModel = snakeElements[1]->modelFile;
         currentConfig.snakeBodyColor = snakeElements[1]->color;
         currentConfig.snakeBodyScale = snakeElements[1]->scale;
-        
+
         currentConfig.snakeTailModel = snakeElements[2]->modelFile;
         currentConfig.snakeTailColor = snakeElements[2]->color;
         currentConfig.snakeTailScale = snakeElements[2]->scale;
     }
-    
+
     // ПОЛ И НЕБО
     if (groundSkyElements.size() >= 2) {
         currentConfig.floorModel = groundSkyElements[0]->modelFile;
@@ -4997,31 +4997,33 @@ void saveConfig() {
         currentConfig.floorColor = groundSkyElements[0]->color;
         currentConfig.skyColor = groundSkyElements[1]->color;
     }
-    
+
     // ПРЕГРАДЫ - СОХРАНЯЕМ ВСЁ (модели, цвета, масштабы, количество)
     if (obstaclesElements.size() >= 4) {
         // Дерево
         currentConfig.treeModel = obstaclesElements[0]->modelFile;
         currentConfig.treeColor = obstaclesElements[0]->color;
         currentConfig.treeScale = obstaclesElements[0]->scale;
-        
+        currentConfig.obstacleCount = obstaclesElements[0]->count;  // ← ДОБАВЛЕНО!
+
+
         // Камень
         currentConfig.rockModel = obstaclesElements[1]->modelFile;
         currentConfig.rockColor = obstaclesElements[1]->color;
         currentConfig.rockScale = obstaclesElements[1]->scale;
-        
+
         // Забор
         currentConfig.fenceModel = obstaclesElements[2]->modelFile;
         currentConfig.fenceColor = obstaclesElements[2]->color;
         currentConfig.fenceScale = obstaclesElements[2]->scale;
-        
+
         // Яблоко (еда)
         currentConfig.appleModel = obstaclesElements[3]->modelFile;
         currentConfig.appleColor = obstaclesElements[3]->color;
         currentConfig.appleScale = obstaclesElements[3]->scale;
         currentConfig.initialFoodCount = obstaclesElements[3]->count;
     }
-    
+
     // ОКРУЖЕНИЕ - СОХРАНЯЕМ ВСЁ
     if (environmentElements.size() >= 3) {
         // Цветы
@@ -5029,24 +5031,25 @@ void saveConfig() {
         currentConfig.flowerColor = environmentElements[0]->color;
         currentConfig.flowerScale = environmentElements[0]->scale;
         currentConfig.flowerCount = environmentElements[0]->count;
-        
+
         // Птицы
         currentConfig.birdModel = environmentElements[1]->modelFile;
         currentConfig.birdColor = environmentElements[1]->color;
         currentConfig.birdScale = environmentElements[1]->scale;
         currentConfig.birdCount = environmentElements[1]->count;
-        
+
         // Облака
         currentConfig.cloudModel = environmentElements[2]->modelFile;
         currentConfig.cloudColor = environmentElements[2]->color;
         currentConfig.cloudScale = environmentElements[2]->scale;
         currentConfig.cloudCount = environmentElements[2]->count;
     }
-    
+
     // Сохраняем в файл
     ConfigManager::saveGameConfig(g_configPath, currentConfig);
-    
+
     std::cout << "Configuration saved to: " << g_configPath << std::endl;
+    std::cout << "Tree count saved: " << currentConfig.obstacleCount << std::endl;  // Для отладки
 }
 
 //=============================================================================

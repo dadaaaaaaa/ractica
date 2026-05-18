@@ -90,48 +90,64 @@ struct ShadowSample {
     }
 };
 
+// ShadowMapper.h - добавить в struct BoundingSphere
+
 struct BoundingSphere {
     glm::vec3 center;
-    float baseRadius;      // Базовый радиус (оригинальный размер объекта)
-    float currentRadius;   // Радиус с учётом источника света
+    float baseRadius;
+    float currentRadius;
 
-    BoundingSphere() : center(0.0f), baseRadius(0.0f), currentRadius(0.0f) {}
-    BoundingSphere(const glm::vec3& c, float r) : center(c), baseRadius(r), currentRadius(r) {}
+    // НОВОЕ: идентификация модели
+    enum ModelType {
+        MODEL_UNKNOWN = 0,
+        MODEL_TREE = 1,
+        MODEL_SNAKE_HEAD = 2,
+        MODEL_SNAKE_BODY = 3,
+        MODEL_SNAKE_TAIL = 4,
+        MODEL_APPLE = 5
+    };
 
-    // Обновить радиус в зависимости от источника света
+    ModelType modelType;
+    int instanceId;  // Для змейки - индекс сегмента, для дерева - ID
+
+    BoundingSphere() : center(0.0f), baseRadius(0.0f), currentRadius(0.0f),
+        modelType(MODEL_UNKNOWN), instanceId(-1) {
+    }
+
+    BoundingSphere(const glm::vec3& c, float r)
+        : center(c), baseRadius(r), currentRadius(r),
+        modelType(MODEL_UNKNOWN), instanceId(-1) {
+    }
+
+    BoundingSphere(const glm::vec3& c, float r, ModelType type, int id)
+        : center(c), baseRadius(r), currentRadius(r),
+        modelType(type), instanceId(id) {
+    }
+
     void updateRadius(LightType lightType, const glm::vec3& lightPos,
         const glm::vec3& lightDir, float maxDistance = 20.0f) {
 
         switch (lightType) {
         case LightType::Directional:
-            // Направленный свет - резкие тени
             currentRadius = baseRadius * 0.7f;
             break;
-
         case LightType::Points:
         {
             float distance = glm::distance(center, lightPos);
-            // Формула: R = R_base × (1.0 + (dist/maxDist) × 1.5)
             float blurFactor = 1.0f + (distance / maxDistance) * 1.5f;
             blurFactor = glm::clamp(blurFactor, 0.8f, 2.5f);
             currentRadius = baseRadius * blurFactor;
             break;
         }
-
         case LightType::Spot:
         {
             float distance = glm::distance(center, lightPos);
-            // Вектор от объекта к источнику света
             glm::vec3 toLight = glm::normalize(lightPos - center);
-            // Угол между направлением к свету и направлением прожектора
             float angleDot = glm::dot(toLight, lightDir);
             float angleFactor = glm::clamp(angleDot, 0.3f, 1.0f);
-
-            // Формула: R = R_base × (1.0 + dist/20) × (1.0 - angle×0.5)
             float blurFactor = 1.0f + (distance / maxDistance) * 1.2f;
             blurFactor *= (1.0f - angleFactor * 0.5f);
             blurFactor = glm::clamp(blurFactor, 0.7f, 2.0f);
-
             currentRadius = baseRadius * blurFactor;
             break;
         }
@@ -154,7 +170,17 @@ public:
             sphere.updateRadius(lightType, lightPos, lightDirection);
         }
     }
+    using IntersectCallbackExact = std::function<bool(
+        const Ray&, float&, glm::vec3&,
+        BoundingSphere::ModelType, int
+        )>;
+
+    void setIntersectCallbackExact(IntersectCallbackExact callback) {
+        m_intersectCallbackExact = callback;
+    }
 private:
+    std::function<bool(const Ray&, float&, glm::vec3&)> m_intersectCallback;
+    IntersectCallbackExact m_intersectCallbackExact;
     int m_gridWidth;        // Количество клеток в игровой сетке
     int m_gridDepth;
     float m_cellSize;
@@ -172,7 +198,6 @@ private:
     glm::vec3 m_lightColor;
 
     std::vector<BoundingSphere> m_objectSpheres;
-    std::function<bool(const struct Ray&, float&, glm::vec3&)> m_intersectCallback;
 
     // Режим трассировки
     ShadowTraceMode m_shadowTraceMode;

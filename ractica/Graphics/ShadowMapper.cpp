@@ -407,42 +407,36 @@ bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance
 
     return false;
 }
+// ShadowMapper.cpp - заменить функцию traceShadowRay
+
+// ShadowMapper.cpp - исправленный traceShadowRay
+
 bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direction,
     float maxDistance, float& hitDistance, glm::vec3& hitPoint)
 {
-    // СТАТИЧЕСКИЕ СЧЁТЧИКИ
-    static int totalCalls = 0;
-    static int sphereHitCount = 0;
-    static int callbackCalledCount = 0;
-    static int callbackReturnedTrue = 0;
-    static int lastPrinted = 0;
-
-    totalCalls++;
-
     Ray shadowRay(start, direction);
 
     // ========================================================================
-    // РЕЖИМ 1: ТОЛЬКО ТОЧНАЯ ГЕОМЕТРИЯ (без сфер-оберток)
+    // РЕЖИМ 1: ТОЛЬКО ТОЧНАЯ ГЕОМЕТРИЯ (без экстентов)
     // ========================================================================
     if (!m_useSpheres) {
+        // Проверяем все модели напрямую через обычный callback
         if (m_intersectCallback) {
-            if (m_intersectCallback(shadowRay, hitDistance, hitPoint)) {
-                return true;
-            }
+            return m_intersectCallback(shadowRay, hitDistance, hitPoint);
         }
         return false;
     }
 
     // ========================================================================
-    // РЕЖИМ 2: СФЕРЫ-ЭКСТЕНТЫ
+    // РЕЖИМ 2: ЭКСТЕНТЫ (СФЕРЫ) - БЫСТРЫЙ ПОИСК
     // ========================================================================
     if (m_useSpheres && !m_objectSpheres.empty()) {
-        // ШАГ 1: Проверяем попадание в экстенты (сферы)
-        float closestSphereHit = maxDistance;
-        bool sphereHit = false;
-        int spheresHitThisRay = 0;  // Считаем сколько сфер задето
+        // ШАГ 1: Находим БЛИЖАЙШУЮ сферу
+        float closestT = maxDistance;
+        int closestSphereIdx = -1;
 
-        for (const auto& sphere : m_objectSpheres) {
+        for (size_t i = 0; i < m_objectSpheres.size(); i++) {
+            const auto& sphere = m_objectSpheres[i];
             glm::vec3 oc = shadowRay.origin - sphere.center;
             float a = glm::dot(shadowRay.direction, shadowRay.direction);
             float b = 2.0f * glm::dot(oc, shadowRay.direction);
@@ -454,59 +448,28 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
                 float t1 = (-b - sqrtD) / (2.0f * a);
                 float t2 = (-b + sqrtD) / (2.0f * a);
 
-                if (t1 > 0.001f && t1 < closestSphereHit) {
-                    closestSphereHit = t1;
-                    sphereHit = true;
-                    spheresHitThisRay++;
+                if (t1 > 0.001f && t1 < closestT) {
+                    closestT = t1;
+                    closestSphereIdx = (int)i;
                 }
-                if (t2 > 0.001f && t2 < closestSphereHit) {
-                    closestSphereHit = t2;
-                    sphereHit = true;
-                    spheresHitThisRay++;
+                if (t2 > 0.001f && t2 < closestT) {
+                    closestT = t2;
+                    closestSphereIdx = (int)i;
                 }
             }
         }
 
-        // Если не попали ни в один экстент - объекты точно не затронуты
-        if (!sphereHit) {
-            // Выводим статистику каждые 1000 вызовов
-            if (totalCalls - lastPrinted >= 1000) {
-                lastPrinted = totalCalls;
-                float hitPercent = (float)sphereHitCount / totalCalls * 100.0f;
-                float callbackPercent = (float)callbackCalledCount / totalCalls * 100.0f;
-
-                std::cout << "\n========== SHADOW RAY STATS ==========" << std::endl;
-                std::cout << "Total rays traced: " << totalCalls << std::endl;
-                std::cout << "Rays that hit spheres: " << sphereHitCount
-                    << " (" << hitPercent << "%)" << std::endl;
-                std::cout << "Rays that went to callback: " << callbackCalledCount
-                    << " (" << callbackPercent << "%)" << std::endl;
-                std::cout << "Callbacks that returned true (hit object): " << callbackReturnedTrue << std::endl;
-                std::cout << "Hit rate in callback: "
-                    << (callbackCalledCount > 0 ? (float)callbackReturnedTrue / callbackCalledCount * 100.0f : 0)
-                    << "%" << std::endl;
-                std::cout << "=======================================" << std::endl;
-            }
+        // ❌ НЕ ПОПАЛИ НИ В ОДНУ СФЕРУ - БЫСТРЫЙ ВЫХОД!
+        if (closestSphereIdx == -1) {
             return false;
         }
 
-        // Попали в экстент - считаем
-        sphereHitCount++;
+        // ✅ ПОПАЛИ В СФЕРУ - проверяем ТОЛЬКО МОДЕЛЬ, СОЗДАВШУЮ ЭТУ СФЕРУ
+        const auto& sphere = m_objectSpheres[closestSphereIdx];
 
-        // ШАГ 2: Попали в экстент - проверяем точную геометрию
-        if (m_intersectCallback) {
-            callbackCalledCount++;
-
-            float exactHitDistance;
-            glm::vec3 exactHitPoint;
-
-            if (m_intersectCallback(shadowRay, exactHitDistance, exactHitPoint)) {
-                callbackReturnedTrue++;
-                hitDistance = exactHitDistance;
-                hitPoint = exactHitPoint;
-                return true;
-            }
-            return false;
+        if (m_intersectCallbackExact) {
+            return m_intersectCallbackExact(shadowRay, hitDistance, hitPoint,
+                sphere.modelType, sphere.instanceId);
         }
 
         return false;
