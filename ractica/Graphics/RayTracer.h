@@ -3,15 +3,20 @@
 #include <vector>
 #include <functional>
 
+// RayTracer.h - добавить поле
+
 struct Ray {
     glm::vec3 origin;
     glm::vec3 direction;
+    float maxDistance = 100.0f;  // <-- ДОБАВИТЬ
 
-    // Конструктор по умолчанию
-    Ray() : origin(0.0f), direction(0.0f, 0.0f, -1.0f) {}
-
-    // Конструктор с параметрами
-    Ray(const glm::vec3& o, const glm::vec3& d) : origin(o), direction(d) {}
+    Ray() : origin(0.0f), direction(0.0f, 0.0f, -1.0f), maxDistance(100.0f) {}
+    Ray(const glm::vec3& o, const glm::vec3& d)
+        : origin(o), direction(glm::normalize(d)), maxDistance(100.0f) {
+    }
+    Ray(const glm::vec3& o, const glm::vec3& d, float maxDist)
+        : origin(o), direction(glm::normalize(d)), maxDistance(maxDist) {
+    }
 
     glm::vec3 pointAt(float t) const { return origin + direction * t; }
 };

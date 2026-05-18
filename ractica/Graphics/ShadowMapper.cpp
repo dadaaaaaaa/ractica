@@ -342,141 +342,102 @@ void ShadowMapper::setIntersectCallback(std::function<bool(const struct Ray&, fl
     m_intersectCallback = callback;
 }
 
-bool ShadowMapper::intersectsAnyObject(const struct Ray& ray, float& hitDistance, glm::vec3& hitPoint)
+// ============================================================================
+// ОПТИМИЗИРОВАННАЯ ВЕРСИЯ intersectsAnyObject
+// ============================================================================
+// ShadowMapper.cpp - ОПТИМИЗИРОВАННАЯ ВЕРСИЯ
+
+bool ShadowMapper::intersectsAnyObject(const Ray& ray, float& hitDistance, glm::vec3& hitPoint)
 {
-    // ========================================================================
-    // РЕЖИМ 1: ТОЛЬКО ТОЧНАЯ ГЕОМЕТРИЯ
-    // ========================================================================
-    if (!m_useSpheres) {
-        if (m_intersectCallback) {
-            return m_intersectCallback(ray, hitDistance, hitPoint);
-        }
-        return false;
+    if (!m_useSpheres || m_objectSpheres.empty()) {
+        return m_intersectCallback ? m_intersectCallback(ray, hitDistance, hitPoint) : false;
     }
 
-    // ========================================================================
-    // РЕЖИМ 2: ЭКСТЕНТЫ (СФЕРЫ) + ТОЧНАЯ ГЕОМЕТРИЯ
-    // ========================================================================
-    if (m_useSpheres && !m_objectSpheres.empty()) {
-        // ШАГ 1: Проверяем экстенты
-        float closestSphereHit = 1000.0f;
-        bool sphereHit = false;
+    float maxRayDistance = ray.maxDistance > 0 ? ray.maxDistance : 100.0f;
 
-        for (const auto& sphere : m_objectSpheres) {
-            glm::vec3 oc = ray.origin - sphere.center;
-            float a = glm::dot(ray.direction, ray.direction);
-            float b = 2.0f * glm::dot(oc, ray.direction);
-            float c = glm::dot(oc, oc) - sphere.currentRadius * sphere.currentRadius;
-            float discriminant = b * b - 4 * a * c;
+    for (const auto& sphere : m_objectSpheres) {
+        glm::vec3 oc = ray.origin - sphere.center;
 
-            if (discriminant >= 0) {
-                float sqrtD = sqrt(discriminant);
-                float t1 = (-b - sqrtD) / (2.0f * a);
-                float t2 = (-b + sqrtD) / (2.0f * a);
+        float b = glm::dot(oc, ray.direction);
+        float c = glm::dot(oc, oc) - sphere.currentRadius * sphere.currentRadius;
+        float discriminant = b * b - c;
 
-                if (t1 > 0.05f && t1 < closestSphereHit) {
-                    closestSphereHit = t1;
-                    sphereHit = true;
-                }
-                if (t2 > 0.05f && t2 < closestSphereHit) {
-                    closestSphereHit = t2;
-                    sphereHit = true;
+        if (discriminant >= 0.0f) {
+            float sqrtD = sqrtf(discriminant);  // ✅ ТОЛЬКО при потенциальном попадании
+            float t = -b - sqrtD;               // ✅ Ближайшее пересечение сферы
+            float t_far = -b + sqrtD;           // Дальнее пересечение
+
+            // ✅ ПРАВИЛЬНАЯ проверка: луч должен пересечь сферу в пределах maxDistance
+            if (t > maxRayDistance) continue;   // Сфера слишком далеко
+            if (t_far < 0.0f) continue;        // Сфера позади луча
+
+            // ✅ БЕРЁМ ближайшее положительное пересечение
+            float hitT = (t > 0.0f) ? t : t_far;
+            if (hitT > maxRayDistance) continue;
+
+            // Точная проверка ТОЛЬКО для подходящих сфер
+            if (m_intersectCallbackExact) {
+                float exactHitDist;
+                glm::vec3 exactHitPoint;
+                if (m_intersectCallbackExact(ray, exactHitDist, exactHitPoint,
+                    sphere.modelType, sphere.instanceId)) {
+                    if (exactHitDist > 0.01f && exactHitDist <= maxRayDistance) {
+                        hitDistance = exactHitDist;
+                        hitPoint = exactHitPoint;
+                        return true;
+                    }
                 }
             }
         }
-
-        // Не попали ни в один экстент
-        if (!sphereHit) {
-            return false;
-        }
-
-        // ШАГ 2: Попали в экстент - проверяем точную геометрию
-        if (m_intersectCallback) {
-            float exactHitDistance;
-            glm::vec3 exactHitPoint;
-            if (m_intersectCallback(ray, exactHitDistance, exactHitPoint)) {
-                hitDistance = exactHitDistance;
-                hitPoint = exactHitPoint;
-                return true;
-            }
-            return false;
-        }
-
-        return false;
     }
 
     return false;
 }
-// ShadowMapper.cpp - заменить функцию traceShadowRay
 
-// ShadowMapper.cpp - исправленный traceShadowRay
-
+// ============================================================================
+// ОПТИМИЗИРОВАННАЯ ВЕРСИЯ traceShadowRay
+// ============================================================================
 bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direction,
     float maxDistance, float& hitDistance, glm::vec3& hitPoint)
 {
     Ray shadowRay(start, direction);
 
-    // ========================================================================
-    // РЕЖИМ 1: ТОЛЬКО ТОЧНАЯ ГЕОМЕТРИЯ (без экстентов)
-    // ========================================================================
+    // Режим 1: Только точная геометрия
     if (!m_useSpheres) {
-        // Проверяем все модели напрямую через обычный callback
-        if (m_intersectCallback) {
-            return m_intersectCallback(shadowRay, hitDistance, hitPoint);
-        }
-        return false;
+        return m_intersectCallback ? m_intersectCallback(shadowRay, hitDistance, hitPoint) : false;
     }
 
-    // ========================================================================
-    // РЕЖИМ 2: ЭКСТЕНТЫ (СФЕРЫ) - БЫСТРЫЙ ПОИСК
-    // ========================================================================
+    // Режим 2: Broad phase + точная геометрия
     if (m_useSpheres && !m_objectSpheres.empty()) {
-        // ШАГ 1: Находим БЛИЖАЙШУЮ сферу
-        float closestT = maxDistance;
-        int closestSphereIdx = -1;
-
-        for (size_t i = 0; i < m_objectSpheres.size(); i++) {
-            const auto& sphere = m_objectSpheres[i];
+        for (const auto& sphere : m_objectSpheres) {
             glm::vec3 oc = shadowRay.origin - sphere.center;
-            float a = glm::dot(shadowRay.direction, shadowRay.direction);
-            float b = 2.0f * glm::dot(oc, shadowRay.direction);
+
+            // ОПТИМИЗИРОВАННО: без sqrt, без деления
+            float b = glm::dot(oc, shadowRay.direction);
             float c = glm::dot(oc, oc) - sphere.currentRadius * sphere.currentRadius;
-            float discriminant = b * b - 4 * a * c;
 
-            if (discriminant >= 0) {
-                float sqrtD = sqrt(discriminant);
-                float t1 = (-b - sqrtD) / (2.0f * a);
-                float t2 = (-b + sqrtD) / (2.0f * a);
-
-                if (t1 > 0.001f && t1 < closestT) {
-                    closestT = t1;
-                    closestSphereIdx = (int)i;
-                }
-                if (t2 > 0.001f && t2 < closestT) {
-                    closestT = t2;
-                    closestSphereIdx = (int)i;
+            // Дешёвая проверка на пересечение
+            if (b * b - c >= 0.0f) {
+                if (m_intersectCallbackExact) {
+                    float exactHitDist;
+                    glm::vec3 exactHitPoint;
+                    if (m_intersectCallbackExact(shadowRay, exactHitDist, exactHitPoint,
+                        sphere.modelType, sphere.instanceId)) {
+                        hitDistance = exactHitDist;
+                        hitPoint = exactHitPoint;
+                        return true;
+                    }
                 }
             }
         }
-
-        // ❌ НЕ ПОПАЛИ НИ В ОДНУ СФЕРУ - БЫСТРЫЙ ВЫХОД!
-        if (closestSphereIdx == -1) {
-            return false;
-        }
-
-        // ✅ ПОПАЛИ В СФЕРУ - проверяем ТОЛЬКО МОДЕЛЬ, СОЗДАВШУЮ ЭТУ СФЕРУ
-        const auto& sphere = m_objectSpheres[closestSphereIdx];
-
-        if (m_intersectCallbackExact) {
-            return m_intersectCallbackExact(shadowRay, hitDistance, hitPoint,
-                sphere.modelType, sphere.instanceId);
-        }
-
-        return false;
     }
 
     return false;
 }
+
+// ============================================================================
+// ОПТИМИЗИРОВАННАЯ ВЕРСИЯ isPointInShadow (убраны лишние переменные)
+// ============================================================================
 bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& hitCellZ, float& hitDistance)
 {
     glm::vec3 rayOrigin;
@@ -486,11 +447,14 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
 
     switch (m_lightType) {
     case LightType::Directional:
-        // Для направленного света: луч от источника (далеко) к точке
-        rayOrigin = point - m_lightDirection * 100.0f;
-        rayDirection = m_lightDirection;
-        maxRayDistance = 100.0f;
+    {
+        // Для направленного света: источник находится в направлении -lightDirection
+        // Луч идёт от источника (в бесконечности) к точке на полу
+        rayOrigin = point - m_lightDirection * 100.0f;  // Точка ЗА источником
+        rayDirection = m_lightDirection;                // Направление К точке на полу
+        maxRayDistance = glm::distance(rayOrigin, point);
         break;
+    }
 
     case LightType::Points:
     case LightType::Spot:
@@ -505,17 +469,17 @@ bool ShadowMapper::isPointInShadow(const glm::vec3& point, int& hitCellX, int& h
             return false;
         }
 
-        // Луч ОТ источника К точке (исправлено!)
+        // Луч ОТ источника К точке
         rayOrigin = m_lightPos;
         rayDirection = glm::normalize(toPoint);
         maxRayDistance = distanceToPoint;
 
-        // Небольшое смещение от источника, чтобы избежать self-intersection
+        // Небольшое смещение, чтобы избежать self-intersection
         const float EPSILON = 0.001f;
         rayOrigin += rayDirection * EPSILON;
         maxRayDistance -= EPSILON;
+        break;
     }
-    break;
     }
 
     float hitDist;
@@ -557,7 +521,7 @@ void ShadowMapper::computeCellGradient(ShadowSample& sample, int cellX, int cell
         int hitCellX, hitCellZ;
         float hitDistance;
 
-        // ✅ ЛУЧ ОТ ИСТОЧНИКА К УГЛУ
+        // ЛУЧ ОТ ИСТОЧНИКА К УГЛУ
         bool inShadow = isPointInShadow(cornerPos, hitCellX, hitCellZ, hitDistance);
 
         sample.cornerShadows[corner] = inShadow ? 0.0f : 1.0f;
@@ -594,7 +558,7 @@ void ShadowMapper::computeCellGradient(ShadowSample& sample, int cellX, int cell
 
 void ShadowMapper::computeCellCenterSubdivided(ShadowSample& sample, int cellX, int cellZ)
 {
-    // Получаем центр КЛЕТКИ
+    // Получаем центр КЛЕТКИ (точка на полу)
     int origCenterX = cellX * m_strideX + m_strideX / 2;
     int origCenterZ = cellZ * m_strideZ + m_strideZ / 2;
     glm::vec3 centerPos = getCellCenter(origCenterX, origCenterZ);
@@ -602,11 +566,10 @@ void ShadowMapper::computeCellCenterSubdivided(ShadowSample& sample, int cellX, 
     int hitCellX, hitCellZ;
     float hitDistance;
 
-    // ✅ ПУСКАЕМ ЛУЧ ОТ ИСТОЧНИКА К ЦЕНТРУ КЛЕТКИ
-    // Если есть препятствие - центр в тени
+    // ПУСКАЕМ ЛУЧ ОТ ИСТОЧНИКА К ЦЕНТРУ КЛЕТКИ
     bool centerInShadow = isPointInShadow(centerPos, hitCellX, hitCellZ, hitDistance);
 
-    // ✅ ЕСЛИ ЦЕНТР ОСВЕЩЁН - вся клетка освещена, НЕ разбиваем
+    // Если центр освещён - вся клетка освещена, НЕ разбиваем
     if (!centerInShadow) {
         sample.value = 1.0f;
         sample.centerWasLit = true;
@@ -614,21 +577,20 @@ void ShadowMapper::computeCellCenterSubdivided(ShadowSample& sample, int cellX, 
         return;
     }
 
-    // ❌ ЦЕНТР В ТЕНИ! Значит есть препятствие - РАЗБИВАЕМ на подклетки
+    // Центр в тени - разбиваем на подклетки
     sample.centerWasLit = false;
     sample.initSubCells();
 
     int totalSubCells = SHADOW_SUBDIVISION_SIZE * SHADOW_SUBDIVISION_SIZE;
     int litCount = 0;
 
-    // Для каждой подклетки пускаем луч в её ЦЕНТР
+    // Для каждой подклетки пускаем луч ОТ ИСТОЧНИКА к её центру
     for (int subZ = 0; subZ < SHADOW_SUBDIVISION_SIZE; subZ++) {
         for (int subX = 0; subX < SHADOW_SUBDIVISION_SIZE; subX++) {
             glm::vec3 subCenter = getSubCellCenter(cellX, cellZ, subX, subZ);
             int subHitCellX, subHitCellZ;
             float subHitDistance;
 
-            // ✅ ПУСКАЕМ ЛУЧ ОТ ИСТОЧНИКА К ЦЕНТРУ ПОДКЛЕТКИ
             bool inShadow = isPointInShadow(subCenter, subHitCellX, subHitCellZ, subHitDistance);
 
             // Бинарное значение для CENTER_SUBDIVIDED
@@ -667,12 +629,10 @@ void ShadowMapper::computeCellCenterSubdivided(ShadowSample& sample, int cellX, 
 
 void ShadowMapper::computeCellCornersSubdivided(ShadowSample& sample, int cellX, int cellZ)
 {
-    // ✅ Проверяем ВСЕ 4 УГЛА КЛЕТКИ
-    // Если ХОТЯ БЫ ОДИН УГОЛ В ТЕНИ - значит есть препятствие, разбиваем
-
+    // Проверяем ВСЕ 4 УГЛА КЛЕТКИ (точки на полу)
     bool anyCornerInShadow = false;
 
-    // Проверяем 4 угла клетки лучами от источника
+    // Проверяем 4 угла клетки лучами ОТ ИСТОЧНИКА
     for (int corner = 0; corner < 4; corner++) {
         glm::vec3 cornerPos = getCornerWorldPosition(cellX, cellZ, corner);
         int hitCellX, hitCellZ;
@@ -704,7 +664,7 @@ void ShadowMapper::computeCellCornersSubdivided(ShadowSample& sample, int cellX,
         }
     }
 
-    // ✅ Если все углы освещены - вся клетка освещена, НЕ разбиваем
+    // Если все углы освещены - вся клетка освещена
     if (!anyCornerInShadow) {
         sample.value = 1.0f;
         sample.centerWasLit = true;
@@ -712,14 +672,14 @@ void ShadowMapper::computeCellCornersSubdivided(ShadowSample& sample, int cellX,
         return;
     }
 
-    // ❌ ЕСТЬ ТЕНЬ - разбиваем на подклетки
+    // Есть тень - разбиваем на подклетки
     sample.centerWasLit = false;
     sample.initSubCells();
 
     int totalSubCells = SHADOW_SUBDIVISION_SIZE * SHADOW_SUBDIVISION_SIZE;
     float sum = 0.0f;
 
-    // Для каждой подклетки пускаем 4 луча в её углы
+    // Для каждой подклетки пускаем 4 луча ОТ ИСТОЧНИКА к её углам
     for (int subZ = 0; subZ < SHADOW_SUBDIVISION_SIZE; subZ++) {
         for (int subX = 0; subX < SHADOW_SUBDIVISION_SIZE; subX++) {
             int litCorners = 0;
@@ -729,7 +689,6 @@ void ShadowMapper::computeCellCornersSubdivided(ShadowSample& sample, int cellX,
                 int subHitCellX, subHitCellZ;
                 float subHitDistance;
 
-                // ✅ ПУСКАЕМ ЛУЧ ОТ ИСТОЧНИКА К УГЛУ ПОДКЛЕТКИ
                 bool inShadow = isPointInShadow(cornerPos, subHitCellX, subHitCellZ, subHitDistance);
 
                 if (!inShadow) {
@@ -758,7 +717,6 @@ void ShadowMapper::computeCellCornersSubdivided(ShadowSample& sample, int cellX,
                 }
             }
 
-            // Плавное значение для подклетки (градиент)
             float subCellValue = (float)litCorners / 4.0f;
             sample.subCellValues[subZ][subX] = subCellValue;
             sum += subCellValue;
@@ -856,6 +814,7 @@ void ShadowMapper::computeShadows()
 
                 int hitCellX, hitCellZ;
                 float hitDistance;
+                // ЛУЧ ОТ ИСТОЧНИКА К ЦЕНТРУ КЛЕТКИ
                 bool inShadow = isPointInShadow(centerPos, hitCellX, hitCellZ, hitDistance);
 
                 sample.value = inShadow ? 0.0f : 1.0f;
