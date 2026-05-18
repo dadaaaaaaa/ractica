@@ -3229,7 +3229,7 @@ void renderObstaclesEditor() {
         sprintf_s(countText, "%d", el->count);
         drawText((float)(editX + 120), (float)countY, countText, 1.0f, 1.0f, 0.0f);
 
-        drawIntSlider(editX, countY + 20, 250, &el->count, 0, 50, "");
+        drawIntSlider(editX, countY + 20, 250, &el->count, 0, 1000, "");
 
         if (drawButton(editX + 260, countY + 10, 80, 30, "СБРОСИТЬ")) {
             if (selectedObstacle == 0) el->count = 10;

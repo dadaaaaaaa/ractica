@@ -401,35 +401,71 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
     float maxDistance, float& hitDistance, glm::vec3& hitPoint)
 {
     Ray shadowRay(start, direction);
+    float maxDist = maxDistance > 0 ? maxDistance : 100.0f;
 
-    // Режим 1: Только точная геометрия
-    if (!m_useSpheres) {
+    // Инициализируем расстояние до "бесконечности"
+    float closestHit = maxDist;
+    bool foundHit = false;
+
+    // Если сферы не используются - прямой вызов
+    if (!m_useSpheres || m_objectSpheres.empty()) {
         return m_intersectCallback ? m_intersectCallback(shadowRay, hitDistance, hitPoint) : false;
     }
 
-    // Режим 2: Broad phase + точная геометрия
-    if (m_useSpheres && !m_objectSpheres.empty()) {
-        for (const auto& sphere : m_objectSpheres) {
-            glm::vec3 oc = shadowRay.origin - sphere.center;
+    // Режим со сферами
+    for (const auto& sphere : m_objectSpheres) {
+        // БЫСТРАЯ ОТСЕЧКА: если сфера дальше, чем уже найденное пересечение
+        glm::vec3 oc = shadowRay.origin - sphere.center;
+        float approxDist = glm::dot(oc, oc); // квадрат расстояния до центра
 
-            // ОПТИМИЗИРОВАННО: без sqrt, без деления
-            float b = glm::dot(oc, shadowRay.direction);
-            float c = glm::dot(oc, oc) - sphere.currentRadius * sphere.currentRadius;
+        // Если квадрат расстояния до центра больше, чем квадрат closestHit + радиус
+        // то эта сфера точно дальше - ПРОПУСКАЕМ
+        float sphereDist = sqrtf(approxDist) - sphere.currentRadius;
+        if (sphereDist > closestHit + 0.1f) {
+            continue; // ЭТО КЛЮЧЕВАЯ ОПТИМИЗАЦИЯ!
+        }
 
-            // Дешёвая проверка на пересечение
-            if (b * b - c >= 0.0f) {
-                if (m_intersectCallbackExact) {
-                    float exactHitDist;
-                    glm::vec3 exactHitPoint;
-                    if (m_intersectCallbackExact(shadowRay, exactHitDist, exactHitPoint,
-                        sphere.modelType, sphere.instanceId)) {
-                        hitDistance = exactHitDist;
-                        hitPoint = exactHitPoint;
-                        return true;
+        // Стандартная проверка
+        float b = glm::dot(oc, shadowRay.direction);
+        float c = approxDist - sphere.currentRadius * sphere.currentRadius;
+        float discriminant = b * b - c;
+
+        if (discriminant >= 0.0f) {
+            float sqrtD = sqrtf(discriminant);
+            float t = -b - sqrtD;
+            float t_far = -b + sqrtD;
+
+            if (t > maxDist || t_far < 0.0f) continue;
+
+            float hitT = (t > 0.0f) ? t : t_far;
+            if (hitT > maxDist || hitT >= closestHit) continue;
+
+            // Точная проверка только если потенциально ближе
+            if (m_intersectCallbackExact) {
+                float exactDist;
+                glm::vec3 exactPoint;
+                if (m_intersectCallbackExact(shadowRay, exactDist, exactPoint,
+                    sphere.modelType, sphere.instanceId)) {
+                    if (exactDist < closestHit && exactDist <= maxDist) {
+                        closestHit = exactDist;
+                        hitPoint = exactPoint;
+                        foundHit = true;
+
+                        // ОПТИМИЗАЦИЯ: если нашли пересечение очень близко (< 1 метра)
+                        // то дальние сферы уже не важны для теней
+                        if (closestHit < 1.0f) {
+                            // Можно выйти раньше, но тогда тень может быть неточной
+                            // если есть объект ещё ближе. Лучше продолжить.
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (foundHit) {
+        hitDistance = closestHit;
+        return true;
     }
 
     return false;
