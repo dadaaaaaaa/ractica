@@ -80,7 +80,7 @@ GameRenderer::GameRenderer()
     setShadowTraceModeByIndex(DEFAULT_SHADOW_MODE);
 }
 void GameRenderer::drawDebugSpheres() {
-    if (!m_debugNormalsEnabled) return;  // Используем тот же флаг
+    if (!m_debugNormalsEnabled) return;
 
     glPushAttrib(GL_ENABLE_BIT | GL_CURRENT_BIT);
     glDisable(GL_LIGHTING);
@@ -95,7 +95,14 @@ void GameRenderer::drawDebugSpheres() {
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    // Предварительно вычисляем радиусы моделей (как в updateSpheresRadii)
+    // ✅ Получаем масштабы из конфига
+    float treeScaleFromConfig = objects.getTreeScale();
+    float appleScaleFromConfig = objects.getAppleScale();
+    float snakeHeadScaleFromConfig = objects.getSnakeHeadScale();
+    float snakeBodyScaleFromConfig = objects.getSnakeBodyScale();
+    float snakeTailScaleFromConfig = objects.getSnakeTailScale();
+
+    // Предварительно вычисляем радиусы моделей
     static float treeModelRadius = 0.0f;
     static float headRadius = 0.0f, bodyRadius = 0.0f, tailRadius = 0.0f;
     static float appleModelRadius = 0.0f;
@@ -195,24 +202,18 @@ void GameRenderer::drawDebugSpheres() {
             float z = block.z * m_cellSize - offsetZ;
             float y = block.y * m_cellSize;
 
-            float scale = m_cellSize * 1.2f;
+            // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ДЕРЕВА ИЗ КОНФИГА
+            float scale = m_cellSize * treeScaleFromConfig;
             float worldRadius = treeModelRadius * scale;
 
-            // Центр сферы должен совпадать с тем, что в updateSpheresRadii
             glm::vec3 center(
                 x + m_cellSize * 0.5f,
-                y + scale * 1.0f,  // Центр дерева по высоте
+                y + scale * 1.0f,
                 z + m_cellSize * 0.5f
             );
 
-            // Обновляем радиус в зависимости от типа света (как в BoundingSphere::updateRadius)
             float currentRadius = worldRadius;
-            if (m_lightType == LightType::Directional) {
-                // Для направленного света радиус не меняется
-                currentRadius = worldRadius;
-            }
-            else {
-                // Для точечного и прожектора - добавляем небольшой запас
+            if (m_lightType != LightType::Directional) {
                 currentRadius = worldRadius * 1.2f;
             }
 
@@ -238,21 +239,20 @@ void GameRenderer::drawDebugSpheres() {
         float modelRadius;
 
         if (i == 0) {
-            scale = m_cellSize * objects.getSnakeHeadScale();
+            scale = m_cellSize * snakeHeadScaleFromConfig;
             modelRadius = headRadius;
         }
         else if (i == objects.getSnake().size() - 1) {
-            scale = m_cellSize * objects.getSnakeTailScale();
+            scale = m_cellSize * snakeTailScaleFromConfig;
             modelRadius = tailRadius;
         }
         else {
-            scale = m_cellSize * objects.getSnakeBodyScale();
+            scale = m_cellSize * snakeBodyScaleFromConfig;
             modelRadius = bodyRadius;
         }
 
         float worldRadius = modelRadius * scale;
 
-        // Обновляем радиус в зависимости от типа света
         float currentRadius = worldRadius;
         if (m_lightType != LightType::Directional) {
             currentRadius = worldRadius * 1.2f;
@@ -273,14 +273,14 @@ void GameRenderer::drawDebugSpheres() {
         float x = apple.x * m_cellSize - offsetX;
         float z = apple.z * m_cellSize - offsetZ;
 
-        float scale = m_cellSize * 0.6f;
-        float worldRadius = appleModelRadius * scale*2;
+        // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ЯБЛОКА ИЗ КОНФИГА
+        float scale = m_cellSize * appleScaleFromConfig;
+        float worldRadius = appleModelRadius * scale;
 
         float centerX = x + m_cellSize * 0.5f;
-        float centerY = m_floorHeight + worldRadius;  // Основание на полу
+        float centerY = m_floorHeight + worldRadius;
         float centerZ = z + m_cellSize * 0.5f;
 
-        // Обновляем радиус в зависимости от типа света
         float currentRadius = worldRadius;
         if (m_lightType != LightType::Directional) {
             currentRadius = worldRadius * 1.2f;
@@ -1468,6 +1468,13 @@ void GameRenderer::updateSpheresRadii() {
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
     const GameObjects& objects = g_game.getGameObjects();
 
+    // Получаем масштабы из конфига
+    float treeScaleFromConfig = objects.getTreeScale();
+    float appleScaleFromConfig = objects.getAppleScale();
+    float snakeHeadScaleFromConfig = objects.getSnakeHeadScale();
+    float snakeBodyScaleFromConfig = objects.getSnakeBodyScale();
+    float snakeTailScaleFromConfig = objects.getSnakeTailScale();
+
     // ========== ВЫЧИСЛЯЕМ РЕАЛЬНЫЕ РАДИУСЫ МОДЕЛЕЙ (один раз) ==========
     static float treeModelRadius = 0.0f;
     static float headRadius = 0.0f, bodyRadius = 0.0f, tailRadius = 0.0f;
@@ -1571,7 +1578,8 @@ void GameRenderer::updateSpheresRadii() {
             float z = block.z * m_cellSize - offsetZ;
             float y = block.y * m_cellSize;
 
-            float scale = m_cellSize * 1.2f;
+            // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ДЕРЕВА ИЗ КОНФИГА
+            float scale = m_cellSize * treeScaleFromConfig;
             float worldRadius = treeModelRadius * scale;
 
             glm::vec3 center(
@@ -1603,17 +1611,17 @@ void GameRenderer::updateSpheresRadii() {
         BoundingSphere::ModelType type;
 
         if (i == 0) {
-            scale = m_cellSize * objects.getSnakeHeadScale();
+            scale = m_cellSize * snakeHeadScaleFromConfig;
             modelRadius = headRadius;
             type = BoundingSphere::MODEL_SNAKE_HEAD;
         }
         else if (i == objects.getSnake().size() - 1) {
-            scale = m_cellSize * objects.getSnakeTailScale();
+            scale = m_cellSize * snakeTailScaleFromConfig;
             modelRadius = tailRadius;
             type = BoundingSphere::MODEL_SNAKE_TAIL;
         }
         else {
-            scale = m_cellSize * objects.getSnakeBodyScale();
+            scale = m_cellSize * snakeBodyScaleFromConfig;
             modelRadius = bodyRadius;
             type = BoundingSphere::MODEL_SNAKE_BODY;
         }
@@ -1634,8 +1642,9 @@ void GameRenderer::updateSpheresRadii() {
         float x = apple.x * m_cellSize - offsetX;
         float z = apple.z * m_cellSize - offsetZ;
 
-        float scale = m_cellSize * 0.6f;
-        float worldRadius = appleModelRadius * scale*2;
+        // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ЯБЛОКА ИЗ КОНФИГА
+        float scale = m_cellSize * appleScaleFromConfig;
+        float worldRadius = appleModelRadius * scale;
 
         float centerX = x + m_cellSize * 0.5f;
         float centerY = m_floorHeight + worldRadius;
@@ -1682,6 +1691,13 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
 
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+
+    // ✅ Получаем масштабы из конфига
+    float treeScaleFromConfig = objects.getTreeScale();
+    float appleScaleFromConfig = objects.getAppleScale();
+    float snakeHeadScaleFromConfig = objects.getSnakeHeadScale();
+    float snakeBodyScaleFromConfig = objects.getSnakeBodyScale();
+    float snakeTailScaleFromConfig = objects.getSnakeTailScale();
 
     // ========== ПРЕДВАРИТЕЛЬНО ВЫЧИСЛЯЕМ РАДИУСЫ МОДЕЛЕЙ ==========
     static float treeModelRadius = 0.0f;
@@ -1774,7 +1790,7 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             << ", tail=" << tailRadius << ", apple=" << appleModelRadius << std::endl;
     }
 
-    // ========== ОБЩИЙ CALLBACK ДЛЯ ТОЧНОЙ ГЕОМЕТРИИ (без экстентов) ==========
+    // ========== ОБЩИЙ CALLBACK ДЛЯ ТОЧНОЙ ГЕОМЕТРИИ ==========
     auto exactGeometryCallbackTrees = [this, &objects, offsetX, offsetZ](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
         HitInfo hit = intersectTreesOnly(ray, objects, offsetX, offsetZ);
         if (hit.hit && hit.distance > 0.01f) {
@@ -1809,12 +1825,9 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     if (m_staticShadowsDirty) {
         m_staticShadow.clearObjectBounds();
         m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
-
-        // ВСЕГДА устанавливаем точный callback (для режима без сфер)
         m_staticShadow.setIntersectCallback(exactGeometryCallbackTrees);
 
         if (m_useSpheres) {
-            // Режим с экстентами
             m_staticShadow.setUseSpheres(true);
 
             std::vector<BoundingSphere> treeSpheres;
@@ -1825,7 +1838,8 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                     float z = block.z * m_cellSize - offsetZ;
                     float y = block.y * m_cellSize;
 
-                    float scale = m_cellSize * 1.2f;
+                    // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ДЕРЕВА ИЗ КОНФИГА
+                    float scale = m_cellSize * treeScaleFromConfig;
                     float worldRadius = treeModelRadius * scale;
 
                     glm::vec3 center(
@@ -1841,9 +1855,8 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             }
             m_staticShadow.registerObjectBounds(treeSpheres);
 
-            // Оптимизированный callback - проверяем ТОЛЬКО конкретное дерево
             m_staticShadow.setIntersectCallbackExact(
-                [this](const Ray& ray, float& hitDist, glm::vec3& hitPoint,
+                [this, treeScaleFromConfig](const Ray& ray, float& hitDist, glm::vec3& hitPoint,
                     BoundingSphere::ModelType modelType, int instanceId) -> bool {
                         if (modelType != BoundingSphere::MODEL_TREE) return false;
 
@@ -1861,10 +1874,12 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                                     float z = block.z * m_cellSize - offsetZ;
                                     float y = block.y * m_cellSize;
 
+                                    // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА
+                                    float scale = m_cellSize * treeScaleFromConfig;
+
                                     glm::mat4 transform = glm::mat4(1.0f);
-                                    transform = glm::translate(transform,
-                                        glm::vec3(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f));
-                                    transform = glm::scale(transform, glm::vec3(m_cellSize * 1.2f));
+                                    transform = glm::translate(transform, glm::vec3(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f));
+                                    transform = glm::scale(transform, glm::vec3(scale));
 
                                     return rayIntersectsModel(ray, m_treeModel, transform, hitDist, hitPoint);
                                 }
@@ -1876,7 +1891,6 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             );
         }
         else {
-            // Режим БЕЗ экстентов - используем точную геометрию
             m_staticShadow.setUseSpheres(m_useSpheres);
             m_staticShadow.clearObjectBounds();
         }
@@ -1889,12 +1903,9 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     if (m_shadowMapEnabled && m_dynamicShadowsDirty) {
         m_dynamicShadow.clearObjectBounds();
         m_dynamicShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
-
-        // ВСЕГДА устанавливаем точный callback (для режима без сфер)
         m_dynamicShadow.setIntersectCallback(exactGeometryCallbackSnake);
 
         if (m_useSpheres) {
-            // Режим с экстентами
             m_dynamicShadow.setUseSpheres(true);
 
             std::vector<BoundingSphere> snakeSpheres;
@@ -1909,17 +1920,17 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                 BoundingSphere::ModelType type;
 
                 if (i == 0) {
-                    scale = m_cellSize * objects.getSnakeHeadScale();
+                    scale = m_cellSize * snakeHeadScaleFromConfig;
                     modelRadius = headRadius;
                     type = BoundingSphere::MODEL_SNAKE_HEAD;
                 }
                 else if (i == objects.getSnake().size() - 1) {
-                    scale = m_cellSize * objects.getSnakeTailScale();
+                    scale = m_cellSize * snakeTailScaleFromConfig;
                     modelRadius = tailRadius;
                     type = BoundingSphere::MODEL_SNAKE_TAIL;
                 }
                 else {
-                    scale = m_cellSize * objects.getSnakeBodyScale();
+                    scale = m_cellSize * snakeBodyScaleFromConfig;
                     modelRadius = bodyRadius;
                     type = BoundingSphere::MODEL_SNAKE_BODY;
                 }
@@ -1932,15 +1943,13 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             }
             m_dynamicShadow.registerObjectBounds(snakeSpheres);
 
-            // Оптимизированный callback - проверяем ТОЛЬКО конкретный сегмент змейки
             m_dynamicShadow.setIntersectCallbackExact(
-                [this](const Ray& ray, float& hitDist, glm::vec3& hitPoint,
+                [this, snakeHeadScaleFromConfig, snakeBodyScaleFromConfig, snakeTailScaleFromConfig](
+                    const Ray& ray, float& hitDist, glm::vec3& hitPoint,
                     BoundingSphere::ModelType modelType, int instanceId) -> bool {
                         if (modelType != BoundingSphere::MODEL_SNAKE_HEAD &&
                             modelType != BoundingSphere::MODEL_SNAKE_BODY &&
-                            modelType != BoundingSphere::MODEL_SNAKE_TAIL) {
-                            return false;
-                        }
+                            modelType != BoundingSphere::MODEL_SNAKE_TAIL) return false;
 
                         float offsetX = m_gridWidth * m_cellSize / 2.0f;
                         float offsetZ = m_gridDepth * m_cellSize / 2.0f;
@@ -1958,15 +1967,15 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                         float scale;
                         const Model* model;
                         if (instanceId == 0) {
-                            scale = m_cellSize * objects.getSnakeHeadScale();
+                            scale = m_cellSize * snakeHeadScaleFromConfig;
                             model = &m_snakeHeadModel;
                         }
                         else if (instanceId == (int)snake.size() - 1) {
-                            scale = m_cellSize * objects.getSnakeTailScale();
+                            scale = m_cellSize * snakeTailScaleFromConfig;
                             model = &m_snakeTailModel;
                         }
                         else {
-                            scale = m_cellSize * objects.getSnakeBodyScale();
+                            scale = m_cellSize * snakeBodyScaleFromConfig;
                             model = &m_snakeBodyModel;
                         }
 
@@ -1981,7 +1990,6 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             );
         }
         else {
-            // Режим БЕЗ экстентов - используем точную геометрию
             m_dynamicShadow.setUseSpheres(m_useSpheres);
             m_dynamicShadow.clearObjectBounds();
         }
@@ -1994,12 +2002,9 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     if (m_shadowMapEnabled && m_foodShadowsDirty) {
         m_foodShadow.clearObjectBounds();
         m_foodShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
-
-        // ВСЕГДА устанавливаем точный callback (для режима без сфер)
         m_foodShadow.setIntersectCallback(exactGeometryCallbackFood);
 
         if (m_useSpheres) {
-            // Режим с экстентами
             m_foodShadow.setUseSpheres(true);
 
             std::vector<BoundingSphere> foodSpheres;
@@ -2008,8 +2013,9 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                 float x = apple.x * m_cellSize - offsetX;
                 float z = apple.z * m_cellSize - offsetZ;
 
-                float scale = m_cellSize * 0.6f;
-                float worldRadius = appleModelRadius * scale*2;
+                // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ЯБЛОКА ИЗ КОНФИГА
+                float scale = m_cellSize * appleScaleFromConfig;
+                float worldRadius = appleModelRadius * scale;
 
                 float centerX = x + m_cellSize * 0.5f;
                 float centerY = m_floorHeight + worldRadius;
@@ -2022,9 +2028,8 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             }
             m_foodShadow.registerObjectBounds(foodSpheres);
 
-            // Оптимизированный callback - проверяем ТОЛЬКО конкретное яблоко
             m_foodShadow.setIntersectCallbackExact(
-                [this](const Ray& ray, float& hitDist, glm::vec3& hitPoint,
+                [this, appleScaleFromConfig](const Ray& ray, float& hitDist, glm::vec3& hitPoint,
                     BoundingSphere::ModelType modelType, int instanceId) -> bool {
                         if (modelType != BoundingSphere::MODEL_APPLE) return false;
 
@@ -2040,9 +2045,24 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
                         float x = apple.x * m_cellSize - offsetX;
                         float z = apple.z * m_cellSize - offsetZ;
 
-                        float scale = m_cellSize * 0.6f;
+                        // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА
+                        float scale = m_cellSize * appleScaleFromConfig;
                         float centerX = x + m_cellSize * 0.5f;
-                        float centerY = m_floorHeight + scale * 0.5f;
+
+                        // Вычисляем высоту для яблока на основе модели
+                        static float appleHeight = 0.0f;
+                        static bool heightComputed = false;
+                        if (!heightComputed && !m_appleModel.vertices.empty()) {
+                            float minY = FLT_MAX, maxY = -FLT_MAX;
+                            for (const auto& vert : m_appleModel.vertices) {
+                                minY = std::min(minY, vert.position.y);
+                                maxY = std::max(maxY, vert.position.y);
+                            }
+                            appleHeight = maxY - minY;
+                            heightComputed = true;
+                        }
+
+                        float centerY = m_floorHeight + (appleHeight * scale * 0.5f);
                         float centerZ = z + m_cellSize * 0.5f;
 
                         glm::mat4 transform = glm::mat4(1.0f);
@@ -2054,7 +2074,6 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             );
         }
         else {
-            // Режим БЕЗ экстентов - используем точную геометрию
             m_foodShadow.setUseSpheres(m_useSpheres);
             m_foodShadow.clearObjectBounds();
         }
@@ -2290,6 +2309,10 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
 
     if (m_appleModel.vertices.empty()) return;
 
+    // Получаем масштаб яблока из GameObjects
+    const GameObjects& objects = g_game.getGameObjects();
+    float appleScaleFromConfig = objects.getAppleScale();  // Используем значение из конфига
+
     // Вычисляем bounding box модели один раз
     float minY_local = FLT_MAX;
     float maxY_local = -FLT_MAX;
@@ -2297,18 +2320,18 @@ void GameRenderer::drawFood(const std::vector<Point>& food) {
         minY_local = std::min(minY_local, vert.position.y);
         maxY_local = std::max(maxY_local, vert.position.y);
     }
-    float offsetFromCenterToBottom = -minY_local;  // Смещение от центра модели до нижней точки
+    float offsetFromCenterToBottom = -minY_local;
 
     for (const auto& apple : food) {
         float x = apple.x * m_cellSize - offsetX;
         float z = apple.z * m_cellSize - offsetZ;
 
-        float scale = m_cellSize * 0.6f;
+        // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА!
+        float scale = m_cellSize * appleScaleFromConfig;
         float worldBottomOffset = offsetFromCenterToBottom * scale;
 
-        // ВАЖНО: используем m_floorHeight, а НЕ apple.y!
         float centerX = x + m_cellSize * 0.5f;
-        float centerY = m_floorHeight + worldBottomOffset;  // <-- ИСПРАВЛЕНО
+        float centerY = m_floorHeight + worldBottomOffset;
         float centerZ = z + m_cellSize * 0.5f;
 
         glPushMatrix();
@@ -2333,6 +2356,10 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
 
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+    const GameObjects& objects = g_game.getGameObjects();
+
+    // ✅ Получаем масштаб дерева из конфига
+    float treeScaleFromConfig = objects.getTreeScale();
 
     // Вычисляем нижнюю точку модели дерева
     float treeBottomOffset = 0.0f;
@@ -2349,7 +2376,8 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
             float x = block.x * m_cellSize - offsetX;
             float z = block.z * m_cellSize - offsetZ;
 
-            float scale = m_cellSize * 1.2f;
+            // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА!
+            float scale = m_cellSize * treeScaleFromConfig;
             float y = m_floorHeight + treeBottomOffset * scale;
 
             glPushMatrix();
@@ -2361,7 +2389,7 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
                 setupTexture(m_treeModel.textureID);
             }
             else {
-                setMaterial(glm::vec3(0.2f, 0.6f, 0.2f), 30.0f, 0.2f);
+                setMaterial(objects.getTreeColor(), 30.0f, 0.2f);
                 setupTexture(0);
             }
             m_treeModel.draw();
@@ -2371,12 +2399,15 @@ void GameRenderer::drawObstaclesAsTrees(const std::vector<Obstacle>& obstacles) 
 }
 
 void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
+    const GameObjects& objects = g_game.getGameObjects();
+
     for (const auto& cloud : cloudSprites) {
         float distanceToCenter = glm::length(glm::vec2(cloud.position.x, cloud.position.z));
         if (distanceToCenter < 8.0f) continue;
 
         glPushMatrix();
         glTranslatef(cloud.position.x, cloud.position.y, cloud.position.z);
+        // ✅ Размер уже должен быть из конфига в Sprite::size
         glScalef(cloud.size, cloud.size, cloud.size);
 
         if (m_cloudModel.hasTexture && m_cloudModel.textureID != 0) {
@@ -2384,7 +2415,7 @@ void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
             setupTexture(m_cloudModel.textureID);
         }
         else {
-            setMaterial(cloud.color, 40.0f, 0.3f);
+            setMaterial(objects.getCloudColor(), 40.0f, 0.3f);
             setupTexture(0);
         }
 
@@ -2394,6 +2425,8 @@ void GameRenderer::drawClouds(const std::vector<Sprite>& cloudSprites) {
 }
 
 void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
+    const GameObjects& objects = g_game.getGameObjects();
+
     for (const auto& bird : birds) {
         glPushMatrix();
         glTranslatef(bird.position.x, bird.position.y, bird.position.z);
@@ -2406,6 +2439,7 @@ void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
             glRotatef(pitch, 1.0f, 0.0f, 0.0f);
         }
 
+        // ✅ Размер уже должен быть из конфига в Bird::size
         glScalef(bird.size, bird.size, bird.size);
 
         if (m_birdModel.hasTexture && m_birdModel.textureID != 0) {
@@ -2413,7 +2447,7 @@ void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
             setupTexture(m_birdModel.textureID);
         }
         else {
-            setMaterial(bird.color, 40.0f, 0.2f);
+            setMaterial(objects.getBirdColor(), 40.0f, 0.2f);
             setupTexture(0);
         }
 
@@ -2423,9 +2457,12 @@ void GameRenderer::drawBirds(const std::vector<Bird>& birds) {
 }
 
 void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
+    const GameObjects& objects = g_game.getGameObjects();
+
     for (const auto& flower : flowerSprites) {
         glPushMatrix();
         glTranslatef(flower.position.x, flower.position.y + 0.05f, flower.position.z);
+        // ✅ Размер уже должен быть из конфига в Sprite::size
         glScalef(flower.size, flower.size, flower.size);
 
         if (m_flowerModel.hasTexture && m_flowerModel.textureID != 0) {
@@ -2433,7 +2470,7 @@ void GameRenderer::drawGroundSprites(const std::vector<Sprite>& flowerSprites) {
             setupTexture(m_flowerModel.textureID);
         }
         else {
-            setMaterial(flower.color, 50.0f, 0.2f);
+            setMaterial(objects.getFlowerColor(), 50.0f, 0.2f);
             setupTexture(0);
         }
 
@@ -2447,22 +2484,31 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
 
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
+    const GameObjects& objects = g_game.getGameObjects();
+
+    // ✅ Получаем масштаб забора из конфига
+    float fenceScaleFromConfig = objects.getFenceScale();
 
     for (const auto& fenceBlock : fenceBlocks) {
         float x = fenceBlock.x * m_cellSize - offsetX;
         float z = fenceBlock.z * m_cellSize - offsetZ;
         float y = m_floorHeight;
 
+        // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА!
+        float scaleX = m_cellSize * fenceScaleFromConfig;
+        float scaleY = m_cellSize * fenceScaleFromConfig * 0.5f;
+        float scaleZ = m_cellSize * fenceScaleFromConfig;
+
         glPushMatrix();
         glTranslatef(x, y, z);
-        glScalef(m_cellSize, m_cellSize * 0.5f, m_cellSize);
+        glScalef(scaleX, scaleY, scaleZ);
 
         if (m_fenceModel.hasTexture && m_fenceModel.textureID != 0) {
             setMaterial(glm::vec3(1.0f, 1.0f, 1.0f), 24.0f, 0.15f);
             setupTexture(m_fenceModel.textureID);
         }
         else {
-            setMaterial(glm::vec3(0.55f, 0.27f, 0.07f), 24.0f, 0.15f);
+            setMaterial(objects.getFenceColor(), 24.0f, 0.15f);
             setupTexture(0);
         }
 
@@ -2715,6 +2761,10 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
     float halfWidth = m_gridWidth * m_cellSize / 2.0f;
     float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 
+    // Получаем масштабы из конфига
+    float treeScaleFromConfig = objects.getTreeScale();
+    float appleScaleFromConfig = objects.getAppleScale();
+
     // Пол (всегда проверяем)
     float tGround = -ray.origin.y / ray.direction.y;
     if (tGround > 0.01f && tGround < maxDistance && tGround < closestHit.distance) {
@@ -2727,32 +2777,30 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // ===== ДЕРЕВЬЯ (всегда проверяем, если не указано иное) =====
-    // Если treesOnly == false, всё равно проверяем деревья, но не останавливаемся на них
+    // ===== ДЕРЕВЬЯ =====
     for (const auto& obstacle : objects.getObstacles()) {
         for (const auto& block : obstacle.blocks) {
             float x = block.x * m_cellSize - offsetX;
             float z = block.z * m_cellSize - offsetZ;
             float y = block.y * m_cellSize;
 
-            // Вычисляем правильную bounding sphere для дерева
-            float treeHeight = 2.5f;
-            float treeRadius = 0.8f;
+            // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ДЕРЕВА ИЗ КОНФИГА
+            float scale = m_cellSize * treeScaleFromConfig;
+            float treeHeight = scale * 1.5f;
 
             glm::vec3 treeCenter(
                 x + m_cellSize * 0.5f,
                 y + treeHeight * 0.5f,
                 z + m_cellSize * 0.5f
             );
-
-            float boundingRadius = 1.2f;  // Увеличенный радиус для лучшего попадания
+            float boundingRadius = scale * 0.8f;
 
             float tSphere;
             if (rayIntersectsSphere(ray, treeCenter, boundingRadius, tSphere)) {
                 if (!m_treeModel.vertices.empty()) {
                     glm::mat4 transform = glm::mat4(1.0f);
                     transform = glm::translate(transform, glm::vec3(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f));
-                    transform = glm::scale(transform, glm::vec3(m_cellSize * 1.2f));
+                    transform = glm::scale(transform, glm::vec3(scale));
 
                     float hitDist;
                     glm::vec3 hitPt;
@@ -2769,12 +2817,11 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // Если treesOnly == true, возвращаем только деревья (и пол)
     if (treesOnly) {
         return closestHit;
     }
 
-    // ===== ЗМЕЙКА (только если не treesOnly) =====
+    // ===== ЗМЕЙКА =====
     for (size_t i = 0; i < objects.getSnake().size(); i++) {
         const Point& segment = objects.getSnake()[i];
         float x = segment.x * m_cellSize - offsetX;
@@ -2796,7 +2843,6 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
             model = &m_snakeBodyModel;
         }
 
-        // Bounding sphere для сегмента змейки
         float segmentRadius = scale * 0.6f;
         glm::vec3 center(x, y, z);
 
@@ -2823,31 +2869,52 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
         }
     }
 
-    // ===== ЯБЛОКИ (еда) =====
+    // ===== ЯБЛОКИ =====
+    if (m_appleModel.vertices.empty()) return closestHit;
+
+    static float minY_local = FLT_MAX;
+    static float maxY_local = -FLT_MAX;
+    static float offsetFromCenterToBottom = 0.0f;
+    static bool boundsComputed = false;
+
+    if (!boundsComputed) {
+        for (const auto& vert : m_appleModel.vertices) {
+            minY_local = std::min(minY_local, vert.position.y);
+            maxY_local = std::max(maxY_local, vert.position.y);
+        }
+        offsetFromCenterToBottom = -minY_local;
+        boundsComputed = true;
+    }
+
     for (const auto& apple : objects.getFood()) {
         float x = apple.x * m_cellSize - offsetX;
         float z = apple.z * m_cellSize - offsetZ;
-        float y = apple.y + m_floorHeight;
 
-        float appleRadius = m_cellSize * 0.4f;
-        glm::vec3 center(x + m_cellSize * 0.5f, y + appleRadius, z + m_cellSize * 0.5f);
+        // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ЯБЛОКА ИЗ КОНФИГА
+        float scale = m_cellSize * appleScaleFromConfig;
+        float worldBottomOffset = offsetFromCenterToBottom * scale;
+
+        float centerX = x + m_cellSize * 0.5f;
+        float centerY = m_floorHeight + worldBottomOffset;
+        float centerZ = z + m_cellSize * 0.5f;
+
+        float modelRadius = (maxY_local - minY_local) * 0.5f * scale;
+        glm::vec3 center(centerX, centerY, centerZ);
 
         float tSphere;
-        if (rayIntersectsSphere(ray, center, appleRadius, tSphere)) {
-            if (!m_appleModel.vertices.empty()) {
-                glm::mat4 transform = glm::mat4(1.0f);
-                transform = glm::translate(transform, center);
-                transform = glm::scale(transform, glm::vec3(m_cellSize * 0.6f));
+        if (rayIntersectsSphere(ray, center, modelRadius, tSphere)) {
+            glm::mat4 transform = glm::mat4(1.0f);
+            transform = glm::translate(transform, center);
+            transform = glm::scale(transform, glm::vec3(scale));
 
-                float hitDist;
-                glm::vec3 hitPt;
-                if (rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPt)) {
-                    if (hitDist > 0.01f && hitDist < closestHit.distance) {
-                        closestHit.hit = true;
-                        closestHit.distance = hitDist;
-                        closestHit.point = hitPt;
-                        closestHit.normal = glm::normalize(hitPt - center);
-                    }
+            float hitDist;
+            glm::vec3 hitPt;
+            if (rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPt)) {
+                if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = hitDist;
+                    closestHit.point = hitPt;
+                    closestHit.normal = glm::normalize(hitPt - center);
                 }
             }
         }
@@ -2865,6 +2932,9 @@ HitInfo GameRenderer::intersectTreesOnly(const Ray& ray, const GameObjects& obje
     float halfWidth = m_gridWidth * m_cellSize / 2.0f;
     float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 
+    // ✅ Получаем масштаб дерева из конфига
+    float treeScaleFromConfig = objects.getTreeScale();
+
     // Пол (всегда нужно для теней на земле)
     float tGround = -ray.origin.y / ray.direction.y;
     if (tGround > 0.01f && tGround < maxDistance) {
@@ -2874,31 +2944,33 @@ HitInfo GameRenderer::intersectTreesOnly(const Ray& ray, const GameObjects& obje
             closestHit.distance = tGround;
             closestHit.point = hitPoint;
             closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
-            // НЕ ВОЗВРАЩАЕМСЯ - тень на земле может быть перекрыта деревом
         }
     }
 
-    // Только деревья - с возможностью раннего выхода
+    // Только деревья
     for (const auto& obstacle : objects.getObstacles()) {
         for (const auto& block : obstacle.blocks) {
             float x = block.x * m_cellSize - offsetX;
             float z = block.z * m_cellSize - offsetZ;
             float y = block.y * m_cellSize;
 
-            float treeHeight = 2.5f;
+            // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА
+            float scale = m_cellSize * treeScaleFromConfig;
+            float treeHeight = scale * 1.5f;
+
             glm::vec3 treeCenter(
                 x + m_cellSize * 0.5f,
                 y + treeHeight * 0.5f,
                 z + m_cellSize * 0.5f
             );
-            float boundingRadius = 1.2f;
+            float boundingRadius = scale * 0.8f;
 
             float tSphere;
             if (rayIntersectsSphere(ray, treeCenter, boundingRadius, tSphere)) {
                 if (!m_treeModel.vertices.empty()) {
                     glm::mat4 transform = glm::mat4(1.0f);
                     transform = glm::translate(transform, glm::vec3(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f));
-                    transform = glm::scale(transform, glm::vec3(m_cellSize * 1.2f));
+                    transform = glm::scale(transform, glm::vec3(scale));
 
                     float hitDist;
                     glm::vec3 hitPt;
@@ -2907,15 +2979,7 @@ HitInfo GameRenderer::intersectTreesOnly(const Ray& ray, const GameObjects& obje
                             closestHit.hit = true;
                             closestHit.distance = hitDist;
                             closestHit.point = hitPt;
-
-                            // ✅ ВАЖНО: Если мы НЕ ждём попадания в пол,
-                            // можно вернуться сразу при первом попадании в дерево
-                            // Но если пол может быть ближе - продолжаем искать ближайшее
-
-                            // Для теней: нас интересует ЛЮБОЕ попадание в дерево,
-                            // не обязательно ближайшее. Тень будет в любом случае.
-                            // Поэтому можно вернуться СРАЗУ!
-                            return closestHit;  // ✅ РАННИЙ ВЫХОД
+                            return closestHit;
                         }
                     }
                 }
@@ -2933,7 +2997,7 @@ HitInfo GameRenderer::intersectSnakeOnly(const Ray& ray, const GameObjects& obje
     closestHit.hit = false;
     closestHit.distance = 1000.0f;
 
-    // Только змейка
+    // Только змейка - масштабы уже из конфига
     for (size_t i = 0; i < objects.getSnake().size(); i++) {
         const Point& segment = objects.getSnake()[i];
         float x = segment.x * m_cellSize - offsetX;
@@ -2943,15 +3007,15 @@ HitInfo GameRenderer::intersectSnakeOnly(const Ray& ray, const GameObjects& obje
         float scale;
         const Model* model = nullptr;
         if (i == 0) {
-            scale = m_cellSize * objects.getSnakeHeadScale();
+            scale = m_cellSize * objects.getSnakeHeadScale();  // ✅ из конфига
             model = &m_snakeHeadModel;
         }
         else if (i == objects.getSnake().size() - 1) {
-            scale = m_cellSize * objects.getSnakeTailScale();
+            scale = m_cellSize * objects.getSnakeTailScale();  // ✅ из конфига
             model = &m_snakeTailModel;
         }
         else {
-            scale = m_cellSize * objects.getSnakeBodyScale();
+            scale = m_cellSize * objects.getSnakeBodyScale();  // ✅ из конфига
             model = &m_snakeBodyModel;
         }
 
@@ -2991,7 +3055,10 @@ HitInfo GameRenderer::intersectFoodOnly(const Ray& ray, const GameObjects& objec
     closestHit.distance = 1000.0f;
     float maxDistance = 100.0f;
 
-    // ===== ВАЖНО: сначала проверяем пол (ground) для теней! =====
+    // Получаем масштаб яблока из GameObjects
+    float appleScaleFromConfig = objects.getAppleScale();
+
+    // ===== Проверяем пол =====
     float halfWidth = m_gridWidth * m_cellSize / 2.0f;
     float halfDepth = m_gridDepth * m_cellSize / 2.0f;
 
@@ -3006,7 +3073,7 @@ HitInfo GameRenderer::intersectFoodOnly(const Ray& ray, const GameObjects& objec
         }
     }
 
-    // Теперь проверяем яблоки (еда)
+    // Проверяем яблоки
     if (m_appleModel.vertices.empty()) return closestHit;
 
     // Вычисляем bounding box модели один раз
@@ -3028,7 +3095,8 @@ HitInfo GameRenderer::intersectFoodOnly(const Ray& ray, const GameObjects& objec
         float x = apple.x * m_cellSize - offsetX;
         float z = apple.z * m_cellSize - offsetZ;
 
-        float scale = m_cellSize * 0.6f;
+        // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА!
+        float scale = m_cellSize * appleScaleFromConfig;
         float worldBottomOffset = offsetFromCenterToBottom * scale;
 
         float centerX = x + m_cellSize * 0.5f;
@@ -3047,7 +3115,6 @@ HitInfo GameRenderer::intersectFoodOnly(const Ray& ray, const GameObjects& objec
             float hitDist;
             glm::vec3 hitPt;
             if (rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPt)) {
-                // Убеждаемся, что попали в яблоко, а не в пол за ним
                 if (hitDist > 0.01f && hitDist < closestHit.distance) {
                     closestHit.hit = true;
                     closestHit.distance = hitDist;
