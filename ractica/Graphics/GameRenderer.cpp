@@ -1646,7 +1646,7 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
     float offsetX = m_gridWidth * m_cellSize / 2.0f;
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
 
-    // ✅ Получаем масштабы из конфига
+    // Получаем масштабы из конфига
     float treeScaleFromConfig = objects.getTreeScale();
     float appleScaleFromConfig = objects.getAppleScale();
     float snakeHeadScaleFromConfig = objects.getSnakeHeadScale();
@@ -1744,8 +1744,9 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             << ", tail=" << tailRadius << ", apple=" << appleModelRadius << std::endl;
     }
 
-    // ========== ОБЩИЙ CALLBACK ДЛЯ ТОЧНОЙ ГЕОМЕТРИИ (БЕЗ ЭКСТЕНТОВ) ==========
-    auto exactGeometryCallbackTrees = [this, &objects, offsetX, offsetZ](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+    // ========== CALLBACK ДЛЯ РЕЖИМА БЕЗ СФЕР (BRUTE-FORCE) ==========
+    // Эти колбэки проверяют ВСЕ треугольники ВСЕХ объектов (без сфер!)
+    auto bruteForceCallbackTrees = [this, &objects, offsetX, offsetZ](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
         HitInfo hit = intersectTreesOnly(ray, objects, offsetX, offsetZ);
         if (hit.hit && hit.distance > 0.01f) {
             hitDist = hit.distance;
@@ -1755,7 +1756,7 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         return false;
         };
 
-    auto exactGeometryCallbackSnake = [this, &objects, offsetX, offsetZ](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+    auto bruteForceCallbackSnake = [this, &objects, offsetX, offsetZ](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
         HitInfo hit = intersectSnakeOnly(ray, objects, offsetX, offsetZ);
         if (hit.hit && hit.distance > 0.01f) {
             hitDist = hit.distance;
@@ -1765,7 +1766,7 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         return false;
         };
 
-    auto exactGeometryCallbackFood = [this, &objects, offsetX, offsetZ](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
+    auto bruteForceCallbackFood = [this, &objects, offsetX, offsetZ](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
         HitInfo hit = intersectFoodOnly(ray, objects, offsetX, offsetZ);
         if (hit.hit && hit.distance > 0.01f) {
             hitDist = hit.distance;
@@ -1775,15 +1776,16 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
         return false;
         };
 
-    // ========== СТАТИЧЕСКИЕ ТЕНИ (только деревья) ==========
+    // ========== СТАТИЧЕСКИЕ ТЕНИ (деревья) ==========
     if (m_staticShadowsDirty) {
         m_staticShadow.clearObjectBounds();
         m_staticShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
-        m_staticShadow.setIntersectCallback(exactGeometryCallbackTrees);
+
+        // Устанавливаем режим использования сфер
+        m_staticShadow.setUseSpheres(m_useSpheres);
 
         if (m_useSpheres) {
-            m_staticShadow.setUseSpheres(true);
-
+            // ===== РЕЖИМ СО СФЕРАМИ: сфера → точная геометрия по ID =====
             std::vector<BoundingSphere> treeSpheres;
             int treeId = 0;
             for (const auto& obstacle : objects.getObstacles()) {
@@ -1808,37 +1810,43 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             }
             m_staticShadow.registerObjectBounds(treeSpheres);
 
-            // ✅ ИСПРАВЛЕНО: Используем intersectTreeById
+            // Точный колбэк по ID (без проверки сферы - она уже проверена)
             m_staticShadow.setIntersectCallbackExact(
                 [this](const Ray& ray, float& hitDist, glm::vec3& hitPoint,
                     BoundingSphere::ModelType modelType, int instanceId) -> bool {
                         if (modelType != BoundingSphere::MODEL_TREE) return false;
-
                         float offsetX = m_gridWidth * m_cellSize / 2.0f;
                         float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-
                         return intersectTreeById(ray, instanceId, offsetX, offsetZ, hitDist, hitPoint);
                 }
             );
+
+            // Для режима со сферами обычный колбэк не нужен
+            m_staticShadow.setIntersectCallback(nullptr);
         }
         else {
-            m_staticShadow.setUseSpheres(false);
+            // ===== РЕЖИМ БЕЗ СФЕР: brute-force все треугольники всех деревьев =====
+            m_staticShadow.setIntersectCallback(bruteForceCallbackTrees);
             m_staticShadow.clearObjectBounds();
         }
 
         m_staticShadow.computeShadows();
         m_staticShadowsDirty = false;
+
+        std::cout << "Static shadows computed (spheres: " << (m_useSpheres ? "ON" : "OFF")
+            << ", trees: " << objects.getObstacles().size() << " obstacles)" << std::endl;
     }
 
     // ========== ДИНАМИЧЕСКИЕ ТЕНИ (змейка) ==========
     if (m_shadowMapEnabled && m_dynamicShadowsDirty) {
         m_dynamicShadow.clearObjectBounds();
         m_dynamicShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
-        m_dynamicShadow.setIntersectCallback(exactGeometryCallbackSnake);
+
+        // Устанавливаем режим использования сфер
+        m_dynamicShadow.setUseSpheres(m_useSpheres);
 
         if (m_useSpheres) {
-            m_dynamicShadow.setUseSpheres(true);
-
+            // ===== РЕЖИМ СО СФЕРАМИ: сфера → точная геометрия по ID =====
             std::vector<BoundingSphere> snakeSpheres;
             for (size_t i = 0; i < objects.getSnake().size(); i++) {
                 const Point& segment = objects.getSnake()[i];
@@ -1873,39 +1881,45 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             }
             m_dynamicShadow.registerObjectBounds(snakeSpheres);
 
-            // ✅ ИСПРАВЛЕНО: Используем intersectSnakeSegmentById
+            // Точный колбэк по ID (без проверки сферы - она уже проверена)
             m_dynamicShadow.setIntersectCallbackExact(
                 [this](const Ray& ray, float& hitDist, glm::vec3& hitPoint,
                     BoundingSphere::ModelType modelType, int instanceId) -> bool {
                         if (modelType != BoundingSphere::MODEL_SNAKE_HEAD &&
                             modelType != BoundingSphere::MODEL_SNAKE_BODY &&
                             modelType != BoundingSphere::MODEL_SNAKE_TAIL) return false;
-
                         float offsetX = m_gridWidth * m_cellSize / 2.0f;
                         float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-
                         return intersectSnakeSegmentById(ray, instanceId, offsetX, offsetZ, hitDist, hitPoint);
                 }
             );
+
+            // Для режима со сферами обычный колбэк не нужен
+            m_dynamicShadow.setIntersectCallback(nullptr);
         }
         else {
-            m_dynamicShadow.setUseSpheres(false);
+            // ===== РЕЖИМ БЕЗ СФЕР: brute-force все треугольники всех сегментов змейки =====
+            m_dynamicShadow.setIntersectCallback(bruteForceCallbackSnake);
             m_dynamicShadow.clearObjectBounds();
         }
 
         m_dynamicShadow.computeShadows();
         m_dynamicShadowsDirty = false;
+
+        std::cout << "Dynamic shadows computed (spheres: " << (m_useSpheres ? "ON" : "OFF")
+            << ", snake segments: " << objects.getSnake().size() << ")" << std::endl;
     }
 
     // ========== ТЕНИ ДЛЯ ЕДЫ ==========
     if (m_shadowMapEnabled && m_foodShadowsDirty) {
         m_foodShadow.clearObjectBounds();
         m_foodShadow.setGrid(m_gridWidth, m_gridDepth, m_cellSize, m_floorHeight);
-        m_foodShadow.setIntersectCallback(exactGeometryCallbackFood);
+
+        // Устанавливаем режим использования сфер
+        m_foodShadow.setUseSpheres(m_useSpheres);
 
         if (m_useSpheres) {
-            m_foodShadow.setUseSpheres(true);
-
+            // ===== РЕЖИМ СО СФЕРАМИ: сфера → точная геометрия по ID =====
             std::vector<BoundingSphere> foodSpheres;
             int foodId = 0;
             for (const auto& apple : objects.getFood()) {
@@ -1926,26 +1940,31 @@ void GameRenderer::computeShadowsIfNeeded(const GameObjects& objects) {
             }
             m_foodShadow.registerObjectBounds(foodSpheres);
 
-            // ✅ ИСПРАВЛЕНО: Используем intersectAppleById
+            // Точный колбэк по ID (без проверки сферы - она уже проверена)
             m_foodShadow.setIntersectCallbackExact(
                 [this](const Ray& ray, float& hitDist, glm::vec3& hitPoint,
                     BoundingSphere::ModelType modelType, int instanceId) -> bool {
                         if (modelType != BoundingSphere::MODEL_APPLE) return false;
-
                         float offsetX = m_gridWidth * m_cellSize / 2.0f;
                         float offsetZ = m_gridDepth * m_cellSize / 2.0f;
-
                         return intersectAppleById(ray, instanceId, offsetX, offsetZ, hitDist, hitPoint);
                 }
             );
+
+            // Для режима со сферами обычный колбэк не нужен
+            m_foodShadow.setIntersectCallback(nullptr);
         }
         else {
-            m_foodShadow.setUseSpheres(false);
+            // ===== РЕЖИМ БЕЗ СФЕР: brute-force все треугольники всех яблок =====
+            m_foodShadow.setIntersectCallback(bruteForceCallbackFood);
             m_foodShadow.clearObjectBounds();
         }
 
         m_foodShadow.computeShadows();
         m_foodShadowsDirty = false;
+
+        std::cout << "Food shadows computed (spheres: " << (m_useSpheres ? "ON" : "OFF")
+            << ", apples: " << objects.getFood().size() << ")" << std::endl;
     }
 }
 void GameRenderer::markFoodShadowsDirty() {
@@ -2788,130 +2807,9 @@ HitInfo GameRenderer::intersectScene(const Ray& ray, const GameObjects& objects,
 
     return closestHit;
 }
-HitInfo GameRenderer::intersectTreesOnly(const Ray& ray, const GameObjects& objects,
-    float offsetX, float offsetZ) {
-
-    HitInfo closestHit;
-    closestHit.hit = false;
-    closestHit.distance = 1000.0f;
-    float maxDistance = 100.0f;
-    float halfWidth = m_gridWidth * m_cellSize / 2.0f;
-    float halfDepth = m_gridDepth * m_cellSize / 2.0f;
-
-    // ✅ Получаем масштаб дерева из конфига
-    float treeScaleFromConfig = objects.getTreeScale();
-
-    // Пол (всегда нужно для теней на земле)
-    float tGround = -ray.origin.y / ray.direction.y;
-    if (tGround > 0.01f && tGround < maxDistance) {
-        glm::vec3 hitPoint = ray.pointAt(tGround);
-        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
-            closestHit.hit = true;
-            closestHit.distance = tGround;
-            closestHit.point = hitPoint;
-            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
-        }
-    }
-
-    // Только деревья
-    for (const auto& obstacle : objects.getObstacles()) {
-        for (const auto& block : obstacle.blocks) {
-            float x = block.x * m_cellSize - offsetX;
-            float z = block.z * m_cellSize - offsetZ;
-            float y = block.y * m_cellSize;
-
-            // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА
-            float scale = m_cellSize * treeScaleFromConfig;
-            float treeHeight = scale * 1.5f;
-
-            glm::vec3 treeCenter(
-                x + m_cellSize * 0.5f,
-                y + treeHeight * 0.5f,
-                z + m_cellSize * 0.5f
-            );
-            float boundingRadius = scale * 0.8f;
-
-            float tSphere;
-            if (rayIntersectsSphere(ray, treeCenter, boundingRadius, tSphere)) {
-                if (!m_treeModel.vertices.empty()) {
-                    glm::mat4 transform = glm::mat4(1.0f);
-                    transform = glm::translate(transform, glm::vec3(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f));
-                    transform = glm::scale(transform, glm::vec3(scale));
-
-                    float hitDist;
-                    glm::vec3 hitPt;
-                    if (rayIntersectsModel(ray, m_treeModel, transform, hitDist, hitPt)) {
-                        if (hitDist > 0.01f && hitDist < closestHit.distance) {
-                            closestHit.hit = true;
-                            closestHit.distance = hitDist;
-                            closestHit.point = hitPt;
-                            return closestHit;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    return closestHit;
-}
-
-HitInfo GameRenderer::intersectSnakeOnly(const Ray& ray, const GameObjects& objects,
-    float offsetX, float offsetZ) {
-
-    HitInfo closestHit;
-    closestHit.hit = false;
-    closestHit.distance = 1000.0f;
-
-    // Только змейка - масштабы уже из конфига
-    for (size_t i = 0; i < objects.getSnake().size(); i++) {
-        const Point& segment = objects.getSnake()[i];
-        float x = segment.x * m_cellSize - offsetX;
-        float z = segment.z * m_cellSize - offsetZ;
-        float y = segment.y * m_cellSize + 0.1f;
-
-        float scale;
-        const Model* model = nullptr;
-        if (i == 0) {
-            scale = m_cellSize * objects.getSnakeHeadScale();  // ✅ из конфига
-            model = &m_snakeHeadModel;
-        }
-        else if (i == objects.getSnake().size() - 1) {
-            scale = m_cellSize * objects.getSnakeTailScale();  // ✅ из конфига
-            model = &m_snakeTailModel;
-        }
-        else {
-            scale = m_cellSize * objects.getSnakeBodyScale();  // ✅ из конфига
-            model = &m_snakeBodyModel;
-        }
-
-        float segmentRadius = scale * 0.6f;
-        glm::vec3 center(x, y, z);
-
-        float tSphere;
-        if (rayIntersectsSphere(ray, center, segmentRadius, tSphere)) {
-            if (!model->vertices.empty()) {
-                float rotationAngle = calculateSegmentRotation(objects.getSnake(), i);
-                glm::mat4 transform = glm::mat4(1.0f);
-                transform = glm::translate(transform, glm::vec3(x, y, z));
-                transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
-                transform = glm::scale(transform, glm::vec3(scale));
-
-                float hitDist;
-                glm::vec3 hitPt;
-                if (rayIntersectsModel(ray, *model, transform, hitDist, hitPt)) {
-                    if (hitDist > 0.01f && hitDist < closestHit.distance) {
-                        closestHit.hit = true;
-                        closestHit.distance = hitDist;
-                        closestHit.point = hitPt;
-                    }
-                }
-            }
-        }
-    }
-
-    return closestHit;
-}
+// ============================================================================
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: intersectFoodOnly
+// ============================================================================
 
 HitInfo GameRenderer::intersectFoodOnly(const Ray& ray, const GameObjects& objects,
     float offsetX, float offsetZ) {
@@ -2961,7 +2859,6 @@ HitInfo GameRenderer::intersectFoodOnly(const Ray& ray, const GameObjects& objec
         float x = apple.x * m_cellSize - offsetX;
         float z = apple.z * m_cellSize - offsetZ;
 
-        // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА!
         float scale = m_cellSize * appleScaleFromConfig;
         float worldBottomOffset = offsetFromCenterToBottom * scale;
 
@@ -2969,23 +2866,206 @@ HitInfo GameRenderer::intersectFoodOnly(const Ray& ray, const GameObjects& objec
         float centerY = m_floorHeight + worldBottomOffset;
         float centerZ = z + m_cellSize * 0.5f;
 
-        float modelRadius = (maxY_local - minY_local) * 0.5f * scale;
         glm::vec3 center(centerX, centerY, centerZ);
+        float modelRadius = (maxY_local - minY_local) * 0.5f * scale;
 
-        float tSphere;
-        if (rayIntersectsSphere(ray, center, modelRadius, tSphere)) {
-            glm::mat4 transform = glm::mat4(1.0f);
-            transform = glm::translate(transform, center);
-            transform = glm::scale(transform, glm::vec3(scale));
+        glm::mat4 transform = glm::mat4(1.0f);
+        transform = glm::translate(transform, center);
+        transform = glm::scale(transform, glm::vec3(scale));
 
+        if (m_useSpheres) {
+            // ===== РЕЖИМ СО СФЕРАМИ: сфера → точные полигоны =====
+            float tSphere;
+            if (rayIntersectsSphere(ray, center, modelRadius, tSphere)) {
+                float hitDist;
+                glm::vec3 hitPt;
+                if (rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPt, true)) {
+                    if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                        closestHit.hit = true;
+                        closestHit.distance = hitDist;
+                        closestHit.point = hitPt;
+                        closestHit.normal = glm::normalize(hitPt - center);
+                    }
+                }
+            }
+        }
+        else {
+            // ===== РЕЖИМ БЕЗ СФЕР: brute-force все треугольники =====
             float hitDist;
             glm::vec3 hitPt;
-            if (rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPt)) {
+            if (rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPt, true)) {
                 if (hitDist > 0.01f && hitDist < closestHit.distance) {
                     closestHit.hit = true;
                     closestHit.distance = hitDist;
                     closestHit.point = hitPt;
                     closestHit.normal = glm::normalize(hitPt - center);
+                }
+            }
+        }
+    }
+
+    return closestHit;
+}
+
+// ============================================================================
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: intersectTreesOnly
+// ============================================================================
+
+HitInfo GameRenderer::intersectTreesOnly(const Ray& ray, const GameObjects& objects,
+    float offsetX, float offsetZ) {
+
+    HitInfo closestHit;
+    closestHit.hit = false;
+    closestHit.distance = 1000.0f;
+    float maxDistance = 100.0f;
+    float halfWidth = m_gridWidth * m_cellSize / 2.0f;
+    float halfDepth = m_gridDepth * m_cellSize / 2.0f;
+
+    // Получаем масштаб дерева из конфига
+    float treeScaleFromConfig = objects.getTreeScale();
+
+    // Пол (всегда нужно для теней на земле)
+    float tGround = -ray.origin.y / ray.direction.y;
+    if (tGround > 0.01f && tGround < maxDistance) {
+        glm::vec3 hitPoint = ray.pointAt(tGround);
+        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+            closestHit.hit = true;
+            closestHit.distance = tGround;
+            closestHit.point = hitPoint;
+            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+    }
+
+    // Только деревья
+    for (const auto& obstacle : objects.getObstacles()) {
+        for (const auto& block : obstacle.blocks) {
+            float x = block.x * m_cellSize - offsetX;
+            float z = block.z * m_cellSize - offsetZ;
+            float y = block.y * m_cellSize;
+
+            float scale = m_cellSize * treeScaleFromConfig;
+            float treeHeight = scale * 1.5f;
+
+            glm::vec3 treeCenter(
+                x + m_cellSize * 0.5f,
+                y + treeHeight * 0.5f,
+                z + m_cellSize * 0.5f
+            );
+            float boundingRadius = scale * 0.8f;
+
+            glm::mat4 transform = glm::mat4(1.0f);
+            transform = glm::translate(transform, glm::vec3(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f));
+            transform = glm::scale(transform, glm::vec3(scale));
+
+            if (m_useSpheres) {
+                // ===== РЕЖИМ СО СФЕРАМИ: сфера → точные полигоны =====
+                float tSphere;
+                if (rayIntersectsSphere(ray, treeCenter, boundingRadius, tSphere)) {
+                    if (!m_treeModel.vertices.empty()) {
+                        float hitDist;
+                        glm::vec3 hitPt;
+                        if (rayIntersectsModel(ray, m_treeModel, transform, hitDist, hitPt, true)) {
+                            if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                                closestHit.hit = true;
+                                closestHit.distance = hitDist;
+                                closestHit.point = hitPt;
+                                return closestHit;
+                            }
+                        }
+                    }
+                }
+            }
+            else {
+                // ===== РЕЖИМ БЕЗ СФЕР: brute-force все треугольники =====
+                if (!m_treeModel.vertices.empty()) {
+                    float hitDist;
+                    glm::vec3 hitPt;
+                    if (rayIntersectsModel(ray, m_treeModel, transform, hitDist, hitPt, true)) {
+                        if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                            closestHit.hit = true;
+                            closestHit.distance = hitDist;
+                            closestHit.point = hitPt;
+                            return closestHit;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return closestHit;
+}
+
+// ============================================================================
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: intersectSnakeOnly
+// ============================================================================
+
+HitInfo GameRenderer::intersectSnakeOnly(const Ray& ray, const GameObjects& objects,
+    float offsetX, float offsetZ) {
+
+    HitInfo closestHit;
+    closestHit.hit = false;
+    closestHit.distance = 1000.0f;
+
+    // Только змейка - масштабы уже из конфига
+    for (size_t i = 0; i < objects.getSnake().size(); i++) {
+        const Point& segment = objects.getSnake()[i];
+        float x = segment.x * m_cellSize - offsetX;
+        float z = segment.z * m_cellSize - offsetZ;
+        float y = segment.y * m_cellSize + 0.1f;
+
+        float scale;
+        const Model* model = nullptr;
+        if (i == 0) {
+            scale = m_cellSize * objects.getSnakeHeadScale();
+            model = &m_snakeHeadModel;
+        }
+        else if (i == objects.getSnake().size() - 1) {
+            scale = m_cellSize * objects.getSnakeTailScale();
+            model = &m_snakeTailModel;
+        }
+        else {
+            scale = m_cellSize * objects.getSnakeBodyScale();
+            model = &m_snakeBodyModel;
+        }
+
+        float segmentRadius = scale * 0.6f;
+        glm::vec3 center(x, y, z);
+        float rotationAngle = calculateSegmentRotation(objects.getSnake(), i);
+
+        glm::mat4 transform = glm::mat4(1.0f);
+        transform = glm::translate(transform, glm::vec3(x, y, z));
+        transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+        transform = glm::scale(transform, glm::vec3(scale));
+
+        if (m_useSpheres) {
+            // ===== РЕЖИМ СО СФЕРАМИ: сфера → точные полигоны =====
+            float tSphere;
+            if (rayIntersectsSphere(ray, center, segmentRadius, tSphere)) {
+                if (!model->vertices.empty()) {
+                    float hitDist;
+                    glm::vec3 hitPt;
+                    if (rayIntersectsModel(ray, *model, transform, hitDist, hitPt, true)) {
+                        if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                            closestHit.hit = true;
+                            closestHit.distance = hitDist;
+                            closestHit.point = hitPt;
+                        }
+                    }
+                }
+            }
+        }
+        else {
+            // ===== РЕЖИМ БЕЗ СФЕР: brute-force все треугольники =====
+            if (!model->vertices.empty()) {
+                float hitDist;
+                glm::vec3 hitPt;
+                if (rayIntersectsModel(ray, *model, transform, hitDist, hitPt, true)) {
+                    if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                        closestHit.hit = true;
+                        closestHit.distance = hitDist;
+                        closestHit.point = hitPt;
+                    }
                 }
             }
         }
@@ -3627,6 +3707,10 @@ void GameRenderer::drawFallbackFloor() {
 
     glDisable(GL_TEXTURE_2D);
 }
+// ============================================================================
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: intersectTreeById (без сфер - сразу полигоны)
+// ============================================================================
+
 bool GameRenderer::intersectTreeById(const Ray& ray, int treeId,
     float offsetX, float offsetZ, float& hitDist, glm::vec3& hitPoint)
 {
@@ -3649,7 +3733,7 @@ bool GameRenderer::intersectTreeById(const Ray& ray, int treeId,
                     glm::vec3(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f));
                 transform = glm::scale(transform, glm::vec3(scale));
 
-                // ✅ FIX: skipSphereCheck = true, потому что сфера уже проверена!
+                // skipSphereCheck = true - НЕ ИСПОЛЬЗУЕМ СФЕРУ!
                 return rayIntersectsModel(ray, m_treeModel, transform, hitDist, hitPoint, true);
             }
             currentId++;
@@ -3657,6 +3741,10 @@ bool GameRenderer::intersectTreeById(const Ray& ray, int treeId,
     }
     return false;
 }
+
+// ============================================================================
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: intersectSnakeSegmentById (без сфер - сразу полигоны)
+// ============================================================================
 
 bool GameRenderer::intersectSnakeSegmentById(const Ray& ray, int segmentId,
     float offsetX, float offsetZ, float& hitDist, glm::vec3& hitPoint) {
@@ -3692,8 +3780,13 @@ bool GameRenderer::intersectSnakeSegmentById(const Ray& ray, int segmentId,
     transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
     transform = glm::scale(transform, glm::vec3(scale));
 
+    // skipSphereCheck = true - НЕ ИСПОЛЬЗУЕМ СФЕРУ!
     return rayIntersectsModel(ray, *model, transform, hitDist, hitPoint, true);
 }
+
+// ============================================================================
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: intersectAppleById (без сфер - сразу полигоны)
+// ============================================================================
 
 bool GameRenderer::intersectAppleById(const Ray& ray, int appleId,
     float offsetX, float offsetZ, float& hitDist, glm::vec3& hitPoint) {
@@ -3731,5 +3824,6 @@ bool GameRenderer::intersectAppleById(const Ray& ray, int appleId,
     transform = glm::translate(transform, glm::vec3(centerX, centerY, centerZ));
     transform = glm::scale(transform, glm::vec3(scale));
 
+    // skipSphereCheck = true - НЕ ИСПОЛЬЗУЕМ СФЕРУ!
     return rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPoint, true);
 }

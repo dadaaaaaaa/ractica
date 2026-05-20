@@ -335,19 +335,24 @@ void ShadowMapper::setIntersectCallback(std::function<bool(const struct Ray&, fl
 }
 
 // ============================================================================
-// НОВАЯ ОПТИМИЗИРОВАННАЯ ЛОГИКА: СНАЧАЛА СФЕРА, ПОТОМ ТОЧНЫЙ ПОЛИГОН
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: intersectsAnyObject
 // ============================================================================
 
 bool ShadowMapper::intersectsAnyObject(const Ray& ray, float& hitDistance, glm::vec3& hitPoint)
 {
     float maxRayDistance = ray.maxDistance > 0 ? ray.maxDistance : 100.0f;
 
-    // Режим БЕЗ сфер - используем коллбэк (прямая проверка полигонов)
+    // ===== РЕЖИМ БЕЗ СФЕР - brute-force все объекты через колбэк =====
     if (!m_useSpheres || m_objectSpheres.empty()) {
-        return m_intersectCallback ? m_intersectCallback(ray, hitDistance, hitPoint) : false;
+        // В этом режиме колбэк должен проверять ВСЕ треугольники ВСЕХ объектов
+        // (без каких-либо сфер)
+        if (m_intersectCallback) {
+            return m_intersectCallback(ray, hitDistance, hitPoint);
+        }
+        return false;
     }
 
-    // РЕЖИМ СО СФЕРАМИ
+    // ===== РЕЖИМ СО СФЕРАМИ: сфера → точная проверка конкретного объекта =====
     // ШАГ 1: Быстрая проверка всех сфер (аналитически, без полигонов)
     for (const auto& sphere : m_objectSpheres) {
         glm::vec3 oc = ray.origin - sphere.center;
@@ -364,7 +369,8 @@ bool ShadowMapper::intersectsAnyObject(const Ray& ray, float& hitDistance, glm::
             float exactDist;
             glm::vec3 exactPoint;
 
-            // Этот коллбэк проверяет ВСЕ полигоны конкретной модели
+            // Этот колбэк проверяет ВСЕ полигоны КОНКРЕТНОЙ МОДЕЛИ (по ID)
+            // НО! Если модель большая, можно и дальше оптимизировать (BVH)
             if (m_intersectCallbackExact(ray, exactDist, exactPoint,
                 sphere.modelType, sphere.instanceId)) {
                 if (exactDist > 0.01f && exactDist <= maxRayDistance) {
@@ -380,7 +386,7 @@ bool ShadowMapper::intersectsAnyObject(const Ray& ray, float& hitDistance, glm::
 }
 
 // ============================================================================
-// ОПТИМИЗИРОВАННАЯ traceShadowRay (аналогичная логика)
+// ИСПРАВЛЕННАЯ ФУНКЦИЯ: traceShadowRay
 // ============================================================================
 
 bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direction,
@@ -390,12 +396,15 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
     shadowRay.maxDistance = maxDistance;
     float maxDist = maxDistance > 0 ? maxDistance : 100.0f;
 
-    // Режим БЕЗ сфер
+    // ===== РЕЖИМ БЕЗ СФЕР - brute-force все объекты =====
     if (!m_useSpheres || m_objectSpheres.empty()) {
-        return m_intersectCallback ? m_intersectCallback(shadowRay, hitDistance, hitPoint) : false;
+        if (m_intersectCallback) {
+            return m_intersectCallback(shadowRay, hitDistance, hitPoint);
+        }
+        return false;
     }
 
-    // Режим СО СФЕРАМИ
+    // ===== РЕЖИМ СО СФЕРАМИ =====
     for (const auto& sphere : m_objectSpheres) {
         // ШАГ 1: БЫСТРАЯ ПРОВЕРКА СФЕРЫ
         glm::vec3 oc = shadowRay.origin - sphere.center;
@@ -412,8 +421,8 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
             float exactDist;
             glm::vec3 exactPoint;
 
-            if (m_intersectCallbackExact(shadowRay, exactDist, exactPoint, sphere.modelType, sphere.instanceId)) {
-                // ✅ ПЕРВОЕ ПОПАДАНИЕ - ВОЗВРАЩАЕМ!
+            if (m_intersectCallbackExact(shadowRay, exactDist, exactPoint,
+                sphere.modelType, sphere.instanceId)) {
                 if (exactDist > 0.01f && exactDist <= maxDist) {
                     hitDistance = exactDist;
                     hitPoint = exactPoint;
@@ -425,7 +434,6 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
 
     return false;
 }
-
 // ============================================================================
 // isPointInShadow - оптимизированная версия
 // ============================================================================
