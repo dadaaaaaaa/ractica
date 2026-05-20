@@ -1,4 +1,4 @@
-#pragma once
+п»ї#pragma once
 #include "../Core/Types.h"
 #include <vector>
 #include <GL/glew.h>
@@ -17,17 +17,22 @@ public:
     float minX, maxX, minZ, maxZ;
     float width, depth;
 
+    // вњ… РќРћР’Р«Р• РџРћР›РЇ Р”Р›РЇ BOUNDING SPHERE
+    glm::vec3 boundingCenter;
+    float boundingRadius;
+    bool boundingSphereComputed;
+
     Model();
     void setupBuffers();
     void draw() const;
     void cleanup();
-    
+
     float getHeightAt(float worldX, float worldZ) const;
     void setTexture(GLuint texID) {
         textureID = texID;
         hasTexture = (texID != 0);
     }
-    
+
     float getMinY() const {
         if (vertices.empty()) return 0.0f;
         float minY = vertices[0].position.y;
@@ -36,9 +41,10 @@ public:
         }
         return minY;
     }
-    
+
     void calculateBounds();
-    
-    // НОВЫЙ МЕТОД - вычисление нормалей если их нет
     void computeNormals();
+
+    // вњ… РќРћР’Р«Р™ РњР•РўРћР”
+    void computeBoundingSphere();
 };

@@ -257,7 +257,9 @@ private:
     HitInfo intersectScene(const Ray& ray, const GameObjects& objects,
         float offsetX, float offsetZ, bool treesOnly = false);
     bool rayIntersectsModel(const Ray& ray, const Model& model,
-        const glm::mat4& transform, float& hitDistance, glm::vec3& hitPoint);
+        const glm::mat4& transform,
+        float& hitDistance, glm::vec3& hitPoint,
+        bool skipSphereCheck = true);
     void renderShadowMap();
 
     //=========================================================================

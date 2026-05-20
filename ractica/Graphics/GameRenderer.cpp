@@ -308,81 +308,47 @@ void GameRenderer::toggleUseExactModels() {
 }
 // Добавьте эту функцию в GameRenderer.cpp
 
+// GameRenderer.cpp - ПОЛНАЯ ФУНКЦИЯ С ИСПОЛЬЗОВАНИЕМ BOUNDING SPHERE ИЗ МОДЕЛИ
+
 bool GameRenderer::rayIntersectsModel(const Ray& ray, const Model& model,
     const glm::mat4& transform,
-    float& hitDistance, glm::vec3& hitPoint) {
+    float& hitDistance, glm::vec3& hitPoint,
+    bool skipSphereCheck) {
 
     if (model.vertices.empty()) return false;
 
-    // 1. Сначала вычисляем bounding sphere модели в мировых координатах
-    // Находим границы модели в ЛОКАЛЬНЫХ координатах (один раз на модель)
-    static std::map<const Model*, std::pair<glm::vec3, float>> boundsCache;
-
-    auto it = boundsCache.find(&model);
-    if (it == boundsCache.end()) {
-        // Вычисляем локальные границы модели
-        float minX = model.vertices[0].position.x;
-        float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
-
-        for (const auto& vert : model.vertices) {
-            minX = std::min(minX, vert.position.x);
-            maxX = std::max(maxX, vert.position.x);
-            minY = std::min(minY, vert.position.y);
-            maxY = std::max(maxY, vert.position.y);
-            minZ = std::min(minZ, vert.position.z);
-            maxZ = std::max(maxZ, vert.position.z);
+    // Проверяем сферу только если не пропущена (для оптимизации из ShadowMapper)
+    if (!skipSphereCheck) {
+        if (!model.boundingSphereComputed) {
+            return false;
         }
 
-        glm::vec3 localCenter(
-            (minX + maxX) * 0.5f,
-            (minY + maxY) * 0.5f,
-            (minZ + maxZ) * 0.5f
-        );
+        // Преобразуем центр в мировые координаты
+        glm::vec4 worldCenter4 = transform * glm::vec4(model.boundingCenter, 1.0f);
+        glm::vec3 worldCenter = glm::vec3(worldCenter4);
 
-        float localRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
+        // Вычисляем масштаб
+        glm::vec3 scale;
+        scale.x = glm::length(glm::vec3(transform[0]));
+        scale.y = glm::length(glm::vec3(transform[1]));
+        scale.z = glm::length(glm::vec3(transform[2]));
+        float maxScale = std::max({ scale.x, scale.y, scale.z });
+        float worldRadius = model.boundingRadius * maxScale;
 
-        boundsCache[&model] = { localCenter, localRadius };
-        it = boundsCache.find(&model);
+        // БЫСТРАЯ ПРОВЕРКА СФЕРЫ
+        float tSphere;
+        if (!rayIntersectsSphere(ray, worldCenter, worldRadius, tSphere)) {
+            return false; // НЕ ПОПАЛИ - ВЫХОДИМ
+        }
     }
 
-    const auto& localBounds = it->second;
-    glm::vec3 localCenter = localBounds.first;
-    float localRadius = localBounds.second;
-
-    // Преобразуем локальный центр в мировые координаты
-    glm::vec4 worldCenter4 = transform * glm::vec4(localCenter, 1.0f);
-    glm::vec3 worldCenter = glm::vec3(worldCenter4);
-
-    // Вычисляем максимальный радиус в мировых координатах (учитывая масштаб)
-    glm::vec3 scale;
-    scale.x = glm::length(glm::vec3(transform[0]));
-    scale.y = glm::length(glm::vec3(transform[1]));
-    scale.z = glm::length(glm::vec3(transform[2]));
-    float maxScale = std::max({ scale.x, scale.y, scale.z });
-    float worldRadius = localRadius * maxScale;
-
-    // 2. Проверка попадания в bounding sphere
-    float tSphere;
-    if (!rayIntersectsSphere(ray, worldCenter, worldRadius, tSphere)) {
-        return false; // Не попали в сферу - модель точно не затронута
-    }
-
-    // 3. Попали в сферу - делаем точную проверку по треугольникам модели
-    float closestHit = 1000.0f;
-    bool hit = false;
+    // ПОПАЛИ В СФЕРУ - ПРОВЕРЯЕМ ТРЕУГОЛЬНИКИ С РАННИМ ВЫХОДОМ
     const float EPSILON = 0.000001f;
 
-    // Получаем матрицу для преобразования нормалей
-    glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(transform)));
-
     for (size_t i = 0; i < model.vertices.size(); i += 3) {
-        glm::vec3 v0_local = model.vertices[i].position;
-        glm::vec3 v1_local = model.vertices[i + 1].position;
-        glm::vec3 v2_local = model.vertices[i + 2].position;
-
-        glm::vec3 v0 = glm::vec3(transform * glm::vec4(v0_local, 1.0f));
-        glm::vec3 v1 = glm::vec3(transform * glm::vec4(v1_local, 1.0f));
-        glm::vec3 v2 = glm::vec3(transform * glm::vec4(v2_local, 1.0f));
+        glm::vec3 v0 = glm::vec3(transform * glm::vec4(model.vertices[i].position, 1.0f));
+        glm::vec3 v1 = glm::vec3(transform * glm::vec4(model.vertices[i + 1].position, 1.0f));
+        glm::vec3 v2 = glm::vec3(transform * glm::vec4(model.vertices[i + 2].position, 1.0f));
 
         // Алгоритм Möller–Trumbore
         glm::vec3 edge1 = v1 - v0;
@@ -405,18 +371,15 @@ bool GameRenderer::rayIntersectsModel(const Ray& ray, const Model& model,
 
         float t = f * glm::dot(edge2, q);
 
-        if (t > EPSILON && t < closestHit) {
-            closestHit = t;
+        if (t > EPSILON) {
+            // ПЕРВОЕ ПОПАДАНИЕ - СРАЗУ ВОЗВРАЩАЕМ!
+            hitDistance = t;
             hitPoint = ray.pointAt(t);
-            hit = true;
+            return true;
         }
     }
 
-    if (hit) {
-        hitDistance = closestHit;
-    }
-
-    return hit;
+    return false;
 }
 void GameRenderer::setShadowTraceModeByIndex(int modeIndex) {
     switch (modeIndex) {
@@ -1148,23 +1111,17 @@ bool GameRenderer::convertModelDataToModel(const ModelData& modelData, Model& ou
     outModel.hasTexture = false;
     outModel.textureID = 0;
 
+    // Конвертация вершин
     size_t vertexCount = modelData.vertices.size() / 3;
     bool hasNormals = !modelData.normals.empty();
     bool hasTexCoords = !modelData.texCoords.empty();
 
-    std::cout << "Converting model: " << vertexCount << " vertices, "
-        << "normals: " << (hasNormals ? "yes" : "no") << ", "
-        << "texCoords: " << (hasTexCoords ? "yes" : "no") << std::endl;
-
     for (size_t i = 0; i < vertexCount; i++) {
         Vertex vertex;
-
-        // Позиция
         vertex.position.x = modelData.vertices[i * 3];
         vertex.position.y = modelData.vertices[i * 3 + 1];
         vertex.position.z = modelData.vertices[i * 3 + 2];
 
-        // Нормаль
         if (hasNormals && i * 3 + 2 < modelData.normals.size()) {
             vertex.normal.x = modelData.normals[i * 3];
             vertex.normal.y = modelData.normals[i * 3 + 1];
@@ -1174,7 +1131,6 @@ bool GameRenderer::convertModelDataToModel(const ModelData& modelData, Model& ou
             vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
         }
 
-        // Текстурные координаты
         if (hasTexCoords && i * 2 + 1 < modelData.texCoords.size()) {
             vertex.texCoords.x = modelData.texCoords[i * 2];
             vertex.texCoords.y = modelData.texCoords[i * 2 + 1];
@@ -1186,16 +1142,14 @@ bool GameRenderer::convertModelDataToModel(const ModelData& modelData, Model& ou
         outModel.vertices.push_back(vertex);
     }
 
-    // Если есть текстура в первом материале, используем её
     if (!modelData.materials.empty() && modelData.materials[0].textureID != 0) {
         outModel.textureID = modelData.materials[0].textureID;
         outModel.hasTexture = true;
-        std::cout << "Model has texture ID: " << outModel.textureID << std::endl;
     }
 
+    // ✅ ЭТОТ ВЫЗОВ ВЫЧИСЛИТ BOUNDING SPHERE
     outModel.setupBuffers();
 
-    std::cout << "Model converted successfully with " << outModel.vertices.size() << " vertices" << std::endl;
     return true;
 }
 
@@ -3674,8 +3628,8 @@ void GameRenderer::drawFallbackFloor() {
     glDisable(GL_TEXTURE_2D);
 }
 bool GameRenderer::intersectTreeById(const Ray& ray, int treeId,
-    float offsetX, float offsetZ, float& hitDist, glm::vec3& hitPoint) {
-
+    float offsetX, float offsetZ, float& hitDist, glm::vec3& hitPoint)
+{
     const GameObjects& objects = g_game.getGameObjects();
     const auto& obstacles = objects.getObstacles();
 
@@ -3687,7 +3641,6 @@ bool GameRenderer::intersectTreeById(const Ray& ray, int treeId,
                 float z = block.z * m_cellSize - offsetZ;
                 float y = block.y * m_cellSize;
 
-                // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА
                 float treeScale = objects.getTreeScale();
                 float scale = m_cellSize * treeScale;
 
@@ -3696,7 +3649,8 @@ bool GameRenderer::intersectTreeById(const Ray& ray, int treeId,
                     glm::vec3(x + m_cellSize * 0.5f, y, z + m_cellSize * 0.5f));
                 transform = glm::scale(transform, glm::vec3(scale));
 
-                return rayIntersectsModel(ray, m_treeModel, transform, hitDist, hitPoint);
+                // ✅ FIX: skipSphereCheck = true, потому что сфера уже проверена!
+                return rayIntersectsModel(ray, m_treeModel, transform, hitDist, hitPoint, true);
             }
             currentId++;
         }
@@ -3738,7 +3692,7 @@ bool GameRenderer::intersectSnakeSegmentById(const Ray& ray, int segmentId,
     transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
     transform = glm::scale(transform, glm::vec3(scale));
 
-    return rayIntersectsModel(ray, *model, transform, hitDist, hitPoint);
+    return rayIntersectsModel(ray, *model, transform, hitDist, hitPoint, true);
 }
 
 bool GameRenderer::intersectAppleById(const Ray& ray, int appleId,
@@ -3777,5 +3731,5 @@ bool GameRenderer::intersectAppleById(const Ray& ray, int appleId,
     transform = glm::translate(transform, glm::vec3(centerX, centerY, centerZ));
     transform = glm::scale(transform, glm::vec3(scale));
 
-    return rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPoint);
+    return rayIntersectsModel(ray, m_appleModel, transform, hitDist, hitPoint, true);
 }

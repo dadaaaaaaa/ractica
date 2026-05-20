@@ -1,4 +1,4 @@
-#include "../pch.h"
+п»ї#include "../pch.h"
 #include "Model.h"
 #include <algorithm>
 #include <iostream>
@@ -9,7 +9,10 @@ Model::Model()
     , hasTexture(false)
     , isCompiled(false)
     , minX(0), maxX(0), minZ(0), maxZ(0)
-    , width(0), depth(0) {
+    , width(0), depth(0)
+    , boundingCenter(0.0f)
+    , boundingRadius(0.0f)
+    , boundingSphereComputed(false) {
 }
 
 void Model::setupBuffers() {
@@ -48,6 +51,8 @@ void Model::setupBuffers() {
     isCompiled = true;
     calculateBounds();
 
+    // вњ… Р’Р«Р—Р«Р’РђР•Рњ Р’Р«Р§РРЎР›Р•РќРР• BOUNDING SPHERE
+    computeBoundingSphere();
 }
 
 void Model::cleanup() {
@@ -65,6 +70,7 @@ void Model::cleanup() {
     heightMap.clear();
     hasTexture = false;
     isCompiled = false;
+    boundingSphereComputed = false;
 }
 
 void Model::draw() const {
@@ -122,19 +128,41 @@ void Model::calculateBounds() {
     }
 }
 
+// вњ… РќРћР’РђРЇ Р¤РЈРќРљР¦РРЇ - Р’Р«Р§РРЎР›Р•РќРР• BOUNDING SPHERE
+void Model::computeBoundingSphere() {
+    if (vertices.empty()) {
+        boundingSphereComputed = false;
+        return;
+    }
+
+    float minX = vertices[0].position.x;
+    float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
+
+    for (const auto& vert : vertices) {
+        minX = std::min(minX, vert.position.x);
+        maxX = std::max(maxX, vert.position.x);
+        minY = std::min(minY, vert.position.y);
+        maxY = std::max(maxY, vert.position.y);
+        minZ = std::min(minZ, vert.position.z);
+        maxZ = std::max(maxZ, vert.position.z);
+    }
+
+    boundingCenter = glm::vec3(
+        (minX + maxX) * 0.5f,
+        (minY + maxY) * 0.5f,
+        (minZ + maxZ) * 0.5f
+    );
+
+    float dx = maxX - minX;
+    float dy = maxY - minY;
+    float dz = maxZ - minZ;
+    boundingRadius = std::max({ dx, dy, dz }) * 0.5f;
+
+    boundingSphereComputed = true;
+}
+
 float Model::getHeightAt(float worldX, float worldZ) const {
     if (vertices.empty() || heightMap.empty()) return 0.0f;
-
-    static std::map<std::pair<int, int>, float> heightCache;
-
-    int gridX = static_cast<int>(worldX * 10.0f);
-    int gridZ = static_cast<int>(worldZ * 10.0f);
-
-    auto key = std::make_pair(gridX, gridZ);
-    auto it = heightCache.find(key);
-    if (it != heightCache.end()) {
-        return it->second;
-    }
 
     float bestDist = 1e9;
     float bestY = 0.0f;
@@ -153,32 +181,24 @@ float Model::getHeightAt(float worldX, float worldZ) const {
         }
     }
 
-    heightCache[key] = bestY;
     return bestY;
 }
- 
-// НОВАЯ ФУНКЦИЯ - вычисление нормалей для модели
+
 void Model::computeNormals() {
     if (vertices.empty()) return;
 
-
-    // Сначала обнуляем все нормали
     for (auto& vertex : vertices) {
         vertex.normal = glm::vec3(0.0f);
     }
 
-    // Для каждого треугольника вычисляем нормаль грани
     for (size_t i = 0; i < vertices.size(); i += 3) {
-        // Получаем три вершины треугольника
         glm::vec3& v0 = vertices[i].position;
         glm::vec3& v1 = vertices[i + 1].position;
         glm::vec3& v2 = vertices[i + 2].position;
 
-        // Векторы двух сторон треугольника
         glm::vec3 edge1 = v1 - v0;
         glm::vec3 edge2 = v2 - v0;
 
-        // Вычисляем нормаль грани (векторное произведение)
         glm::vec3 faceNormal = glm::cross(edge1, edge2);
         float length = glm::length(faceNormal);
         if (length > 0.0001f) {
@@ -188,13 +208,11 @@ void Model::computeNormals() {
             faceNormal = glm::vec3(0.0f, 1.0f, 0.0f);
         }
 
-        // Добавляем эту нормаль ко всем трём вершинам
         vertices[i].normal += faceNormal;
         vertices[i + 1].normal += faceNormal;
         vertices[i + 2].normal += faceNormal;
     }
 
-    // Нормализуем итоговые нормали для каждой вершины
     for (auto& vertex : vertices) {
         float length = glm::length(vertex.normal);
         if (length > 0.0001f) {
@@ -204,5 +222,4 @@ void Model::computeNormals() {
             vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
         }
     }
-
 }
