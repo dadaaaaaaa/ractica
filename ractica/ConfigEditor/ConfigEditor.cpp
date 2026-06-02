@@ -5398,7 +5398,7 @@ void renderShadowPreview3D() {
 
     // Отладочные лучи
 // Отладочные лучи
-// Отладочные лучи - группировка красных с окружающими жёлтыми в радиусе 2 клеток
+// Отладочные лучи с удалением дублирующихся жёлтых лучей
     if (g_rayDebugEnabled && currentConfig.shadowMapEnabled && !g_debugRaysFromShadowMapper.empty()) {
         glDisable(GL_LIGHTING);
         glDisable(GL_TEXTURE_2D);
@@ -5422,6 +5422,9 @@ void renderShadowPreview3D() {
 
         // Вектор для хранения уникальных лучей (используем флаг)
         std::vector<bool> shouldDraw(g_debugRaysFromShadowMapper.size(), false);
+
+        // Флаг для отметки жёлтых лучей, которые нужно удалить
+        std::vector<bool> removeRay(g_debugRaysFromShadowMapper.size(), false);
 
         // Помечаем все красные лучи для отрисовки
         for (size_t i = 0; i < g_debugRaysFromShadowMapper.size(); i++) {
@@ -5449,7 +5452,41 @@ void renderShadowPreview3D() {
             return distToHitPoint < epsilon;
             };
 
-        // Для каждого красного луча ищем жёлтые лучи в радиусе 2 клеток
+        // Функция для проверки, лежит ли жёлтый луч внутри красного (проходит через ту же траекторию)
+        auto isInsideRedRay = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.05f) -> bool {
+            // Проверяем, лежит ли жёлтый луч на том же луче, что и красный
+            // Направления должны быть коллинеарны
+            float dot = glm::dot(hitRay.direction, missRay.direction);
+            if (fabs(fabs(dot) - 1.0f) > epsilon) return false;
+
+            // Проверяем, лежит ли точка попадания жёлтого луча на пути красного луча
+            glm::vec3 toMiss = missRay.hitPoint - hitRay.origin;
+            float proj = glm::dot(toMiss, hitRay.direction);
+
+            // Если проекция положительная и точка находится между origin и hitPoint красного луча
+            if (proj > 0.01f && proj < hitRay.distance - epsilon) {
+                // Проверяем расстояние от точки до луча
+                glm::vec3 perp = toMiss - hitRay.direction * proj;
+                if (glm::length(perp) < epsilon) {
+                    return true;
+                }
+            }
+
+            return false;
+            };
+
+        // Функция для увеличения длины жёлтого луча (чтобы он выходил за пол)
+        auto extendMissRay = [&](const DebugRay& ray) -> DebugRay {
+            DebugRay extendedRay = ray;
+            // Увеличиваем длину луча на 20% или минимум на 0.2f
+            float extension = std::max(ray.distance * 0.2f, 0.2f);
+            extendedRay.distance = ray.distance + extension;
+            // Вычисляем новую точку попадания
+            extendedRay.hitPoint = ray.origin + ray.direction * extendedRay.distance;
+            return extendedRay;
+            };
+
+        // Для каждого красного луча проверяем жёлтые лучи на совпадение
         for (size_t hitIdx = 0; hitIdx < g_debugRaysFromShadowMapper.size(); hitIdx++) {
             if (!g_debugRaysFromShadowMapper[hitIdx].hit) continue;
 
@@ -5460,20 +5497,25 @@ void renderShadowPreview3D() {
             for (size_t missIdx = 0; missIdx < g_debugRaysFromShadowMapper.size(); missIdx++) {
                 if (g_debugRaysFromShadowMapper[missIdx].hit) continue;
 
+                // Если жёлтый луч уже отмечен на удаление, пропускаем
+                if (removeRay[missIdx]) continue;
+
                 const auto& missRay = g_debugRaysFromShadowMapper[missIdx];
-
-                // ПРОВЕРКА: если жёлтый луч совпадает с красным (проходит через ту же точку) - ПРОПУСКАЕМ
-                if (isSameHitPoint(hitRay, missRay)) {
-                    continue;
-                }
-
                 auto [missCellX, missCellZ] = getCellCoords(missRay.hitPoint);
 
                 // Вычисляем разницу в клетках
                 int dx = abs(hitCellX - missCellX);
                 int dz = abs(hitCellZ - missCellZ);
 
-                // Если жёлтый луч в радиусе 2 клеток по X и Z
+                // ПРОВЕРКА 1: если жёлтый луч совпадает с красным (проходит через ту же точку или траекторию)
+                if (isSameHitPoint(hitRay, missRay) || isInsideRedRay(hitRay, missRay)) {
+                    removeRay[missIdx] = true;  // Помечаем на удаление
+                    std::cout << "Removing duplicate yellow ray near red ray at cell ("
+                        << hitCellX << "," << hitCellZ << ")" << std::endl;
+                    continue;
+                }
+
+                // ПРОВЕРКА 2: если жёлтый луч в радиусе 2 клеток - оставляем
                 if (dx <= 2 && dz <= 2) {
                     shouldDraw[missIdx] = true;
                 }
@@ -5483,7 +5525,7 @@ void renderShadowPreview3D() {
         // Подсчитываем количество лучей для отрисовки
         int redCount = 0, yellowCount = 0;
         for (size_t i = 0; i < shouldDraw.size(); i++) {
-            if (shouldDraw[i]) {
+            if (shouldDraw[i] && !removeRay[i]) {
                 if (g_debugRaysFromShadowMapper[i].hit) redCount++;
                 else yellowCount++;
             }
@@ -5492,10 +5534,20 @@ void renderShadowPreview3D() {
         std::cout << "Drawing " << (redCount + yellowCount) << " rays ("
             << redCount << " red, " << yellowCount << " yellow)" << std::endl;
 
-        // Рисуем все отобранные лучи
+        std::cout << "Removed " << std::count(removeRay.begin(), removeRay.end(), true)
+            << " duplicate yellow rays" << std::endl;
+
+        // Рисуем все отобранные лучи (не удалённые)
         for (size_t i = 0; i < g_debugRaysFromShadowMapper.size(); i++) {
-            if (shouldDraw[i]) {
-                drawDebugRayFromShadowMapper(g_debugRaysFromShadowMapper[i]);
+            if (shouldDraw[i] && !removeRay[i]) {
+                if (!g_debugRaysFromShadowMapper[i].hit) {
+                    // Для жёлтых лучей - увеличиваем длину, чтобы они выходили за пол
+                    DebugRay extendedRay = extendMissRay(g_debugRaysFromShadowMapper[i]);
+                    drawDebugRayFromShadowMapper(extendedRay);
+                }
+                else {
+                    drawDebugRayFromShadowMapper(g_debugRaysFromShadowMapper[i]);
+                }
             }
         }
 
