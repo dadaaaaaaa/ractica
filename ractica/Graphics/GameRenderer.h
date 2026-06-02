@@ -249,7 +249,7 @@ private:
         float normalLength = 0.15f);
     void drawModelNormalsWithTransform(const Model& model, float x, float y, float z,
         float scale, float rotationAngle, float normalLength = 0.15f);
-    bool m_useSpheres = false;
+    bool m_useSpheres = true;
     //=========================================================================
     // ВНУТРЕННИЕ МЕТОДЫ ТЕНЕЙ
     //=========================================================================
