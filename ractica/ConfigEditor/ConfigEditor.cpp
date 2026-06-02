@@ -8,7 +8,8 @@
 // Windows headers
 #include <windows.h>
 #include <commdlg.h>
-
+#include <set>
+#include <algorithm>
 // FreeType
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -446,18 +447,23 @@ float getModelBottomOffsetLocal(const Model& model) {
 
 // Функция для поворота сегмента змейки (как в GameRenderer)
 
+// ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ ДЛЯ ОТЛАДОЧНЫХ ЛУЧЕЙ ==========
+
 void drawDebugRayFromShadowMapper(const DebugRay& ray) {
     glm::vec3 endPoint = ray.hitPoint;
 
-    // Луч: красный если попал в модель (тень), жёлтый если не попал (свет)
+    // УБИРАЕМ ЛЮБЫЕ СМЕЩЕНИЯ!
+    // Не добавляем 0.05f, не меняем координаты
+
+    // Луч: красный если попал в модель (тень), зелёный если не попал (свет)
     if (ray.hit) {
         glColor3f(1.0f, 0.2f, 0.2f);  // Красный - попал в объект (тень)
     }
     else {
-        glColor3f(1.0f, 1.0f, 0.2f);  // Жёлтый - достиг света (нет тени)
+        glColor3f(1.0f, 1.0f, 0.2f);  // Зелёный - достиг света (нет тени)
     }
 
-    glLineWidth(2.0f);
+    glLineWidth(2.5f);
     glBegin(GL_LINES);
     glVertex3f(ray.origin.x, ray.origin.y, ray.origin.z);
     glVertex3f(endPoint.x, endPoint.y, endPoint.z);
@@ -3992,104 +3998,30 @@ bool rayIntersectsModel(const Ray& ray, const Model& model,
     float& hitDistance, glm::vec3& hitPoint) {
 
     if (model.vertices.empty()) {
-        static int warnCount = 0;
-        if (warnCount++ < 5) std::cout << "rayIntersectsModel: model has no vertices!" << std::endl;
         return false;
     }
 
-    // ДИАГНОСТИКА ДЛЯ ПЕРВЫХ 10 ЛУЧЕЙ
-    static int rayCounter = 0;
-    bool shouldLog = (rayCounter++ < 20);
+    static int callCount = 0;
+    callCount++;
+    bool shouldLog = (callCount <= 20);
 
     if (shouldLog) {
-        std::cout << "\n[RAY " << rayCounter << "] ==========" << std::endl;
-        std::cout << "Ray origin: (" << ray.origin.x << ", " << ray.origin.y << ", " << ray.origin.z << ")" << std::endl;
-        std::cout << "Ray direction: (" << ray.direction.x << ", " << ray.direction.y << ", " << ray.direction.z << ")" << std::endl;
+        std::cout << "[rayIntersectsModel #" << callCount << "] Model has "
+            << model.vertices.size() << " vertices" << std::endl;
+        std::cout << "  Ray origin: (" << ray.origin.x << "," << ray.origin.y << "," << ray.origin.z << ")" << std::endl;
+        std::cout << "  Ray direction: (" << ray.direction.x << "," << ray.direction.y << "," << ray.direction.z << ")" << std::endl;
     }
 
-    // Кэш для bounding sphere модели
-    auto it = g_boundsCache.find(&model);
-    if (it == g_boundsCache.end() || g_forceBoundsRecalc) {
-        float minX = model.vertices[0].position.x;
-        float maxX = minX, minY = minX, maxY = minX, minZ = minX, maxZ = minX;
-
-        for (const auto& vert : model.vertices) {
-            minX = std::min(minX, vert.position.x);
-            maxX = std::max(maxX, vert.position.x);
-            minY = std::min(minY, vert.position.y);
-            maxY = std::max(maxY, vert.position.y);
-            minZ = std::min(minZ, vert.position.z);
-            maxZ = std::max(maxZ, vert.position.z);
-        }
-
-        glm::vec3 localCenter((minX + maxX) * 0.5f, (minY + maxY) * 0.5f, (minZ + maxZ) * 0.5f);
-        float localRadius = std::max({ maxX - minX, maxY - minY, maxZ - minZ }) * 0.5f;
-
-        g_boundsCache[&model] = { localCenter, localRadius };
-
-        if (shouldLog) {
-            std::cout << "Model bounds: minX=" << minX << " maxX=" << maxX << std::endl;
-            std::cout << "Model bounds: minY=" << minY << " maxY=" << maxY << std::endl;
-            std::cout << "Model bounds: minZ=" << minZ << " maxZ=" << maxZ << std::endl;
-            std::cout << "Local center: (" << localCenter.x << ", " << localCenter.y << ", " << localCenter.z << ")" << std::endl;
-            std::cout << "Local radius: " << localRadius << std::endl;
-        }
-
-        it = g_boundsCache.find(&model);
-    }
-
-    const auto& localBounds = it->second;
-    glm::vec3 localCenter = localBounds.first;
-    float localRadius = localBounds.second;
-
-    // Преобразуем локальный центр в мировые координаты
-    glm::vec4 worldCenter4 = transform * glm::vec4(localCenter, 1.0f);
-    glm::vec3 worldCenter = glm::vec3(worldCenter4);
-
-    // Вычисляем масштаб
-    glm::vec3 scale;
-    scale.x = glm::length(glm::vec3(transform[0]));
-    scale.y = glm::length(glm::vec3(transform[1]));
-    scale.z = glm::length(glm::vec3(transform[2]));
-    float maxScale = std::max({ scale.x, scale.y, scale.z });
-    float worldRadius = localRadius * maxScale;
-
-    if (shouldLog) {
-        std::cout << "Transform matrix:" << std::endl;
-        std::cout << "  " << transform[0][0] << " " << transform[0][1] << " " << transform[0][2] << " " << transform[0][3] << std::endl;
-        std::cout << "  " << transform[1][0] << " " << transform[1][1] << " " << transform[1][2] << " " << transform[1][3] << std::endl;
-        std::cout << "  " << transform[2][0] << " " << transform[2][1] << " " << transform[2][2] << " " << transform[2][3] << std::endl;
-        std::cout << "World center: (" << worldCenter.x << ", " << worldCenter.y << ", " << worldCenter.z << ")" << std::endl;
-        std::cout << "World radius: " << worldRadius << std::endl;
-    }
-
-    // Проверка попадания в bounding sphere
-    float tSphere;
-    if (!rayIntersectsSphereEditor(ray, worldCenter, worldRadius, tSphere)) {
-        if (shouldLog) std::cout << "No sphere hit!" << std::endl;
-        return false;
-    }
-
-    if (shouldLog) std::cout << "Sphere hit at distance: " << tSphere << std::endl;
-
-    // Точная проверка по треугольникам
     float closestHit = 1000.0f;
     bool hit = false;
     const float EPSILON = 0.000001f;
-    int trianglesChecked = 0;
 
     for (size_t i = 0; i < model.vertices.size(); i += 3) {
         if (i + 2 >= model.vertices.size()) break;
 
-        trianglesChecked++;
-
-        glm::vec3 v0_local = model.vertices[i].position;
-        glm::vec3 v1_local = model.vertices[i + 1].position;
-        glm::vec3 v2_local = model.vertices[i + 2].position;
-
-        glm::vec3 v0 = glm::vec3(transform * glm::vec4(v0_local, 1.0f));
-        glm::vec3 v1 = glm::vec3(transform * glm::vec4(v1_local, 1.0f));
-        glm::vec3 v2 = glm::vec3(transform * glm::vec4(v2_local, 1.0f));
+        glm::vec3 v0 = glm::vec3(transform * glm::vec4(model.vertices[i].position, 1.0f));
+        glm::vec3 v1 = glm::vec3(transform * glm::vec4(model.vertices[i + 1].position, 1.0f));
+        glm::vec3 v2 = glm::vec3(transform * glm::vec4(model.vertices[i + 2].position, 1.0f));
 
         glm::vec3 edge1 = v1 - v0;
         glm::vec3 edge2 = v2 - v0;
@@ -4116,16 +4048,15 @@ bool rayIntersectsModel(const Ray& ray, const Model& model,
             hitPoint = ray.pointAt(t);
             hit = true;
 
-            if (shouldLog && hit) {
-                std::cout << "HIT found at distance: " << t << std::endl;
-                std::cout << "Hit point: (" << hitPoint.x << ", " << hitPoint.y << ", " << hitPoint.z << ")" << std::endl;
+            if (shouldLog) {
+                std::cout << "  HIT at distance " << t << std::endl;
             }
+            // Не возвращаем сразу - ищем ближайшее
         }
     }
 
     if (shouldLog) {
-        std::cout << "Triangles checked: " << trianglesChecked << std::endl;
-        std::cout << "Hit: " << (hit ? "YES" : "NO") << std::endl;
+        std::cout << "  Result: " << (hit ? "HIT" : "MISS") << std::endl;
     }
 
     if (hit) {
@@ -4134,6 +4065,8 @@ bool rayIntersectsModel(const Ray& ray, const Model& model,
 
     return hit;
 }
+// В ConfigEditor.cpp, добавьте эту функцию для отладки деревьев:
+
 HitInfo intersectTreesOnlyEditor(const Ray& ray,
     const std::vector<glm::vec3>& treePositions,
     const Model& treeModel, float treeScale, float treeOffset,
@@ -4143,50 +4076,100 @@ HitInfo intersectTreesOnlyEditor(const Ray& ray,
     closestHit.hit = false;
     closestHit.distance = 1000.0f;
     float maxDistance = 100.0f;
-    float halfWidth = 120 * cellSize / 2.0f;  // gridWidth * cellSize / 2
-    float halfDepth = 120 * cellSize / 2.0f;   // gridDepth * cellSize / 2
+    float halfWidth = 120 * cellSize / 2.0f;
+    float halfDepth = 120 * cellSize / 2.0f;
 
-    // Пол
-    float tGround = -ray.origin.y / ray.direction.y;
-    if (tGround > 0.01f && tGround < maxDistance && tGround < closestHit.distance) {
-        glm::vec3 hitPoint = ray.pointAt(tGround);
-        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
-            closestHit.hit = true;
-            closestHit.distance = tGround;
-            closestHit.point = hitPoint;
-            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+    // Вычисляем bounding box модели дерева
+    static float treeMinY = FLT_MAX, treeMaxY = -FLT_MAX;
+    static float treeRadius = 0.0f;
+    static bool boundsComputed = false;
+
+    if (!boundsComputed && !treeModel.vertices.empty()) {
+        for (const auto& vert : treeModel.vertices) {
+            treeMinY = std::min(treeMinY, vert.position.y);
+            treeMaxY = std::max(treeMaxY, vert.position.y);
         }
+        treeRadius = (treeMaxY - treeMinY) * 0.5f;
+        boundsComputed = true;
+        std::cout << "\n========== TREE BOUNDS ==========" << std::endl;
+        std::cout << "Tree minY: " << treeMinY << ", maxY: " << treeMaxY << std::endl;
+        std::cout << "Tree radius (local): " << treeRadius << std::endl;
+        std::cout << "Tree offset: " << treeOffset << ", scale: " << treeScale << std::endl;
+        std::cout << "=================================" << std::endl;
     }
 
-    // Деревья
-    if (treeModel.vertices.empty()) return closestHit;
+    // ДИАГНОСТИКА ДЛЯ ДЕРЕВЬЕВ
+    static int treeRayCounter = 0;
+    bool shouldLogTree = (treeRayCounter++ < 50);
 
+    if (shouldLogTree && !treeModel.vertices.empty()) {
+        std::cout << "\n[TREE RAY #" << treeRayCounter << "] Ray origin: ("
+            << ray.origin.x << ", " << ray.origin.y << ", " << ray.origin.z << ")" << std::endl;
+        std::cout << "  Ray direction: (" << ray.direction.x << ", " << ray.direction.y << ", " << ray.direction.z << ")" << std::endl;
+    }
+
+    // Проверяем деревья
     for (const auto& treePos : treePositions) {
         float x = treePos.x;
         float z = treePos.z;
-        float y = treePos.y;
 
-        float treeHeight = 2.5f;
-        glm::vec3 treeCenter(
-            x,
-            y + treeHeight * 0.5f,
-            z
-        );
-        float boundingRadius = 1.2f;
+        // Вычисляем позицию дерева
+        float bottomOffset = treeOffset * treeScale;
+        float centerY = floorHeight + bottomOffset + treeRadius * treeScale;
+
+        glm::vec3 treeCenter(x, centerY, z);
+        float boundingRadius = treeRadius * treeScale * 1.2f;
+
+        if (shouldLogTree) {
+            std::cout << "  Tree at (" << x << ", " << centerY << ", " << z
+                << ") radius=" << boundingRadius << std::endl;
+        }
 
         float tSphere;
         if (rayIntersectsSphereEditor(ray, treeCenter, boundingRadius, tSphere)) {
+            if (shouldLogTree) {
+                std::cout << "    SPHERE HIT at distance: " << tSphere << std::endl;
+            }
+
             glm::mat4 transform = glm::mat4(1.0f);
-            transform = glm::translate(transform, glm::vec3(x, y, z));
+            transform = glm::translate(transform, glm::vec3(x, floorHeight + bottomOffset, z));
             transform = glm::scale(transform, glm::vec3(treeScale));
 
             float hitDist;
             glm::vec3 hitPt;
             if (rayIntersectsModel(ray, treeModel, transform, hitDist, hitPt)) {
+                if (shouldLogTree) {
+                    std::cout << "    MODEL HIT at distance: " << hitDist
+                        << ", point=(" << hitPt.x << "," << hitPt.y << "," << hitPt.z << ")" << std::endl;
+                }
                 if (hitDist > 0.01f && hitDist < closestHit.distance) {
                     closestHit.hit = true;
                     closestHit.distance = hitDist;
                     closestHit.point = hitPt;
+                    return closestHit;  // Возвращаем сразу при первом попадании
+                }
+            }
+            else if (shouldLogTree) {
+                std::cout << "    MODEL MISS (no triangle intersection)" << std::endl;
+            }
+        }
+        else if (shouldLogTree) {
+            std::cout << "    SPHERE MISS" << std::endl;
+        }
+    }
+
+    // Если не нашли деревья, проверяем пол
+    if (!closestHit.hit) {
+        float tGround = -ray.origin.y / ray.direction.y;
+        if (tGround > 0.01f && tGround < maxDistance) {
+            glm::vec3 hitPoint = ray.pointAt(tGround);
+            if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+                closestHit.hit = true;
+                closestHit.distance = tGround;
+                closestHit.point = hitPoint;
+                if (shouldLogTree) {
+                    std::cout << "  GROUND HIT at distance: " << tGround
+                        << ", point=(" << hitPoint.x << "," << hitPoint.y << "," << hitPoint.z << ")" << std::endl;
                 }
             }
         }
@@ -4195,6 +4178,103 @@ HitInfo intersectTreesOnlyEditor(const Ray& ray,
     return closestHit;
 }
 
+// Аналогично для intersectFoodOnlyEditor:
+
+HitInfo intersectFoodOnlyEditor(const Ray& ray,
+    const std::vector<glm::vec3>& applePositions,
+    const Model& appleModel, float appleScale, float appleOffset,
+    float offsetX, float offsetZ, float floorHeight, float cellSize) {
+
+    HitInfo closestHit;
+    closestHit.hit = false;
+    closestHit.distance = 1000.0f;
+    float maxDistance = 100.0f;
+    float halfWidth = 120 * cellSize / 2.0f;
+    float halfDepth = 120 * cellSize / 2.0f;
+
+    // Вычисляем bounding box модели яблока
+    static float appleMinY = FLT_MAX, appleMaxY = -FLT_MAX;
+    static float appleRadius = 0.0f;
+    static bool boundsComputed = false;
+
+    if (!boundsComputed && !appleModel.vertices.empty()) {
+        for (const auto& vert : appleModel.vertices) {
+            appleMinY = std::min(appleMinY, vert.position.y);
+            appleMaxY = std::max(appleMaxY, vert.position.y);
+        }
+        appleRadius = (appleMaxY - appleMinY) * 0.5f;
+        boundsComputed = true;
+        std::cout << "\n========== APPLE BOUNDS ==========" << std::endl;
+        std::cout << "Apple minY: " << appleMinY << ", maxY: " << appleMaxY << std::endl;
+        std::cout << "Apple radius (local): " << appleRadius << std::endl;
+        std::cout << "Apple offset: " << appleOffset << ", scale: " << appleScale << std::endl;
+        std::cout << "==================================" << std::endl;
+    }
+
+    static int appleRayCounter = 0;
+    bool shouldLogApple = (appleRayCounter++ < 30);
+
+    // Проверяем яблоки
+    for (const auto& applePos : applePositions) {
+        float centerX = applePos.x;
+        float centerZ = applePos.z;
+
+        float worldBottomOffset = appleOffset * appleScale;
+        float centerY = floorHeight + worldBottomOffset + appleRadius * appleScale;
+
+        glm::vec3 center(centerX, centerY, centerZ);
+        float boundingRadius = appleRadius * appleScale * 1.2f;
+
+        if (shouldLogApple) {
+            std::cout << "[APPLE CHECK] Apple at (" << centerX << ", " << centerY << ", " << centerZ
+                << ") radius=" << boundingRadius << std::endl;
+        }
+
+        float tSphere;
+        if (rayIntersectsSphereEditor(ray, center, boundingRadius, tSphere)) {
+            if (shouldLogApple) {
+                std::cout << "  SPHERE HIT at distance: " << tSphere << std::endl;
+            }
+
+            glm::mat4 transform = glm::mat4(1.0f);
+            transform = glm::translate(transform, center);
+            transform = glm::scale(transform, glm::vec3(appleScale));
+
+            float hitDist;
+            glm::vec3 hitPt;
+            if (rayIntersectsModel(ray, appleModel, transform, hitDist, hitPt)) {
+                if (shouldLogApple) {
+                    std::cout << "  MODEL HIT at distance: " << hitDist
+                        << ", point=(" << hitPt.x << "," << hitPt.y << "," << hitPt.z << ")" << std::endl;
+                }
+                if (hitDist > 0.01f && hitDist < closestHit.distance) {
+                    closestHit.hit = true;
+                    closestHit.distance = hitDist;
+                    closestHit.point = hitPt;
+                    return closestHit;
+                }
+            }
+            else if (shouldLogApple) {
+                std::cout << "  MODEL MISS" << std::endl;
+            }
+        }
+    }
+
+    // Если не нашли яблоки, проверяем пол
+    if (!closestHit.hit) {
+        float tGround = -ray.origin.y / ray.direction.y;
+        if (tGround > 0.01f && tGround < maxDistance) {
+            glm::vec3 hitPoint = ray.pointAt(tGround);
+            if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
+                closestHit.hit = true;
+                closestHit.distance = tGround;
+                closestHit.point = hitPoint;
+            }
+        }
+    }
+
+    return closestHit;
+}
 HitInfo intersectSnakeOnlyEditor(const Ray& ray,
     const std::vector<glm::vec3>& snakePositions,
     const Model& snakeHeadModel, const Model& snakeBodyModel, const Model& snakeTailModel,
@@ -4263,77 +4343,6 @@ HitInfo intersectSnakeOnlyEditor(const Ray& ray,
     return closestHit;
 }
 
-HitInfo intersectFoodOnlyEditor(const Ray& ray,
-    const std::vector<glm::vec3>& applePositions,
-    const Model& appleModel, float appleScale, float appleOffset,
-    float offsetX, float offsetZ, float floorHeight, float cellSize) {
-
-    HitInfo closestHit;
-    closestHit.hit = false;
-    closestHit.distance = 1000.0f;
-    float maxDistance = 100.0f;
-    float halfWidth = 120 * cellSize / 2.0f;
-    float halfDepth = 120 * cellSize / 2.0f;
-
-    // Пол
-    float tGround = -ray.origin.y / ray.direction.y;
-    if (tGround > 0.01f && tGround < maxDistance && tGround < closestHit.distance) {
-        glm::vec3 hitPoint = ray.pointAt(tGround);
-        if (abs(hitPoint.x) <= halfWidth && abs(hitPoint.z) <= halfDepth) {
-            closestHit.hit = true;
-            closestHit.distance = tGround;
-            closestHit.point = hitPoint;
-            closestHit.normal = glm::vec3(0.0f, 1.0f, 0.0f);
-        }
-    }
-
-    // Яблоки
-    if (appleModel.vertices.empty()) return closestHit;
-
-    // Вычисляем bounding box модели один раз
-    static float minY_local = FLT_MAX;
-    static float maxY_local = -FLT_MAX;
-    static float offsetFromCenterToBottom = 0.0f;
-    static bool boundsComputed = false;
-
-    if (!boundsComputed) {
-        for (const auto& vert : appleModel.vertices) {
-            minY_local = std::min(minY_local, vert.position.y);
-            maxY_local = std::max(maxY_local, vert.position.y);
-        }
-        offsetFromCenterToBottom = -minY_local;
-        boundsComputed = true;
-    }
-
-    for (const auto& applePos : applePositions) {
-        float centerX = applePos.x;
-        float centerZ = applePos.z;
-        float worldBottomOffset = offsetFromCenterToBottom * appleScale;
-        float centerY = floorHeight + worldBottomOffset;
-
-        float modelRadius = (maxY_local - minY_local) * 0.5f * appleScale;
-        glm::vec3 center(centerX, centerY, centerZ);
-
-        float tSphere;
-        if (rayIntersectsSphereEditor(ray, center, modelRadius, tSphere)) {
-            glm::mat4 transform = glm::mat4(1.0f);
-            transform = glm::translate(transform, center);
-            transform = glm::scale(transform, glm::vec3(appleScale));
-
-            float hitDist;
-            glm::vec3 hitPt;
-            if (rayIntersectsModel(ray, appleModel, transform, hitDist, hitPt)) {
-                if (hitDist > 0.01f && hitDist < closestHit.distance) {
-                    closestHit.hit = true;
-                    closestHit.distance = hitDist;
-                    closestHit.point = hitPt;
-                }
-            }
-        }
-    }
-
-    return closestHit;
-}
 // ========== ВЫЧИСЛЕНИЕ ПОВОРОТА СЕГМЕНТА ЗМЕЙКИ ==========
 // ========== ВЫЧИСЛЕНИЕ ПОВОРОТА СЕГМЕНТА ЗМЕЙКИ (как в GameRenderer) ==========
 // ИЗ GameRenderer.cpp - точная копия
@@ -4807,7 +4816,7 @@ void renderShadowPreview3D() {
     glPushMatrix();
     glLoadIdentity();
 
-    // ========== УПРАВЛЕНИЕ КАМЕРОЙ ==========
+    // Управление камерой
     static float camX = 0.0f;
     static float camY = 2.5f;
     static float camZ = 8.0f;
@@ -4827,7 +4836,6 @@ void renderShadowPreview3D() {
         camDistance = previewCameraDistance;
     }
 
-    // Управление камерой
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
         camX += sin(glm::radians(camYaw)) * moveSpeed * deltaTime;
         camZ += cos(glm::radians(camYaw)) * moveSpeed * deltaTime;
@@ -4911,7 +4919,7 @@ void renderShadowPreview3D() {
     bool useGradient = (currentConfig.shadowTraceMode == 1 || currentConfig.shadowTraceMode == 3);
     int subDivSize = currentConfig.shadowSubdivisionSize;
 
-    // ========== ПОЛУЧАЕМ BOUNDING BOX И OFFSET МОДЕЛЕЙ ==========
+    // Получаем bounding box и offset моделей
     static ModelBounds treeBounds, headBounds, bodyBounds, tailBounds, appleBounds;
     static float treeBottomOffset = 0.0f, headBottomOffset = 0.0f, bodyBottomOffset = 0.0f, tailBottomOffset = 0.0f, appleBottomOffset = 0.0f;
     static bool radiiComputed = false;
@@ -4938,32 +4946,42 @@ void renderShadowPreview3D() {
             appleBottomOffset = getModelBottomOffsetLocal(g_previewAppleModel);
         }
         radiiComputed = true;
+
+        std::cout << "\n========== MODEL BOUNDS ==========" << std::endl;
+        std::cout << "Tree: minY=" << treeBounds.minY << ", maxY=" << treeBounds.maxY << ", offset=" << treeBottomOffset << std::endl;
+        std::cout << "Apple: minY=" << appleBounds.minY << ", maxY=" << appleBounds.maxY << ", offset=" << appleBottomOffset << std::endl;
+        std::cout << "Head: minY=" << headBounds.minY << ", maxY=" << headBounds.maxY << ", offset=" << headBottomOffset << std::endl;
+        std::cout << "Body: minY=" << bodyBounds.minY << ", maxY=" << bodyBounds.maxY << ", offset=" << bodyBottomOffset << std::endl;
+        std::cout << "Tail: minY=" << tailBounds.minY << ", maxY=" << tailBounds.maxY << ", offset=" << tailBottomOffset << std::endl;
+        std::cout << "==================================" << std::endl;
     }
 
-    // ========== ФИКСИРОВАННЫЕ МАСШТАБЫ ==========
-    float treeScale = 1.2f;
-    float appleScale = 0.8f;
-    float headScale = 0.8f;
-    float bodyScale = 0.8f;
-    float tailScale = 0.8f;
+    // Масштабы из конфига (уменьшаем модели)
+    float headScale = cellSize * currentConfig.snakeHeadScale;
+    float bodyScale = cellSize * currentConfig.snakeBodyScale;
+    float tailScale = cellSize * currentConfig.snakeTailScale;
+    float treeScale = cellSize * 1.2f;
+    float appleScale = cellSize * 0.6f;
 
-    // ========== ПОЗИЦИИ ОБЪЕКТОВ ==========
+    // Цвета из конфига
+    glm::vec3 treeColor = currentConfig.treeColor;
+    glm::vec3 appleColor = currentConfig.appleColor;
+    glm::vec3 headColor = currentConfig.snakeHeadColor;
+    glm::vec3 bodyColor = currentConfig.snakeBodyColor;
+    glm::vec3 tailColor = currentConfig.snakeTailColor;
+
+    // Позиции объектов
     glm::vec3 headPos(0.0f, floorHeight, 0.0f);
-    glm::vec3 bodyPos(0.0f, floorHeight, -1.0f);
-    glm::vec3 tailPos(0.0f, floorHeight, -2.0f);
+    glm::vec3 bodyPos(0.0f, floorHeight, -0.2f);
+    glm::vec3 tailPos(0.0f, floorHeight, -0.4f);
     std::vector<glm::vec3> snakePositions = { headPos, bodyPos, tailPos };
 
     std::vector<glm::vec3> treePositions = {
-        glm::vec3(2.0f, floorHeight, 2.0f),
-        glm::vec3(-2.0f, floorHeight, 2.0f),
-        glm::vec3(0.0f, floorHeight, 3.0f)
+        glm::vec3(0.0f, floorHeight, 1.0f)
     };
 
     std::vector<glm::vec3> applePositions = {
-        glm::vec3(1.0f, floorHeight, 1.0f),
-        glm::vec3(-1.0f, floorHeight, 1.0f),
-        glm::vec3(1.5f, floorHeight, -1.5f)
-    };
+        glm::vec3(0.5f, floorHeight, 0.3f)    };
 
     bool needsRecalc = !g_previewShadowsInitialized ||
         g_lastShadowTraceMode != currentConfig.shadowTraceMode ||
@@ -4975,7 +4993,6 @@ void renderShadowPreview3D() {
     if (needsRecalc && currentConfig.shadowMapEnabled) {
         std::cout << "\n========== RECALCULATING SHADOWS ==========" << std::endl;
 
-        // ========== СОЗДАЁМ SHADOW MAPPER ==========
         g_previewStaticShadow = ShadowMapper(
             currentConfig.gridWidth, currentConfig.gridDepth,
             cellSize, floorHeight,
@@ -5000,7 +5017,6 @@ void renderShadowPreview3D() {
             currentConfig.shadowStrideX, currentConfig.shadowStrideZ
         );
 
-        // ОТКЛЮЧАЕМ СФЕРЫ
         g_previewStaticShadow.setUseSpheres(false);
         g_previewDynamicShadow.setUseSpheres(false);
         g_previewFoodShadow.setUseSpheres(false);
@@ -5024,14 +5040,117 @@ void renderShadowPreview3D() {
             g_previewFoodShadow.enableDebugRays(true);
         }
 
-        // ========== УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ПЕРЕСЕЧЕНИЯ ==========
+        // Универсальная функция пересечения
         auto universalIntersect = [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint,
             bool trees, bool snake, bool food) -> bool {
                 float closestDist = 1000.0f;
                 bool hit = false;
 
+                // Проверка деревьев
+                if (trees && !g_previewTreeModel.vertices.empty()) {
+                    for (const auto& treePos : treePositions) {
+                        float treeHeight = (treeBounds.maxY - treeBounds.minY) * treeScale;
+                        float yPos = treePos.y + treeBottomOffset * treeScale;
+                        glm::vec3 treeCenter(treePos.x, yPos + treeHeight * 0.5f, treePos.z);
+                        float boundingRadius = treeHeight * 0.6f;
+
+                        float tSphere;
+                        if (rayIntersectsSphereEditor(ray, treeCenter, boundingRadius, tSphere)) {
+                            glm::mat4 transform = glm::mat4(1.0f);
+                            transform = glm::translate(transform, glm::vec3(treePos.x, yPos, treePos.z));
+                            transform = glm::scale(transform, glm::vec3(treeScale));
+
+                            float tempDist;
+                            glm::vec3 tempPoint;
+                            if (rayIntersectsModel(ray, g_previewTreeModel, transform, tempDist, tempPoint)) {
+                                if (tempDist > 0.01f && tempDist < closestDist) {
+                                    closestDist = tempDist;
+                                    hitPoint = tempPoint;
+                                    hit = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Проверка змейки
+                if (snake && !g_previewSnakeHeadModel.vertices.empty()) {
+                    for (size_t i = 0; i < snakePositions.size(); i++) {
+                        const auto& segPos = snakePositions[i];
+                        float scale, bottomOffset;
+                        const Model* model;
+
+                        if (i == 0) {
+                            scale = headScale;
+                            bottomOffset = headBottomOffset;
+                            model = &g_previewSnakeHeadModel;
+                        }
+                        else if (i == snakePositions.size() - 1) {
+                            scale = tailScale;
+                            bottomOffset = tailBottomOffset;
+                            model = &g_previewSnakeTailModel;
+                        }
+                        else {
+                            scale = bodyScale;
+                            bottomOffset = bodyBottomOffset;
+                            model = &g_previewSnakeBodyModel;
+                        }
+
+                        float segHeight = (bodyBounds.maxY - bodyBounds.minY) * scale;
+                        float yPos = segPos.y + bottomOffset * scale;
+                        glm::vec3 segCenter(segPos.x, yPos + segHeight * 0.5f, segPos.z);
+                        float boundingRadius = segHeight * 10.6f;  // Увеличиваем радиус для змейки
+
+                        float tSphere;
+                        if (rayIntersectsSphereEditor(ray, segCenter, boundingRadius, tSphere)) {
+                            float rotationAngle = calculateSegmentRotationEditor(snakePositions, i);
+                            glm::mat4 transform = glm::mat4(1.0f);
+                            transform = glm::translate(transform, glm::vec3(segPos.x, yPos, segPos.z));
+                            transform = glm::rotate(transform, glm::radians(rotationAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+                            transform = glm::scale(transform, glm::vec3(scale));
+
+                            float tempDist;
+                            glm::vec3 tempPoint;
+                            if (rayIntersectsModel(ray, *model, transform, tempDist, tempPoint)) {
+                                if (tempDist > 0.01f && tempDist < closestDist) {
+                                    closestDist = tempDist;
+                                    hitPoint = tempPoint;
+                                    hit = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Проверка яблок
+                if (food && !g_previewAppleModel.vertices.empty()) {
+                    for (const auto& applePos : applePositions) {
+                        float appleHeight = (appleBounds.maxY - appleBounds.minY) * appleScale;
+                        float yPos = applePos.y + appleBottomOffset * appleScale;
+                        glm::vec3 appleCenter(applePos.x, yPos + appleHeight * 0.5f, applePos.z);
+                        float boundingRadius = appleHeight * 0.5f;
+
+                        float tSphere;
+                        if (rayIntersectsSphereEditor(ray, appleCenter, boundingRadius, tSphere)) {
+                            glm::mat4 transform = glm::mat4(1.0f);
+                            transform = glm::translate(transform, glm::vec3(applePos.x, yPos, applePos.z));
+                            transform = glm::scale(transform, glm::vec3(appleScale));
+
+                            float tempDist;
+                            glm::vec3 tempPoint;
+                            if (rayIntersectsModel(ray, g_previewAppleModel, transform, tempDist, tempPoint)) {
+                                if (tempDist > 0.01f && tempDist < closestDist) {
+                                    closestDist = tempDist;
+                                    hitPoint = tempPoint;
+                                    hit = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Проверка пола
-                if (fabs(ray.direction.y) > 0.0001f) {
+                if (!hit && fabs(ray.direction.y) > 0.0001f) {
                     float tGround = -ray.origin.y / ray.direction.y;
                     if (tGround > 0.01f && tGround < closestDist) {
                         glm::vec3 hitPt = ray.pointAt(tGround);
@@ -5047,79 +5166,10 @@ void renderShadowPreview3D() {
                     }
                 }
 
-                // Проверка деревьев
-                if (trees) {
-                    for (const auto& treePos : treePositions) {
-                        glm::mat4 transform = glm::mat4(1.0f);
-                        float yPos = treePos.y + treeBottomOffset * treeScale;
-                        transform = glm::translate(transform, glm::vec3(treePos.x, yPos, treePos.z));
-                        transform = glm::scale(transform, glm::vec3(treeScale));
-
-                        float tempDist;
-                        glm::vec3 tempPoint;
-                        if (rayIntersectsModelEditor(ray, g_previewTreeModel, transform, tempDist, tempPoint, true)) {
-                            if (tempDist > 0.01f && tempDist < closestDist) {
-                                closestDist = tempDist;
-                                hitPoint = tempPoint;
-                                hit = true;
-                            }
-                        }
-                    }
-                }
-
-                // Проверка змейки
-                if (snake) {
-                    auto checkSegment = [&](const glm::vec3& pos, const Model& model,
-                        float scale, float bottomOffset, size_t idx) {
-                            glm::mat4 transform = glm::mat4(1.0f);
-                            float yPos = pos.y + bottomOffset * scale;
-                            transform = glm::translate(transform, glm::vec3(pos.x, yPos, pos.z));
-                            float rotation = calculateSegmentRotationEditor(snakePositions, idx);
-                            transform = glm::rotate(transform, glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
-                            transform = glm::scale(transform, glm::vec3(scale));
-
-                            float tempDist;
-                            glm::vec3 tempPoint;
-                            if (rayIntersectsModelEditor(ray, model, transform, tempDist, tempPoint, true)) {
-                                if (tempDist > 0.01f && tempDist < closestDist) {
-                                    closestDist = tempDist;
-                                    hitPoint = tempPoint;
-                                    return true;
-                                }
-                            }
-                            return false;
-                        };
-
-                    checkSegment(headPos, g_previewSnakeHeadModel, headScale, headBottomOffset, 0);
-                    checkSegment(bodyPos, g_previewSnakeBodyModel, bodyScale, bodyBottomOffset, 1);
-                    checkSegment(tailPos, g_previewSnakeTailModel, tailScale, tailBottomOffset, 2);
-                }
-
-                // Проверка яблок
-                if (food) {
-                    for (const auto& applePos : applePositions) {
-                        glm::mat4 transform = glm::mat4(1.0f);
-                        float yPos = applePos.y + appleBottomOffset * appleScale;
-                        transform = glm::translate(transform, glm::vec3(applePos.x, yPos, applePos.z));
-                        transform = glm::scale(transform, glm::vec3(appleScale));
-
-                        float tempDist;
-                        glm::vec3 tempPoint;
-                        if (rayIntersectsModelEditor(ray, g_previewAppleModel, transform, tempDist, tempPoint, true)) {
-                            if (tempDist > 0.01f && tempDist < closestDist) {
-                                closestDist = tempDist;
-                                hitPoint = tempPoint;
-                                hit = true;
-                            }
-                        }
-                    }
-                }
-
                 if (hit) hitDist = closestDist;
                 return hit;
             };
 
-        // Устанавливаем колбэки
         g_previewStaticShadow.setIntersectCallback(
             [&](const Ray& ray, float& hitDist, glm::vec3& hitPoint) -> bool {
                 return universalIntersect(ray, hitDist, hitPoint, true, false, false);
@@ -5138,12 +5188,10 @@ void renderShadowPreview3D() {
             }
         );
 
-        // ВЫЧИСЛЯЕМ ТЕНИ
         g_previewStaticShadow.computeShadows();
         g_previewDynamicShadow.computeShadows();
         g_previewFoodShadow.computeShadows();
 
-        // СБОР ЛУЧЕЙ ДЛЯ ОТЛАДКИ
         if (g_rayDebugEnabled) {
             g_debugRaysFromShadowMapper.clear();
 
@@ -5151,34 +5199,26 @@ void renderShadowPreview3D() {
             const auto& dynamicRays = g_previewDynamicShadow.getDebugRays();
             const auto& foodRays = g_previewFoodShadow.getDebugRays();
 
-            std::cout << "Static rays: " << staticRays.size() << std::endl;
-            std::cout << "Dynamic rays: " << dynamicRays.size() << std::endl;
-            std::cout << "Food rays: " << foodRays.size() << std::endl;
-
-            std::vector<DebugRay> hitRays;
-
+            // Сохраняем ВСЕ лучи (и hit и miss)
             for (const auto& ray : staticRays) {
-                if (ray.hit) hitRays.push_back(ray);
+                g_debugRaysFromShadowMapper.push_back(ray);
             }
             for (const auto& ray : dynamicRays) {
-                if (ray.hit) hitRays.push_back(ray);
+                g_debugRaysFromShadowMapper.push_back(ray);
             }
             for (const auto& ray : foodRays) {
-                if (ray.hit) hitRays.push_back(ray);
-            }
-
-            std::cout << "Found " << hitRays.size() << " hit rays (red)" << std::endl;
-
-            if (!hitRays.empty()) {
-                for (const auto& hitRay : hitRays) {
-                    g_debugRaysFromShadowMapper.push_back(hitRay);
-                }
-                std::cout << "Collected " << g_debugRaysFromShadowMapper.size() << " rays for display" << std::endl;
+                g_debugRaysFromShadowMapper.push_back(ray);
             }
 
             g_previewStaticShadow.enableDebugRays(false);
             g_previewDynamicShadow.enableDebugRays(false);
             g_previewFoodShadow.enableDebugRays(false);
+
+            std::cout << "Total rays: " << g_debugRaysFromShadowMapper.size()
+                << " (hit=" << std::count_if(g_debugRaysFromShadowMapper.begin(), g_debugRaysFromShadowMapper.end(),
+                    [](const DebugRay& r) { return r.hit; })
+                << ", miss=" << std::count_if(g_debugRaysFromShadowMapper.begin(), g_debugRaysFromShadowMapper.end(),
+                    [](const DebugRay& r) { return !r.hit; }) << ")" << std::endl;
         }
 
         g_previewShadowsInitialized = true;
@@ -5188,9 +5228,6 @@ void renderShadowPreview3D() {
         g_lastShadowMapEnabled = currentConfig.shadowMapEnabled;
         g_lastShadowStrideX = currentConfig.shadowStrideX;
         g_lastShadowStrideZ = currentConfig.shadowStrideZ;
-
-        std::cout << "Shadows recalculated with mode: " << g_previewStaticShadow.getCurrentModeName() << std::endl;
-        std::cout << "========================================\n" << std::endl;
     }
 
     glEnable(GL_COLOR_MATERIAL);
@@ -5200,7 +5237,7 @@ void renderShadowPreview3D() {
     glm::vec3 darkColor = currentConfig.floorColor * 0.15f;
     glm::vec3 lightColor = currentConfig.floorColor;
 
-    // ========== ОТРИСОВКА ПОЛА С ТЕНЯМИ ==========
+    // Отрисовка пола с тенями
     if (currentConfig.shadowMapEnabled && g_previewShadowsInitialized) {
         if (isSubdivided && subDivSize > 1) {
             float subCellSizeX = cellSize / subDivSize;
@@ -5294,7 +5331,7 @@ void renderShadowPreview3D() {
         }
     }
 
-    // ========== РИСУЕМ СЕТКУ ==========
+    // Сетка
     if (currentConfig.gridEnabled) {
         glDisable(GL_LIGHTING);
         glColor3f(currentConfig.gridColor.r, currentConfig.gridColor.g, currentConfig.gridColor.b);
@@ -5315,7 +5352,7 @@ void renderShadowPreview3D() {
         glEnable(GL_LIGHTING);
     }
 
-    // ========== ОТРИСОВКА ОБЪЕКТОВ ==========
+    // Функция отрисовки модели
     auto drawModel3D = [&](Model& model, const glm::vec3& pos, float bottomOffset,
         float scale, float rotation, const glm::vec3& color) {
             if (model.vertices.empty()) return;
@@ -5342,37 +5379,100 @@ void renderShadowPreview3D() {
 
     // Рисуем змейку
     drawModel3D(g_previewSnakeHeadModel, headPos, headBottomOffset, headScale,
-        calculateSegmentRotationEditor(snakePositions, 0), currentConfig.snakeHeadColor);
+        calculateSegmentRotationEditor(snakePositions, 0), headColor);
     drawModel3D(g_previewSnakeBodyModel, bodyPos, bodyBottomOffset, bodyScale,
-        calculateSegmentRotationEditor(snakePositions, 1), currentConfig.snakeBodyColor);
+        calculateSegmentRotationEditor(snakePositions, 1), bodyColor);
     drawModel3D(g_previewSnakeTailModel, tailPos, tailBottomOffset, tailScale,
-        calculateSegmentRotationEditor(snakePositions, 2), currentConfig.snakeTailColor);
+        calculateSegmentRotationEditor(snakePositions, 2), tailColor);
 
     // Рисуем деревья
     for (const auto& treePos : treePositions) {
-        drawModel3D(g_previewTreeModel, treePos, treeBottomOffset, treeScale, 0.0f, glm::vec3(0.2f, 0.6f, 0.2f));
+        drawModel3D(g_previewTreeModel, treePos, treeBottomOffset, treeScale, 0.0f, treeColor);
     }
 
     // Рисуем яблоки
     for (const auto& applePos : applePositions) {
-        drawModel3D(g_previewAppleModel, applePos, appleBottomOffset, appleScale, 0.0f, glm::vec3(0.9f, 0.2f, 0.2f));
+        drawModel3D(g_previewAppleModel, applePos, appleBottomOffset, appleScale, 0.0f, appleColor);
     }
 
-    // ========== ОТРИСОВКА ОТЛАДОЧНЫХ ЛУЧЕЙ ==========
+    
+
+    // Отладочные лучи
+// Отладочные лучи
+// Отладочные лучи - группировка красных с окружающими жёлтыми
     if (g_rayDebugEnabled && currentConfig.shadowMapEnabled && !g_debugRaysFromShadowMapper.empty()) {
         glDisable(GL_LIGHTING);
         glDisable(GL_TEXTURE_2D);
-        glDepthFunc(GL_ALWAYS);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+
+        const int YELLOW_RAYS_PER_RED = 4;  // Количество жёлтых лучей на каждый красный
+
+        // Разделяем лучи на попавшие и не попавшие
+        std::vector<const DebugRay*> hitRays;
+        std::vector<const DebugRay*> missRays;
 
         for (const auto& ray : g_debugRaysFromShadowMapper) {
-            drawDebugRayFromShadowMapper(ray);
+            if (ray.hit) {
+                hitRays.push_back(&ray);
+            }
+            else {
+                missRays.push_back(&ray);
+            }
         }
 
-        glDepthFunc(GL_LESS);
+        std::cout << "Hit rays: " << hitRays.size() << ", Miss rays: " << missRays.size() << std::endl;
+
+        // Множество для хранения уникальных лучей
+        std::set<const DebugRay*> raysToDraw;
+
+        // Добавляем все красные лучи
+        for (const auto* ray : hitRays) {
+            raysToDraw.insert(ray);
+        }
+
+        // Если есть жёлтые лучи, для каждого красного ищем ближайшие
+        if (!missRays.empty()) {
+            for (const auto* hitRay : hitRays) {
+                // Вектор для хранения расстояний до жёлтых лучей
+                std::vector<std::pair<float, const DebugRay*>> distances;
+                distances.reserve(missRays.size());
+
+                for (const auto* missRay : missRays) {
+                    // Вычисляем расстояние между конечными точками лучей
+                    float dist = glm::distance(hitRay->hitPoint, missRay->hitPoint);
+                    distances.push_back({ dist, missRay });
+                }
+
+                // Сортируем по расстоянию
+                std::sort(distances.begin(), distances.end(),
+                    [](const auto& a, const auto& b) { return a.first < b.first; });
+
+                // Добавляем N ближайших жёлтых лучей
+                for (int i = 0; i < std::min(YELLOW_RAYS_PER_RED, (int)distances.size()); i++) {
+                    raysToDraw.insert(distances[i].second);
+                }
+            }
+        }
+
+        int redCount = 0, yellowCount = 0;
+        for (const auto* ray : raysToDraw) {
+            if (ray->hit) redCount++;
+            else yellowCount++;
+        }
+
+        std::cout << "Drawing " << raysToDraw.size() << " rays ("
+            << redCount << " red, " << yellowCount << " yellow)" << std::endl;
+
+        // Рисуем все отобранные лучи
+        for (const auto* ray : raysToDraw) {
+            drawDebugRayFromShadowMapper(*ray);
+        }
+
         glEnable(GL_LIGHTING);
     }
 
-    // ========== ОТРИСОВКА ИСТОЧНИКА СВЕТА ==========
+    // Источник света
     if (currentConfig.lightType != 0) {
         glDisable(GL_LIGHTING);
         glDisable(GL_TEXTURE_2D);
@@ -5397,7 +5497,7 @@ void renderShadowPreview3D() {
     glDisable(GL_SCISSOR_TEST);
     reset2DProjection();
 
-    // ========== UI ==========
+    // UI
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
     glVertex2f((float)previewX, (float)previewY);
@@ -5437,7 +5537,7 @@ void renderShadowPreview3D() {
             else missCount++;
         }
         char rayCountText[200];
-        sprintf_s(rayCountText, "Лучей: %d (красные=%d тень, жёлтые=%d свет)",
+        sprintf_s(rayCountText, "Лучей: %d (красные=%d тень, зелёные=%d свет)",
             (int)g_debugRaysFromShadowMapper.size(), hitCount, missCount);
         drawText((float)(previewX + 10), (float)(previewY + previewH - 30), rayCountText, 0.8f, 0.8f, 0.8f);
     }
