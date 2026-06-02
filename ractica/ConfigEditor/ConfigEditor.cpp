@@ -8,8 +8,7 @@
 // Windows headers
 #include <windows.h>
 #include <commdlg.h>
-#include <set>
-#include <algorithm>
+
 // FreeType
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -5399,14 +5398,12 @@ void renderShadowPreview3D() {
 
     // Отладочные лучи
 // Отладочные лучи
-// Отладочные лучи - группировка красных с окружающими жёлтыми
+// Отладочные лучи - группировка красных с окружающими жёлтыми в радиусе 2 клеток
     if (g_rayDebugEnabled && currentConfig.shadowMapEnabled && !g_debugRaysFromShadowMapper.empty()) {
         glDisable(GL_LIGHTING);
         glDisable(GL_TEXTURE_2D);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
-
-        const int YELLOW_RAYS_PER_RED = 4;  // Количество жёлтых лучей на каждый красный
 
         // Разделяем лучи на попавшие и не попавшие
         std::vector<const DebugRay*> hitRays;
@@ -5423,50 +5420,83 @@ void renderShadowPreview3D() {
 
         std::cout << "Hit rays: " << hitRays.size() << ", Miss rays: " << missRays.size() << std::endl;
 
-        // Множество для хранения уникальных лучей
-        std::set<const DebugRay*> raysToDraw;
+        // Вектор для хранения уникальных лучей (используем флаг)
+        std::vector<bool> shouldDraw(g_debugRaysFromShadowMapper.size(), false);
 
-        // Добавляем все красные лучи
-        for (const auto* ray : hitRays) {
-            raysToDraw.insert(ray);
+        // Помечаем все красные лучи для отрисовки
+        for (size_t i = 0; i < g_debugRaysFromShadowMapper.size(); i++) {
+            if (g_debugRaysFromShadowMapper[i].hit) {
+                shouldDraw[i] = true;
+            }
         }
 
-        // Если есть жёлтые лучи, для каждого красного ищем ближайшие
-        if (!missRays.empty()) {
-            for (const auto* hitRay : hitRays) {
-                // Вектор для хранения расстояний до жёлтых лучей
-                std::vector<std::pair<float, const DebugRay*>> distances;
-                distances.reserve(missRays.size());
+        // Функция для получения координат клетки из точки
+        float worldWidth = currentConfig.gridWidth * currentConfig.cellSize;
+        float worldDepth = currentConfig.gridDepth * currentConfig.cellSize;
+        float offsetX_local = worldWidth / 2.0f;
+        float offsetZ_local = worldDepth / 2.0f;
 
-                for (const auto* missRay : missRays) {
-                    // Вычисляем расстояние между конечными точками лучей
-                    float dist = glm::distance(hitRay->hitPoint, missRay->hitPoint);
-                    distances.push_back({ dist, missRay });
+        auto getCellCoords = [&](const glm::vec3& point) -> std::pair<int, int> {
+            int cellX = (int)((point.x + offsetX_local) / currentConfig.cellSize);
+            int cellZ = (int)((point.z + offsetZ_local) / currentConfig.cellSize);
+            return { cellX, cellZ };
+            };
+
+        // Функция для проверки, совпадает ли жёлтый луч с красным (проходит через ту же точку)
+        auto isSameHitPoint = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.05f) -> bool {
+            // Если жёлтый луч заканчивается очень близко к точке попадания красного луча
+            float distToHitPoint = glm::distance(missRay.hitPoint, hitRay.hitPoint);
+            return distToHitPoint < epsilon;
+            };
+
+        // Для каждого красного луча ищем жёлтые лучи в радиусе 2 клеток
+        for (size_t hitIdx = 0; hitIdx < g_debugRaysFromShadowMapper.size(); hitIdx++) {
+            if (!g_debugRaysFromShadowMapper[hitIdx].hit) continue;
+
+            const auto& hitRay = g_debugRaysFromShadowMapper[hitIdx];
+            auto [hitCellX, hitCellZ] = getCellCoords(hitRay.hitPoint);
+
+            // Перебираем все жёлтые лучи
+            for (size_t missIdx = 0; missIdx < g_debugRaysFromShadowMapper.size(); missIdx++) {
+                if (g_debugRaysFromShadowMapper[missIdx].hit) continue;
+
+                const auto& missRay = g_debugRaysFromShadowMapper[missIdx];
+
+                // ПРОВЕРКА: если жёлтый луч совпадает с красным (проходит через ту же точку) - ПРОПУСКАЕМ
+                if (isSameHitPoint(hitRay, missRay)) {
+                    continue;
                 }
 
-                // Сортируем по расстоянию
-                std::sort(distances.begin(), distances.end(),
-                    [](const auto& a, const auto& b) { return a.first < b.first; });
+                auto [missCellX, missCellZ] = getCellCoords(missRay.hitPoint);
 
-                // Добавляем N ближайших жёлтых лучей
-                for (int i = 0; i < std::min(YELLOW_RAYS_PER_RED, (int)distances.size()); i++) {
-                    raysToDraw.insert(distances[i].second);
+                // Вычисляем разницу в клетках
+                int dx = abs(hitCellX - missCellX);
+                int dz = abs(hitCellZ - missCellZ);
+
+                // Если жёлтый луч в радиусе 2 клеток по X и Z
+                if (dx <= 2 && dz <= 2) {
+                    shouldDraw[missIdx] = true;
                 }
             }
         }
 
+        // Подсчитываем количество лучей для отрисовки
         int redCount = 0, yellowCount = 0;
-        for (const auto* ray : raysToDraw) {
-            if (ray->hit) redCount++;
-            else yellowCount++;
+        for (size_t i = 0; i < shouldDraw.size(); i++) {
+            if (shouldDraw[i]) {
+                if (g_debugRaysFromShadowMapper[i].hit) redCount++;
+                else yellowCount++;
+            }
         }
 
-        std::cout << "Drawing " << raysToDraw.size() << " rays ("
+        std::cout << "Drawing " << (redCount + yellowCount) << " rays ("
             << redCount << " red, " << yellowCount << " yellow)" << std::endl;
 
         // Рисуем все отобранные лучи
-        for (const auto* ray : raysToDraw) {
-            drawDebugRayFromShadowMapper(*ray);
+        for (size_t i = 0; i < g_debugRaysFromShadowMapper.size(); i++) {
+            if (shouldDraw[i]) {
+                drawDebugRayFromShadowMapper(g_debugRaysFromShadowMapper[i]);
+            }
         }
 
         glEnable(GL_LIGHTING);
