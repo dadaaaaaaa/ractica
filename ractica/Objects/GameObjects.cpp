@@ -352,7 +352,7 @@ void GameObjects::update() {
     }
     newHead.y = 0;
 
-    // Проверка столкновения со стенками
+    // Проверка стен
     if (newHead.x <= 0 || newHead.x >= gridWidth - 1 ||
         newHead.z <= 0 || newHead.z >= gridDepth - 1) {
         gameOver = true;
@@ -371,7 +371,7 @@ void GameObjects::update() {
         }
     }
 
-    // Проверка столкновения с препятствиями
+    // ✅ Проверка столкновения с деревьями (препятствиями)
     for (const auto& obstacle : obstacles) {
         if (obstacle.contains(newHead)) {
             gameOver = true;
@@ -381,26 +381,36 @@ void GameObjects::update() {
         }
     }
 
+    // ✅ Проверка столкновения с забором
+    for (const auto& fenceBlock : fenceBlocks) {
+        if (fenceBlock == newHead) {
+            gameOver = true;
+            gameState = GAME_OVER;
+            updateHighScores();
+            return;
+        }
+    }
+
+    // Вставляем новую голову
     snake.insert(snake.begin(), newHead);
 
+    // ✅ Проверка съедения яблока
     auto foodIt = std::find(food.begin(), food.end(), newHead);
     if (foodIt != food.end()) {
         score++;
         food.erase(foodIt);
         generateSingleFood();
 
-        // ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ТЕНЕЙ ЕДЫ
+        // Помечаем тени для пересчёта
         renderer.markFoodShadowsDirty();
         renderer.markDynamicShadowsDirty();
-
-        // ДОПОЛНИТЕЛЬНО: принудительно пересчитываем тени в этом же кадре
         renderer.forceFoodShadowsUpdate(*this);
     }
     else {
         snake.pop_back();
     }
 
-    // Тени змейки - грязные (змейка двинулась)
+    // Тени змейки - грязные
     renderer.markDynamicShadowsDirty();
 
     updateClouds();
@@ -524,27 +534,90 @@ void GameObjects::generateGroundSprites() {
     std::cout << "Generating " << flowerCount << " flowers (from config)" << std::endl;
     std::cout << "Flower color from config: (" << flowerColor.r << "," << flowerColor.g << "," << flowerColor.b << ")" << std::endl;
 
-    glm::vec3 baseFlowerColor = flowerColor;  // <-- ИСПОЛЬЗУЕМ ИЗ КОНФИГА
+    glm::vec3 baseFlowerColor = flowerColor;
+
+    // Вычисляем границы игрового поля в мировых координатах
+    float worldWidth = gridWidth * cellSize;
+    float worldDepth = gridDepth * cellSize;
+    float offsetX = worldWidth / 2.0f;
+    float offsetZ = worldDepth / 2.0f;
+
+    // Границы поля: от -offsetX до offsetX, от -offsetZ до offsetZ
+    float minX = -offsetX + 0.5f;  // Отступ от края
+    float maxX = offsetX - 0.5f;
+    float minZ = -offsetZ + 0.5f;
+    float maxZ = offsetZ - 0.5f;
 
     for (int i = 0; i < flowerCount; i++) {
-        float x = (rand() % 200 - 100) * 0.1f;
-        float y = 0.01f;
-        float z = (rand() % 200 - 100) * 0.1f;
-        float size = flowerScale * (0.1f + (rand() % 5) * 0.02f);  // <-- ИСПОЛЬЗУЕМ МАСШТАБ
+        bool validPosition = false;
+        int attempts = 0;
+        float x = 0, z = 0,y=0;
 
-        // Вариации цвета на основе базового
+        while (!validPosition && attempts < 50) {
+            // Спавним ТОЛЬКО в пределах игрового поля
+            x = minX + static_cast<float>(rand()) / RAND_MAX * (maxX - minX);
+            z = minZ + static_cast<float>(rand()) / RAND_MAX * (maxZ - minZ);
+
+            float y = 0.01f;
+
+            validPosition = true;
+
+            // Проверяем, что цветок не на дереве
+            for (const auto& obstacle : obstacles) {
+                for (const auto& block : obstacle.blocks) {
+                    float treeX = block.x * cellSize - offsetX + cellSize * 0.5f;
+                    float treeZ = block.z * cellSize - offsetZ + cellSize * 0.5f;
+                    float treeSize = cellSize * treeScale;
+                    if (abs(x - treeX) < treeSize && abs(z - treeZ) < treeSize) {
+                        validPosition = false;
+                        break;
+                    }
+                }
+                if (!validPosition) break;
+            }
+
+            // Проверяем, что цветок не на заборе
+            if (validPosition) {
+                for (const auto& fenceBlock : fenceBlocks) {
+                    float fenceX = fenceBlock.x * cellSize - offsetX + cellSize * 0.5f;
+                    float fenceZ = fenceBlock.z * cellSize - offsetZ + cellSize * 0.5f;
+                    if (abs(x - fenceX) < cellSize * 0.6f && abs(z - fenceZ) < cellSize * 0.6f) {
+                        validPosition = false;
+                        break;
+                    }
+                }
+            }
+
+            // Проверяем, что цветок не на змейке при старте
+            if (validPosition) {
+                for (const auto& segment : snake) {
+                    float snakeX = segment.x * cellSize - offsetX + cellSize * 0.5f;
+                    float snakeZ = segment.z * cellSize - offsetZ + cellSize * 0.5f;
+                    if (abs(x - snakeX) < cellSize * 0.8f && abs(z - snakeZ) < cellSize * 0.8f) {
+                        validPosition = false;
+                        break;
+                    }
+                }
+            }
+
+            attempts++;
+        }
+
+        float size = flowerScale * (0.08f + (rand() % 5) * 0.02f);
+
         glm::vec3 color = baseFlowerColor;
         color.r += (rand() % 40 - 20) * 0.01f;
         color.g += (rand() % 40 - 20) * 0.01f;
         color.b += (rand() % 40 - 20) * 0.01f;
 
-        // Ограничиваем значения
         color.r = std::max(0.0f, std::min(1.0f, color.r));
         color.g = std::max(0.0f, std::min(1.0f, color.g));
         color.b = std::max(0.0f, std::min(1.0f, color.b));
 
         flowerSprites.push_back(Sprite(glm::vec3(x, y, z), color, size, 0.0f));
     }
+
+    std::cout << "Generated " << flowerSprites.size() << " flowers within playfield" << std::endl;
 }
 
 void GameObjects::generateFence() {
@@ -572,21 +645,24 @@ void GameObjects::generateFence() {
 void GameObjects::generateObstacles() {
     obstacles.clear();
 
+    std::cout << "Generating " << obstacleCount << " obstacles..." << std::endl;
+
     for (int i = 0; i < obstacleCount; i++) {
         Point center;
         bool validPosition = false;
         int attempts = 0;
 
         do {
-            center.x = 10 + rand() % (gridWidth - 20);
+            center.x = 5 + rand() % (gridWidth - 10);
             center.y = 0;
-            center.z = 10 + rand() % (gridDepth - 20);
+            center.z = 5 + rand() % (gridDepth - 10);
 
             validPosition = true;
             Obstacle tempObstacle(center);
 
             for (const auto& block : tempObstacle.blocks) {
-                if (block.x < 0 || block.x >= gridWidth || block.z < 0 || block.z >= gridDepth) {
+                if (block.x < 1 || block.x >= gridWidth - 1 ||
+                    block.z < 1 || block.z >= gridDepth - 1) {
                     validPosition = false;
                     break;
                 }
@@ -623,14 +699,20 @@ void GameObjects::generateObstacles() {
             }
 
             attempts++;
-            if (attempts > 100) break;
+            if (attempts > 200) {
+                std::cout << "  Could not place obstacle " << i << " after 200 attempts" << std::endl;
+                break;
+            }
 
         } while (!validPosition);
 
         if (validPosition) {
             obstacles.push_back(Obstacle(center));
+            std::cout << "  Obstacle " << i << " placed at (" << center.x << ", " << center.z << ")" << std::endl;
         }
     }
+
+    std::cout << "Generated " << obstacles.size() << " obstacles" << std::endl;
 }
 
 void GameObjects::generateSingleFood() {
@@ -639,12 +721,13 @@ void GameObjects::generateSingleFood() {
     int attempts = 0;
 
     do {
-        newFood.x = 5 + rand() % (gridWidth - 10);
+        newFood.x = 2 + rand() % (gridWidth - 4);
         newFood.y = 0;
-        newFood.z = 5 + rand() % (gridDepth - 10);
+        newFood.z = 2 + rand() % (gridDepth - 4);
 
         validPosition = true;
 
+        // Не на змейке
         for (const auto& segment : snake) {
             if (segment == newFood) {
                 validPosition = false;
@@ -652,6 +735,7 @@ void GameObjects::generateSingleFood() {
             }
         }
 
+        // Не на других яблоках
         for (const auto& apple : food) {
             if (apple == newFood) {
                 validPosition = false;
@@ -659,6 +743,7 @@ void GameObjects::generateSingleFood() {
             }
         }
 
+        // ✅ Не на деревьях
         for (const auto& obstacle : obstacles) {
             if (obstacle.contains(newFood)) {
                 validPosition = false;
@@ -666,6 +751,7 @@ void GameObjects::generateSingleFood() {
             }
         }
 
+        // ✅ Не на заборе
         for (const auto& fenceBlock : fenceBlocks) {
             if (fenceBlock == newFood) {
                 validPosition = false;
@@ -674,12 +760,16 @@ void GameObjects::generateSingleFood() {
         }
 
         attempts++;
-        if (attempts > 50) break;
+        if (attempts > 100) break;
 
     } while (!validPosition);
 
     if (validPosition) {
         food.push_back(newFood);
+        std::cout << "Food placed at (" << newFood.x << ", " << newFood.z << ")" << std::endl;
+    }
+    else {
+        std::cout << "WARNING: Could not place food after 100 attempts!" << std::endl;
     }
 }
 

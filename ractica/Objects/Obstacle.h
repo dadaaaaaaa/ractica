@@ -11,9 +11,12 @@ struct Obstacle {
         blocks.push_back(center);
     }
 
+    // В определении класса Obstacle (в заголовочном файле)
     bool contains(const Point& point) const {
         for (const auto& block : blocks) {
-            if (block == point) return true;
+            if (block.x == point.x && block.z == point.z) {
+                return true;
+            }
         }
         return false;
     }

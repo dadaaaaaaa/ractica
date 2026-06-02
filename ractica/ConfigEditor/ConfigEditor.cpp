@@ -5446,14 +5446,14 @@ void renderShadowPreview3D() {
             };
 
         // Функция для проверки, совпадает ли жёлтый луч с красным (проходит через ту же точку)
-        auto isSameHitPoint = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.19f) -> bool {
+        auto isSameHitPoint = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.118f) -> bool {
             // Если жёлтый луч заканчивается очень близко к точке попадания красного луча
             float distToHitPoint = glm::distance(missRay.hitPoint, hitRay.hitPoint);
             return distToHitPoint < epsilon;
             };
 
         // Функция для проверки, лежит ли жёлтый луч внутри красного (проходит через ту же траекторию)
-        auto isInsideRedRay = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.19f) -> bool {
+        auto isInsideRedRay = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.118f) -> bool {
             // Проверяем, лежит ли жёлтый луч на том же луче, что и красный
             // Направления должны быть коллинеарны
             float dot = glm::dot(hitRay.direction, missRay.direction);
