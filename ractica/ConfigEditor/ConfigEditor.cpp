@@ -4835,11 +4835,11 @@ void renderShadowPreview3D() {
         camDistance = previewCameraDistance;
     }
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
         camX += sin(glm::radians(camYaw)) * moveSpeed * deltaTime;
         camZ += cos(glm::radians(camYaw)) * moveSpeed * deltaTime;
     }
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
         camX -= sin(glm::radians(camYaw)) * moveSpeed * deltaTime;
         camZ -= cos(glm::radians(camYaw)) * moveSpeed * deltaTime;
     }
@@ -4946,21 +4946,14 @@ void renderShadowPreview3D() {
         }
         radiiComputed = true;
 
-        std::cout << "\n========== MODEL BOUNDS ==========" << std::endl;
-        std::cout << "Tree: minY=" << treeBounds.minY << ", maxY=" << treeBounds.maxY << ", offset=" << treeBottomOffset << std::endl;
-        std::cout << "Apple: minY=" << appleBounds.minY << ", maxY=" << appleBounds.maxY << ", offset=" << appleBottomOffset << std::endl;
-        std::cout << "Head: minY=" << headBounds.minY << ", maxY=" << headBounds.maxY << ", offset=" << headBottomOffset << std::endl;
-        std::cout << "Body: minY=" << bodyBounds.minY << ", maxY=" << bodyBounds.maxY << ", offset=" << bodyBottomOffset << std::endl;
-        std::cout << "Tail: minY=" << tailBounds.minY << ", maxY=" << tailBounds.maxY << ", offset=" << tailBottomOffset << std::endl;
-        std::cout << "==================================" << std::endl;
     }
 
     // Масштабы из конфига (уменьшаем модели)
     float headScale = cellSize * currentConfig.snakeHeadScale;
     float bodyScale = cellSize * currentConfig.snakeBodyScale;
     float tailScale = cellSize * currentConfig.snakeTailScale;
-    float treeScale = cellSize * 1.2f;
-    float appleScale = cellSize * 0.6f;
+    float treeScale = cellSize * currentConfig.treeScale;
+    float appleScale = cellSize * currentConfig.appleScale;
 
     // Цвета из конфига
     glm::vec3 treeColor = currentConfig.treeColor;
@@ -5446,14 +5439,14 @@ void renderShadowPreview3D() {
             };
 
         // Функция для проверки, совпадает ли жёлтый луч с красным (проходит через ту же точку)
-        auto isSameHitPoint = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.118f) -> bool {
+        auto isSameHitPoint = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.13f) -> bool {
             // Если жёлтый луч заканчивается очень близко к точке попадания красного луча
             float distToHitPoint = glm::distance(missRay.hitPoint, hitRay.hitPoint);
             return distToHitPoint < epsilon;
             };
 
         // Функция для проверки, лежит ли жёлтый луч внутри красного (проходит через ту же траекторию)
-        auto isInsideRedRay = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.118f) -> bool {
+        auto isInsideRedRay = [](const DebugRay& hitRay, const DebugRay& missRay, float epsilon = 0.13f) -> bool {
             // Проверяем, лежит ли жёлтый луч на том же луче, что и красный
             // Направления должны быть коллинеарны
             float dot = glm::dot(hitRay.direction, missRay.direction);
