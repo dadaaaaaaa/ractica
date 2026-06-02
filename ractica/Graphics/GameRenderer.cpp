@@ -1038,8 +1038,8 @@ void GameRenderer::setLightDirection(const glm::vec3& dir) {
 void GameRenderer::setMaterial(const glm::vec3& color, float shininess, float specularStrength) {
     glDisable(GL_COLOR_MATERIAL);
 
-    GLfloat ambient[] = { color.r * 0.3f, color.g * 0.3f, color.b * 0.3f, 1.0f };
-    GLfloat diffuse[] = { color.r * 0.7f, color.g * 0.7f, color.b * 0.7f, 1.0f };
+    GLfloat ambient[] = { color.r , color.g , color.b , 1.0f };
+    GLfloat diffuse[] = { color.r , color.g , color.b , 1.0f };
     GLfloat specular[] = { specularStrength, specularStrength, specularStrength, 1.0f };
 
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ambient);
