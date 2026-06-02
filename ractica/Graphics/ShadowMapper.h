@@ -157,6 +157,11 @@ struct BoundingSphere {
 
 class ShadowMapper {
 public:
+    bool isPointInShadowWithHitPoint(const glm::vec3& point,
+        int& hitCellX,
+        int& hitCellZ,
+        float& hitDistance,
+        glm::vec3& outHitPoint);
     // Режимы трассировки теней
     enum ShadowTraceMode {
         TRACE_CENTER = 0,           // 1 луч в центр клетки (бинарный результат)
