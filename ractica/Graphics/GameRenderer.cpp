@@ -52,8 +52,8 @@ GameRenderer::GameRenderer()
     , m_shadowMapEnabled(false)
     , m_debugRaysEnabled(false)
     , m_showGroundRays(false)
-    , m_shadowStrideX(1)
-    , m_shadowStrideZ(1)
+    , m_shadowStrideX(2)
+    , m_shadowStrideZ(2)
     , m_staticShadowsDirty(true)
     , m_dynamicShadowsDirty(true)
     , m_foodShadowsDirty(true)
@@ -1407,7 +1407,7 @@ void GameRenderer::renderGame(const GameObjects& objects) {
     drawLightSource();
     drawDebugNormals(objects);
     drawDebugNormals(objects);
-    drawDebugSpheres();  // Добавить после drawDebugNormals
+    drawDebugSpheres();  
     if (m_debugRaysEnabled && m_shadowMapEnabled) {
         drawDebugRaysIfEnabled();
     }

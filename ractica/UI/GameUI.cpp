@@ -593,7 +593,7 @@ void GameUI::drawHighScoresMenu(const std::vector<HighScore>& highScores) {
     const int playerX = getScaledX(300);
     const int scoreX = getScaledX(500);
     const int dateX = getScaledX(600);
-    const int speedX = getScaledX(750);
+    const int speedX = getScaledX(700);
     const int lengthX = getScaledX(850);
     const int timeX = getScaledX(950);
 
@@ -632,7 +632,7 @@ void GameUI::drawHighScoresMenu(const std::vector<HighScore>& highScores) {
 
         std::string speedStr = std::to_string(hs.gameSpeed).substr(0, 3) + "x";
         float speedWidth = getTextWidth(speedStr);
-        drawText(speedX + getScaledX(30) - speedWidth, yPos, speedStr,
+        drawText(speedX + getScaledX(30) - speedWidth+50, yPos, speedStr,
             textColor.r, textColor.g, textColor.b);
 
         std::string lengthStr = std::to_string(hs.snakeLength);

@@ -512,9 +512,6 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
         // ДИАГНОСТИКА: попали в сферу
         static int sphereHitCount = 0;
         if (++sphereHitCount % 100 == 0) {
-            std::cout << "[TRACE] Sphere hit #" << sphereHitCount
-                << " modelType=" << sphere.modelType
-                << " instanceId=" << sphere.instanceId << std::endl;
         }
 
         // ШАГ 2: ПОПАЛИ В СФЕРУ - ТОЧНАЯ ПРОВЕРКА
@@ -534,9 +531,6 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
                     // ДИАГНОСТИКА: успешное попадание
                     static int exactHitCount = 0;
                     if (++exactHitCount % 50 == 0) {
-                        std::cout << "[TRACE] EXACT HIT #" << exactHitCount
-                            << " dist=" << exactDist
-                            << " pos=(" << exactPoint.x << "," << exactPoint.y << "," << exactPoint.z << ")" << std::endl;
                     }
 
                     return true;
@@ -546,10 +540,6 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
                 // ДИАГНОСТИКА: сфера есть, но точный колбэк не нашел попадания
                 static int sphereNoHitCount = 0;
                 if (++sphereNoHitCount % 100 == 0) {
-                    std::cout << "[TRACE] Sphere hit but NO exact intersection #" << sphereNoHitCount
-                        << " modelType=" << sphere.modelType
-                        << " ray origin=(" << shadowRay.origin.x << "," << shadowRay.origin.y << "," << shadowRay.origin.z << ")"
-                        << " ray dir=(" << shadowRay.direction.x << "," << shadowRay.direction.y << "," << shadowRay.direction.z << ")" << std::endl;
                 }
             }
         }
@@ -557,7 +547,6 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
             // ДИАГНОСТИКА: колбэк не установлен
             static bool warned = false;
             if (!warned) {
-                std::cout << "[ERROR] m_intersectCallbackExact is NULL!" << std::endl;
                 warned = true;
             }
         }
@@ -565,9 +554,6 @@ bool ShadowMapper::traceShadowRay(const glm::vec3& start, const glm::vec3& direc
 
     // ДИАГНОСТИКА: не попали ни в одну сферу
     static int noSphereHitCount = 0;
-    if (++noSphereHitCount % 500 == 0) {
-        std::cout << "[TRACE] No sphere hit #" << noSphereHitCount << std::endl;
-    }
 
     return false;
 }

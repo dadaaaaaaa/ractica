@@ -15,46 +15,34 @@ GameRenderer renderer;
 int main() {
     // Инициализация GLFW
     if (!glfwInit()) {
-        
         return -1;
     }
 
-    // Настройка окна с помощью GameRenderer
     GameRenderer::setupGLFWHints();
     GLFWwindow* window = glfwCreateWindow(1200, 800, "3D Snake Game", NULL, NULL);
-    g_mainWindow = window; // Сохраняем ссылку на окно
+    g_mainWindow = window; 
     if (!window) {
         glfwTerminate();
         return -1;
     }
-
     glfwMakeContextCurrent(window);
-
-    // Инициализация GLEW
     if (!GameRenderer::initGLEW()) {
         glfwTerminate();
         return -1;
     }
-
-    // Проверка системы
     GameRenderer::checkDoubleBufferSupport(window);
     GameRenderer::setupVSync(window, true);
     GameRenderer::printGraphicsInfo();
-
-    // Проверка поддержки OpenGL
     if (!GLEW_VERSION_3_3 || !glGenVertexArrays) {
         glfwTerminate();
         return -1;
     }
 
-    // Настройка колбэков через GameRenderer
     GameRenderer::setupCallbacks(window);
 
-    // Настройка OpenGL
     GameRenderer::initOpenGLSettings();
     GameRenderer::checkGLError("OpenGL setup");
 
-    // Инициализация сид рандома
     srand(static_cast<unsigned int>(time(0)));
 
   
