@@ -52,8 +52,8 @@ GameRenderer::GameRenderer()
     , m_shadowMapEnabled(false)
     , m_debugRaysEnabled(false)
     , m_showGroundRays(false)
-    , m_shadowStrideX(2)
-    , m_shadowStrideZ(2)
+    , m_shadowStrideX(1)
+    , m_shadowStrideZ(1)
     , m_staticShadowsDirty(true)
     , m_dynamicShadowsDirty(true)
     , m_foodShadowsDirty(true)
@@ -2371,21 +2371,92 @@ void GameRenderer::drawFence(const std::vector<Point>& fenceBlocks) {
     float offsetZ = m_gridDepth * m_cellSize / 2.0f;
     const GameObjects& objects = g_game.getGameObjects();
 
-    // ✅ Получаем масштаб забора из конфига
+    // Получаем масштаб забора из конфига
     float fenceScaleFromConfig = objects.getFenceScale();
+
+    // Определяем границы мира
+    float worldWidth = m_gridWidth * m_cellSize;
+    float worldDepth = m_gridDepth * m_cellSize;
+    float minX = -worldWidth / 2.0f;
+    float maxX = worldWidth / 2.0f;
+    float minZ = -worldDepth / 2.0f;
+    float maxZ = worldDepth / 2.0f;
+
+    // Толщина границы для определения краевых блоков (в клетках)
+    int borderThickness = 1;
+
+    // Вычисляем нижнюю точку модели забора
+    float fenceBottomOffset = 0.0f;
+    if (!m_fenceModel.vertices.empty()) {
+        float minY_local = FLT_MAX;
+        float maxY_local = -FLT_MAX;
+        for (const auto& vert : m_fenceModel.vertices) {
+            minY_local = std::min(minY_local, vert.position.y);
+            maxY_local = std::max(maxY_local, vert.position.y);
+        }
+        fenceBottomOffset = -minY_local; // Смещение от центра модели до нижней точки
+    }
 
     for (const auto& fenceBlock : fenceBlocks) {
         float x = fenceBlock.x * m_cellSize - offsetX;
         float z = fenceBlock.z * m_cellSize - offsetZ;
-        float y = m_floorHeight;
 
-        // ✅ ИСПОЛЬЗУЕМ МАСШТАБ ИЗ КОНФИГА!
+        // Масштаб забора
         float scaleX = m_cellSize * fenceScaleFromConfig;
         float scaleY = m_cellSize * fenceScaleFromConfig * 0.5f;
         float scaleZ = m_cellSize * fenceScaleFromConfig;
 
+        // Вычисляем Y так, чтобы нижняя часть модели была на уровне пола (m_floorHeight = 0)
+        float y = m_floorHeight - fenceBottomOffset * scaleY;
+
+        // Определяем, на какой стороне находится блок
+        bool isTopSide = (fenceBlock.z >= m_gridDepth - borderThickness);
+        bool isBottomSide = (fenceBlock.z <= borderThickness - 1);
+        bool isLeftSide = (fenceBlock.x <= borderThickness - 1);
+        bool isRightSide = (fenceBlock.x >= m_gridWidth - borderThickness);
+
+        // Является ли блок угловым (тогда не поворачиваем)
+        bool isCorner = (isTopSide && isLeftSide) || (isTopSide && isRightSide) ||
+            (isBottomSide && isLeftSide) || (isBottomSide && isRightSide);
+
+        bool isSideBlock = false;
+        float rotationAngle = 0.0f;
+
+        // Сохраняем исходные координаты для модификации
+        float finalX = x;
+        float finalZ = z;
+
+        // Определяем, нужно ли повернуть блок и скорректировать позицию
+        if (isTopSide && !isCorner) {
+            // Верхняя сторона - не поворачиваем
+            rotationAngle = 0.0f;
+        }
+        else if (isBottomSide && !isCorner) {
+            // Нижняя сторона - не поворачиваем
+            rotationAngle = 0.0f;
+        }
+        else if (isLeftSide && !isCorner) {
+            // Левая сторона - поворачиваем на 90 градусов и смещаем наружу
+            rotationAngle = 90.0f;
+            isSideBlock = true;
+            // Смещаем левый забор влево, чтобы не заходить на поле
+            finalZ = z + m_cellSize * 0.5f;
+        }
+        else if (isRightSide && !isCorner) {
+            // Правая сторона - поворачиваем на -90 градусов и смещаем наружу
+            rotationAngle = -90.0f;
+            isSideBlock = true;
+            // Смещаем правый забор вправо, чтобы не заходить на поле
+            finalZ = z + m_cellSize * 0.5f;
+        }
+
         glPushMatrix();
-        glTranslatef(x, y, z);
+        glTranslatef(finalX, y, finalZ);
+
+        if (isSideBlock) {
+            glRotatef(rotationAngle, 0.0f, 1.0f, 0.0f);
+        }
+
         glScalef(scaleX, scaleY, scaleZ);
 
         if (m_fenceModel.hasTexture && m_fenceModel.textureID != 0) {

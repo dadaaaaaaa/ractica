@@ -683,9 +683,9 @@ void GameUI::drawControlsMenu() {
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
 
-    drawCenteredText(550, "УПРАВЛЕНИЕ", 1.0f, 1.0f, 1.0f);
+    drawCenteredText(650, "УПРАВЛЕНИЕ", 1.0f, 1.0f, 1.0f);
 
-    int yPos = getScaledY(450);
+    int yPos = getScaledY(350);
     drawCenteredText(yPos, "ВЛЕВО/ВПРАВО - Поворот змейки", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
     drawCenteredText(yPos, "Q/E - Вращение камеры", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);
     drawCenteredText(yPos, "Колёсико мыши - Приближение/отдаление", 0.0f, 1.0f, 0.0f); yPos -= getScaledY(40);

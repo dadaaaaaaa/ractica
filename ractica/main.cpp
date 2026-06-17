@@ -56,7 +56,7 @@ int main() {
     int frameCount = 0;
     double fpsUpdateTime = lastFrameTime;
     double frameTimeAccumulator = 0.0;
-    const double fixedDeltaTime = 1.0 / 60.0;
+    const double fixedDeltaTime = 1.0 / 144.0;
 
     while (!glfwWindowShouldClose(window) && !g_shouldExitGame) {
         double currentTime = glfwGetTime();

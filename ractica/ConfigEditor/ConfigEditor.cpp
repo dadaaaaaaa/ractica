@@ -1267,31 +1267,32 @@ void initElements() {
     // Преграды
     VisualElement* tree = new VisualElement("ДЕРЕВО");
     tree->modelFile = currentConfig.treeModel;
-    tree->color = glm::vec3(0.1f, 0.4f, 0.1f);
-    tree->scale = 1.5f;
-    head->useTextureColor = true;
+    tree->color = currentConfig.treeColor;      // <- ИСПРАВЛЕНО: берем из конфига
+    tree->scale = currentConfig.treeScale;      // <- ИСПРАВЛЕНО: берем из конфига
+    tree->count = currentConfig.obstacleCount;  // <- ДОБАВЛЕНО: количество деревьев
+    tree->useTextureColor = true;               // <- ИСПРАВЛЕНО: было head->
     obstaclesElements.push_back(tree);
 
     VisualElement* rock = new VisualElement("КАМЕНЬ");
     rock->modelFile = currentConfig.rockModel;
-    rock->color = glm::vec3(0.5f, 0.5f, 0.5f);
-    rock->scale = 1.2f;
-    head->useTextureColor = true;
+    rock->color = currentConfig.rockColor;      // <- ИСПРАВЛЕНО: берем из конфига
+    rock->scale = currentConfig.rockScale;      // <- ИСПРАВЛЕНО: берем из конфига
+    rock->useTextureColor = true;               // <- ИСПРАВЛЕНО: было head->
     obstaclesElements.push_back(rock);
 
     VisualElement* fence = new VisualElement("ЗАБОР");
     fence->modelFile = currentConfig.fenceModel;
-    fence->color = glm::vec3(0.6f, 0.4f, 0.2f);
-    fence->scale = 1.0f;
-    head->useTextureColor = true;
+    fence->color = currentConfig.fenceColor;    // <- ИСПРАВЛЕНО: берем из конфига
+    fence->scale = currentConfig.fenceScale;    // <- ИСПРАВЛЕНО: берем из конфига
+    fence->useTextureColor = true;              // <- ИСПРАВЛЕНО: было head->
     obstaclesElements.push_back(fence);
 
     VisualElement* apple = new VisualElement("ЯБЛОКО");
     apple->modelFile = currentConfig.appleModel;
-    apple->color = glm::vec3(1.0f, 0.0f, 0.0f);
-    apple->scale = 0.8f;
+    apple->color = currentConfig.appleColor;    // <- ИСПРАВЛЕНО: берем из конфига
+    apple->scale = currentConfig.appleScale;    // <- ИСПРАВЛЕНО: берем из конфига
     apple->count = currentConfig.initialFoodCount;
-    head->useTextureColor = true;
+    apple->useTextureColor = true;              // <- ИСПРАВЛЕНО: было head->
     obstaclesElements.push_back(apple);
 
     // Окружение
